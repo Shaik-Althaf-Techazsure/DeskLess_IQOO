@@ -1,0 +1,10 @@
+{
+  "name": "DeskLess",
+  "short_name": "DeskLess",
+  "description": "Site inspection reports from a photo and a voice note, processed locally.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0E1014",
+  "theme_color": "#0E1014",
+  "icons": [{ "src": "/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }]
+}

@@ -1,0 +1,83 @@
+# DeskLess: one command starts the database, the API (with local speech-to-text) and the web app.
+#
+#   docker compose up --build                 core app (speech-to-text + rule-based structuring)
+#   docker compose --profile ai up --build    adds a local open-source LLM served by Ollama
+name: deskless
+
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-deskless}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-deskless}
+      POSTGRES_DB: ${POSTGRES_DB:-deskless}
+    volumes:
+      - db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
+  backend:
+    build:
+      context: ./backend
+      args:
+        WHISPER_MODEL: ${WHISPER_MODEL:-small}
+    environment:
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-deskless}:${POSTGRES_PASSWORD:-deskless}@db:5432/${POSTGRES_DB:-deskless}
+      MEDIA_DIR: /data/media
+      WHISPER_MODEL: ${WHISPER_MODEL:-small}
+      # Reachable only when the "ai" profile is running; otherwise the app falls back to built-in rules.
+      OLLAMA_URL: ${OLLAMA_URL:-http://ollama:11434}
+      LLM_MODEL: ${LLM_MODEL:-gemma3:4b}
+    volumes:
+      - media:/data/media
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health', timeout=3)"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+    restart: unless-stopped
+
+  web:
+    build: ./frontend
+    ports:
+      - "${WEB_PORT:-8600}:80"       # http://localhost:8600 on this machine
+      - "${WEB_TLS_PORT:-8643}:443"  # https://<this machine's IP>:8643 from a phone
+    volumes:
+      - caddy_data:/data
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+  ollama:
+    profiles: ["ai"]
+    image: ollama/ollama:latest
+    volumes:
+      - ollama:/root/.ollama
+    restart: unless-stopped
+
+  # Downloads the model once, then exits.
+  ollama-pull:
+    profiles: ["ai"]
+    image: ollama/ollama:latest
+    depends_on:
+      - ollama
+    environment:
+      OLLAMA_HOST: http://ollama:11434
+    entrypoint: ["/bin/sh", "-c", "until ollama list >/dev/null 2>&1; do sleep 1; done; ollama pull ${LLM_MODEL:-gemma3:4b}"]
+    restart: "no"
+
+volumes:
+  db_data:
+  media:
+  caddy_data:
+  ollama:

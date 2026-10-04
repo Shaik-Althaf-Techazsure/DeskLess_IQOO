@@ -1,0 +1,33 @@
+{
+	auto_https disable_redirects
+	# Certificates are issued on first connection for whatever address the phone used.
+	# Caddy asks the backend before issuing one; the app only ever runs on a local network.
+	on_demand_tls {
+		ask http://backend:8000/api/health
+	}
+}
+
+(app) {
+	encode gzip
+	handle /api/* {
+		reverse_proxy backend:8000
+	}
+	handle {
+		root * /srv
+		try_files {path} /index.html
+		file_server
+	}
+}
+
+# Plain HTTP: enough on the machine itself (http://localhost is a secure context).
+:80 {
+	import app
+}
+
+# HTTPS with a locally issued certificate: phones need it before the browser allows the microphone.
+https:// {
+	tls internal {
+		on_demand
+	}
+	import app
+}
