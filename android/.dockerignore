@@ -1,0 +1,12 @@
+# Build output and machine-local files stay out of the image.
+.gradle
+.idea
+.kotlin
+build
+app/build
+captures
+.cxx
+.externalNativeBuild
+*.iml
+# Points at the Android SDK on the host; the container has its own.
+local.properties

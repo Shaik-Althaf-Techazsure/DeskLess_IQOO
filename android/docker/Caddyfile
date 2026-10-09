@@ -1,0 +1,9 @@
+:80 {
+	root * /srv
+
+	# Android only offers to install the download when it is labelled as an app package.
+	@apk path *.apk
+	header @apk Content-Type application/vnd.android.package-archive
+
+	file_server
+}

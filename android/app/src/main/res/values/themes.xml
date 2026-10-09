@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+
+    <!-- Dark from the first frame, so the launch runs straight into the in-app intro without a white flash. -->
+    <style name="Theme.Deskless" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowBackground">@color/ink</item>
+        <item name="android:colorBackground">@color/ink</item>
+        <item name="android:colorAccent">@color/safety_yellow</item>
+    </style>
+</resources>

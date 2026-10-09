@@ -1,9 +1,19 @@
 .env
 node_modules/
 dist/
+.venv/
 __pycache__/
 *.pyc
 .pytest_cache/
 *.db
 media/
 .DS_Store
+
+# Android app: IDE and build files (android/.gitignore covers the rest)
+.idea/
+.kotlin/
+
+# Built APKs, model files and generated reports stay on the machine
+/apk/
+/models/
+/reports/

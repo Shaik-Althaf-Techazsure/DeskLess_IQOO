@@ -1,0 +1,34 @@
+name: Build
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  android:
+    name: Android app (unit tests + APK)
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Check the compose file
+        run: docker compose config --quiet
+
+      # The same image `docker compose up --build` makes: unit tests, then the APK.
+      - name: Build the app image
+        run: docker build --tag deskless-app android
+
+      - name: Take the APK out of the image
+        run: |
+          container=$(docker create deskless-app)
+          docker cp "$container:/srv/DeskLess.apk" DeskLess.apk
+          docker rm "$container"
+          ls -lh DeskLess.apk
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: DeskLess-apk
+          path: DeskLess.apk
+          if-no-files-found: error

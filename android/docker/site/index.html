@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DeskLess: install</title>
+<style>
+  :root { --ink: #0F1115; --coal: #171A20; --steel: #20242C; --line: #363C48; --fog: #A7AEBB; --chalk: #F3F4F6; --yellow: #FFC31F; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--ink); color: var(--chalk); font: 16px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  .tape { height: 10px; background: repeating-linear-gradient(-45deg, var(--yellow) 0 14px, var(--ink) 14px 28px); }
+  main { max-width: 640px; margin: 0 auto; padding: 28px 16px 48px; }
+  h1 { margin: 0; font-size: 44px; letter-spacing: 1px; text-transform: uppercase; }
+  h1 span { color: var(--yellow); }
+  h2 { margin: 32px 0 8px; font-size: 14px; letter-spacing: 2px; text-transform: uppercase; color: var(--yellow); }
+  p { margin: 8px 0; }
+  .lead { color: var(--fog); }
+  .button { display: block; margin: 24px 0 8px; padding: 16px; border-radius: 12px; background: var(--yellow); color: var(--ink); font-weight: 700; font-size: 18px; text-align: center; text-decoration: none; }
+  .small { color: var(--fog); font-size: 14px; }
+  ol, ul { margin: 8px 0; padding-left: 22px; }
+  li { margin: 6px 0; }
+  .card { margin-top: 12px; padding: 14px 16px; border: 1px solid var(--line); border-radius: 12px; background: var(--coal); }
+  code { padding: 1px 6px; border-radius: 6px; background: var(--steel); font-size: 14px; overflow-wrap: anywhere; }
+</style>
+</head>
+<body>
+<div class="tape"></div>
+<main>
+  <h1>Desk<span>Less</span></h1>
+  <p class="lead">Site inspection reports, without the desk. Photograph each issue, say what is wrong, and get an English PDF report. Everything runs on the phone, in airplane mode too.</p>
+
+  <a class="button" href="DeskLess.apk" download>Download DeskLess.apk</a>
+  <p class="small">Android 7 or later, 64-bit ARM phone. Built from this repository by <code>docker compose up --build</code>.</p>
+
+  <h2>Install on the phone</h2>
+  <ol>
+    <li>Open this page on the phone: <code id="address">http://&lt;this computer's IP&gt;:8700</code> (phone and computer on the same Wi-Fi or hotspot).</li>
+    <li>Tap <b>Download DeskLess.apk</b>, then open the downloaded file.</li>
+    <li>Android asks whether this browser may install apps. Allow it, then tap <b>Install</b>.</li>
+  </ol>
+  <p class="small">The same file is in the <code>apk</code> folder next to <code>docker-compose.yml</code>, for sending with iQOO Office Kit file transfer or a cable.</p>
+
+  <h2>AI models</h2>
+  <div class="card">
+    <p>The models are not inside the APK (about 2.8 GB). Copy these files to a folder on the phone, then open <b>Models</b> in the app and import that folder:</p>
+    <ul>
+      <li><code>small-encoder.int8.onnx</code>, <code>small-decoder.int8.onnx</code>, <code>small-tokens.txt</code> (Whisper small, speech to English text)</li>
+      <li><code>silero_vad.onnx</code> (splits long voice notes)</li>
+      <li><code>gemma-4-E2B-it.litertlm</code> (Gemma 4 E2B, fills the report fields and checks the photo)</li>
+    </ul>
+    <p class="small">Without them the app still takes photos and voice notes, accepts typed notes and builds the PDF; built-in rules then fill only the title and the severity.</p>
+  </div>
+</main>
+<script>
+  // Shown as typed in the address bar, so a phone that opened the page sees its own working link.
+  if (location.hostname !== 'localhost' && location.hostname !== '127.0.0.1') {
+    document.getElementById('address').textContent = location.origin;
+  }
+</script>
+</body>
+</html>

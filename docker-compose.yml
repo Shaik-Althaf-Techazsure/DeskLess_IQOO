@@ -1,10 +1,21 @@
-# DeskLess: one command starts the database, the API (with local speech-to-text) and the web app.
+# DeskLess: one command builds the Android app and starts the web prototype
+# (database, API with local speech-to-text, web app).
 #
-#   docker compose up --build                 core app (speech-to-text + rule-based structuring)
-#   docker compose --profile ai up --build    adds a local open-source LLM served by Ollama
+#   docker compose up --build                 Android APK + install page, and the web prototype
+#   docker compose up --build app             only the Android APK + install page
+#   docker compose --profile ai up --build    adds a local open-source LLM (Ollama) to the web prototype
 name: deskless
 
 services:
+  # The Android app: compiled in a container, then served with an install page.
+  app:
+    build: ./android
+    ports:
+      - "${APP_PORT:-8700}:80"       # http://localhost:8700, or http://<this machine's IP>:8700 from a phone
+    volumes:
+      - ./apk:/out                   # the built APK is also copied here
+    restart: unless-stopped
+
   db:
     image: postgres:16-alpine
     environment:
