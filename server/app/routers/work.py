@@ -19,7 +19,8 @@ from .. import mailer
 from ..config import settings
 from ..db import get_db
 from ..models import APPROVED, ASSIGNED, CLOSED, FIXED, OPEN, ROLE_NAMES, SEVERITIES, STATUSES, Account, Event, Issue, Report, now
-from ..pictures import save_photo
+from ..pictures import picture_response, save_photo
+from .admin import companies as every_company, system as server_health
 from ..service import (
     Actor, aware, current_account, current_actor, get_mailer, may_direct, names_of, note, profile, sees_events,
     sees_issues, sees_people, sees_reports, today, waiting_for, when,
@@ -350,21 +351,20 @@ def issue_detail(issue_id: str, actor: Actor = Depends(current_actor), db: Sessi
     return _rows(db, [issue])[0] | {"history": [{"at": when(event.at), "kind": event.kind, "text": event.text} for event in history]}
 
 
-def _picture(name: str) -> FileResponse:
-    path = settings().issues_dir / name if name else None
-    if path is None or not path.is_file():
+def _picture(name: str, size: str) -> FileResponse:
+    if not name:
         raise HTTPException(404, "No picture.")
-    return FileResponse(path, media_type="image/jpeg")
+    return picture_response(settings().issues_dir / name, size, settings().small_dir)
 
 
 @router.get("/issues/{issue_id}/photo")
-def issue_photo(issue_id: str, actor: Actor = Depends(current_actor), db: Session = Depends(get_db)) -> FileResponse:
-    return _picture(_issue(db, actor, issue_id).photo)
+def issue_photo(issue_id: str, size: str = "", actor: Actor = Depends(current_actor), db: Session = Depends(get_db)) -> FileResponse:
+    return _picture(_issue(db, actor, issue_id).photo, size)
 
 
 @router.get("/issues/{issue_id}/fix-photo")
-def issue_fix_photo(issue_id: str, actor: Actor = Depends(current_actor), db: Session = Depends(get_db)) -> FileResponse:
-    return _picture(_issue(db, actor, issue_id).fix_photo)
+def issue_fix_photo(issue_id: str, size: str = "", actor: Actor = Depends(current_actor), db: Session = Depends(get_db)) -> FileResponse:
+    return _picture(_issue(db, actor, issue_id).fix_photo, size)
 
 
 def _lead(actor: Actor) -> Account:
@@ -606,7 +606,10 @@ def dashboard(actor: Actor = Depends(current_actor), db: Session = Depends(get_d
 
     recent = db.scalars(select(Event).where(sees_events(db, actor)).order_by(Event.id.desc()).limit(25))
     titles = {issue.id: issue.title or "Untitled issue" for issue in found}
-    return {
+    # The administrator's overview also shows every company and the server's own health. They come in
+    # the same answer, so keeping that page live costs one question each time, not three.
+    whole = {"companies": every_company(actor.admin, db), "system": server_health(actor.admin, db)} if actor.is_admin else {}
+    return whole | {
         "me": {"role": "admin", "role_name": "Administrator", "name": "Administrator", "email": actor.admin, "organisation": "All companies"}
         if actor.is_admin
         else profile(db, actor.account) | {"id": actor.account.id},

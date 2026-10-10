@@ -225,3 +225,18 @@ def test_an_issue_is_on_the_dashboards_as_soon_as_it_is_raised(client, mailbox, 
     listed = client.get("/api/reports", headers=admin).json()[0]
     assert (listed["has_pdf"], listed["in_progress"], listed["issues"]) == (True, True, 3)
     assert client.get(f"/api/reports/{listed['id']}/pdf", headers=admin).status_code == 200
+
+
+def test_a_list_gets_a_little_copy_of_each_picture(client, company):
+    send_report(client, company.inspector.headers)
+    manager = company.manager.headers
+    beam = the_issue(client, manager)
+    whole = client.get(f"/api/issues/{beam['id']}/photo", headers=manager)
+    little = client.get(f"/api/issues/{beam['id']}/photo", params={"size": "small"}, headers=manager)
+    assert little.status_code == 200 and little.content[:2] == b"\xff\xd8" and len(little.content) < len(whole.content)
+    assert "max-age=300" in little.headers["cache-control"] and "content-encoding" not in little.headers
+    # The little copy is as guarded as the picture itself.
+    assert client.get(f"/api/issues/{beam['id']}/photo", params={"size": "small"}).status_code == 401
+    assert client.get(f"/api/issues/{beam['id']}/photo", params={"size": "small"}, headers=company.technical.headers).status_code == 404
+    face = client.get(f"/api/people/{company.inspector.id}/photo", params={"size": "small"}, headers=manager)
+    assert face.status_code == 200 and face.content[:2] == b"\xff\xd8"

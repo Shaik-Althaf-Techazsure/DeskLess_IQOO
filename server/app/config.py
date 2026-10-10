@@ -61,6 +61,11 @@ class Settings:
         """The picture of each issue, and of its repair."""
         return self.data_dir / "issues"
 
+    @property
+    def small_dir(self) -> Path:
+        """Little copies of pictures, for lists. They can be thrown away: each is made again when asked for."""
+        return self.data_dir / "small"
+
 
 def _generated(data_dir: Path) -> dict:
     """

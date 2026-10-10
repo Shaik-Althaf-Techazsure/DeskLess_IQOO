@@ -11,6 +11,7 @@ from ..config import settings
 from ..db import get_db
 from ..models import APPROVED, CLOSED, PENDING_APPROVAL, REJECTED, ROLE_NAMES, SUSPENDED, Account, Issue, Report
 from ..service import Actor, approve, current_actor, get_mailer, may_decide, names_of, note, reject, sees_people, waiting_for, when
+from ..pictures import picture_response
 from .admin import account_row
 
 router = APIRouter(prefix="/api/people", tags=["people"])
@@ -64,11 +65,8 @@ def _in_view(db: Session, actor: Actor, account_id: str) -> Account:
 
 
 @router.get("/{account_id}/photo")
-def photo(account_id: str, actor: Actor = Depends(current_actor), db: Session = Depends(get_db)) -> FileResponse:
-    path = settings().media_dir / _in_view(db, actor, account_id).photo
-    if not path.is_file():
-        raise HTTPException(404, "No photo.")
-    return FileResponse(path, media_type="image/jpeg")
+def photo(account_id: str, size: str = "", actor: Actor = Depends(current_actor), db: Session = Depends(get_db)) -> FileResponse:
+    return picture_response(settings().media_dir / _in_view(db, actor, account_id).photo, size, settings().small_dir)
 
 
 @router.post("/{account_id}/approve")

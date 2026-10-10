@@ -174,6 +174,20 @@ function picture(path, alt, zoom = false) {
   }
   return img;
 }
+// In a list a picture is a small square: a little copy is asked for, a few kilobytes instead of the whole
+// photograph. Where it can be opened large, the photograph itself is fetched then.
+function thumbnail(path, alt, opens = false) {
+  const img = picture(path + "?size=small", alt);
+  if (opens) {
+    img.style.cursor = "zoom-in";
+    img.onclick = async (event) => {
+      event.stopPropagation();
+      const whole = await pictureUrl(path);
+      if (whole) { $("big").querySelector("img").src = whole; $("big").showModal(); }
+    };
+  }
+  return img;
+}
 
 // A phone's camera picture is far larger than a repair needs; it is made smaller before it is sent.
 async function smaller(file, edge = 1600) {
@@ -507,7 +521,7 @@ function onlineList() {
         if (!item) {
           item = { time: el("time"), light: el("i") };
           item.row = el("div", { class: "one" },
-            el("div", { class: "face" }, picture(`/people/${one.id}/photo`, "Photo of " + one.name), item.light),
+            el("div", { class: "face" }, thumbnail(`/people/${one.id}/photo`, "Photo of " + one.name), item.light),
             el("div", {}, el("strong", { text: one.name }), el("span", { text: [one.role_name, dash.me.role === "admin" ? one.organisation : ""].filter(Boolean).join(" · ") })),
             item.time);
           known.set(one.id, item);
@@ -626,9 +640,11 @@ async function openedFromTheApp() {
 }
 
 async function show() {
+  let first = null;
   if (token) {
     try {
-      dash = await get("/dashboard");
+      first = await liveData();
+      dash = first[0];
     } catch (error) {
       if (token) $("signin-error").textContent = error.message;
     }
@@ -641,7 +657,8 @@ async function show() {
   $("who-name").textContent = dash.me.name;
   $("who-role").textContent = dash.me.role === "admin" ? dash.me.email : [dash.me.role_name, dash.me.unique_id].filter(Boolean).join(" · ");
   if (!NAV[dash.me.role].some(([section]) => section === view)) view = NAV[dash.me.role][0][0];
-  await load();
+  // What was just fetched to learn who this is also draws the first section: nothing is asked twice.
+  await load(first);
 }
 
 let navDrawn = "";
@@ -675,35 +692,48 @@ function heading(title, sub = "") {
 
 // ---------------------------------------------------------------- loading a section, and keeping it live
 
-// Everything the live sections draw from, asked for together.
+// Everything the live sections draw from comes in one answer; for the administrator that answer also
+// carries every company and the server's own health.
 async function liveData() {
   const fresh = await get("/dashboard");
-  const more = {};
-  if (fresh.me.role === "admin") [more.companies, more.system] = await Promise.all([get("/admin/companies"), get("/admin/system")]);
-  return [fresh, more];
+  return [fresh, { companies: fresh.companies, system: fresh.system }];
 }
+
+// What each list is made from.
+const LISTS = {
+  approvals: () => "/people?status=pending_approval",
+  people: () => "/people?status=" + peopleStage,
+  companies: () => "/admin/companies",
+  reports: () => "/reports",
+  issues: () => "/issues" + (ofReport ? "?report=" + encodeURIComponent(ofReport.id) : ""),
+};
 
 let loading = 0;
 let lastHeard = 0;
 let heard = true;
-async function load() {
+async function load(ready = null) {
   const mine = ++loading;
+  const live = view === "overview" || view === "system";
+  const section = NAV[dash.me.role].find(([name]) => name === view);
+  if (section && !live) heading(section[1]);
+  // The click is answered at once: the section is marked, and what was on the page stays, dimmed, until
+  // the new section has arrived.
+  drawNav();
+  $("view").classList.add("waiting");
   try {
-    const [fresh, more] = await liveData();
-    dash = fresh;
-    let content;
-    board = null;
-    if (view === "overview") board = overviewBoard();
-    else if (view === "system") board = systemBoard();
-    else if (view === "approvals") content = approvals(await get("/people?status=pending_approval"));
-    else if (view === "people") content = people(await get("/people?status=" + peopleStage));
-    else if (view === "companies") content = companies(more.companies);
-    else if (view === "reports") content = reports(await get("/reports"));
-    else {
-      issues = await get("/issues" + (ofReport ? "?report=" + encodeURIComponent(ofReport.id) : ""));
-      content = issuesView();
+    let content, more;
+    if (live) {
+      [dash, more] = ready || await liveData();
+    } else {
+      // A list needs one answer, its own. The numbers beside the sections follow without holding it up.
+      const rows = await get(LISTS[view]());
+      get("/dashboard").then((fresh) => { dash = fresh; drawNav(); }, () => {});
+      if (mine !== loading) return;
+      if (view === "issues") issues = rows;
+      content = { approvals, people, companies, reports, issues: issuesView }[view](rows);
     }
     if (mine !== loading) return;     // a newer request has overtaken this one
+    board = !live ? null : view === "overview" ? overviewBoard() : systemBoard();
     drawNav();
     $("view").replaceChildren(...(board ? [board.node] : content));
     if (board) board.update(dash, more);
@@ -713,6 +743,8 @@ async function load() {
     heard = true;
   } catch (error) {
     if (token) note(error.message, true);
+  } finally {
+    if (mine === loading) $("view").classList.remove("waiting");
   }
 }
 
@@ -921,7 +953,7 @@ function facts(pairs) {
 
 function person(row, actions) {
   return el("div", { class: "item" },
-    picture(`/people/${row.id}/photo`, "Photo of " + row.name, true),
+    thumbnail(`/people/${row.id}/photo`, "Photo of " + row.name, true),
     el("div", {},
       el("h4", {}, row.name + " ", chip(row.role_name, "role"), row.me ? chip("You") : null, row.status === "suspended" ? chip("Suspended", "bad") : null),
       row.unique_id ? el("div", { class: "id", text: row.unique_id }) : null,
@@ -1145,7 +1177,7 @@ function filters() {
 function issueCard(issue) {
   const due = issue.due_on ? day(issue.due_on) : issue.due_text;
   return el("button", { class: "item", onclick: () => openIssue(issue.id) },
-    issue.has_photo ? picture(`/issues/${issue.id}/photo`, issue.title) : el("div", { class: "blank" }),
+    issue.has_photo ? thumbnail(`/issues/${issue.id}/photo`, issue.title) : el("div", { class: "blank" }),
     el("div", {},
       el("h4", { text: issue.title }),
       el("div", { class: "meta", text: [issue.site, issue.location].filter(Boolean).join(" · ") }),
