@@ -28,8 +28,16 @@ def test_the_page_asks_for_everything_beside_itself(client):
     assert 'fetch("/' not in script and 'BASE + "api"' in script
 
 
-def test_the_bare_address_leads_to_the_dashboard(client):
-    for address in ("/", BASE, BASE + "/", "/admin", BASE + "/admin"):
+def test_the_bare_address_is_the_home_page(client):
+    for address in ("/", BASE + "/", "/competitions/iqoo/"):
+        page = client.get(address)
+        assert page.status_code == 200 and "without the desk" in page.text and page.headers["cache-control"] == "no-cache"
+    # Without its last stroke the browser would look for the page's files one folder too high.
+    for address in (BASE, "/competitions/iqoo"):
+        answer = client.get(address, follow_redirects=False)
+        assert answer.status_code == 307 and answer.headers["location"] == address + "/"
+    # Where the administrator's page used to be still leads to the dashboard.
+    for address in ("/admin", BASE + "/admin"):
         answer = client.get(address, follow_redirects=False)
         assert answer.status_code == 307 and answer.headers["location"] == BASE + "/dashboard"
 

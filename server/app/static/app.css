@@ -44,6 +44,8 @@ label { display: block; font-size: 12px; letter-spacing: .08em; text-transform: 
 .mark { width: 38px; height: 38px; flex: none; border-radius: 10px; background: var(--yellow); display: grid; place-items: center; color: var(--ink); font-weight: 800; }
 .stripes { height: 5px; background: repeating-linear-gradient(135deg, var(--yellow) 0 12px, var(--ink) 12px 24px); }
 .brandmark { display: flex; align-items: center; gap: 12px; min-width: 0; }
+a.brandmark { text-decoration: none; color: inherit; }
+.hint a { color: var(--chalk); text-underline-offset: 3px; }
 .brandmark strong { display: block; font-size: 18px; letter-spacing: .03em; line-height: 1.15; }
 .brandmark span { display: block; color: var(--mute); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 

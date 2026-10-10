@@ -9,7 +9,7 @@ Team **techazsure** · iQOO Hackathon 2026 Grand Finale · Productivity track
 | Folder | What it is | Written |
 |---|---|---|
 | `android/` | **The finale build.** A native Android app that does everything on the phone: camera, voice, speech-to-text and a language model on the device, readings from the phone's sensors, PDF report, and reports passed from phone to phone with no network. No server takes part in making a report, and once signed in the app captures and builds reports in airplane mode. | During the finale, 9–11 Oct 2026 |
-| `server/` | **The server.** Accounts for five roles (sign-up with a code sent by email, approval by the level above, sign-in with a unique ID), the reports the phones send, the work on their issues, a web console for each role, and an assistant that summarises and ranks every issue, names who could take it and drafts the next step. | During the finale, 9–11 Oct 2026 |
+| `server/` | **The server.** Accounts for five roles (sign-up with a code sent by email, approval by the level above, sign-in with a unique ID), the reports the phones send, the work on their issues, a web console for each role, and an assistant that summarises and ranks every issue, names who could take it and drafts the next step. Its bare address is the home page that presents all of this, with the film, the pitch deck and the way in. | During the finale, 9–11 Oct 2026 |
 | `docker-compose.server.yml`, `deploy/` | **The server on a real machine.** The server and its database alone, and the scripts that put them under a path of an existing site (`deploy/setup.sh`, once) and update them after a push (`deploy/update.sh`). | During the finale, 9–11 Oct 2026 |
 | `backend/`, `frontend/` | The web prototype sent with the registration. The phone is the capture device and the models run on the computer that runs Docker. | Before the finale, 4 Oct 2026 |
 
@@ -26,6 +26,7 @@ docker compose up --build
 | Address | What you get |
 |---|---|
 | **http://localhost:8700** | The Android app: an install page with the APK that was just built from `android/` |
+| **http://localhost:8800** | The home page: what DeskLess is and how it works, with the film, the pitch deck and screens of the app and the dashboards. **Sign in** and **Sign up** are in its top bar. |
 | **http://localhost:8800/dashboard** | The sign-in page of the dashboards: administrator, managing director, manager, inspector, technical |
 | **http://localhost:8825** | A test mailbox that catches every email the server sends (opens on this computer only) |
 | **http://localhost:8600** | The web prototype. Tap **Load the sample walk-through** to see a finished report |
@@ -240,10 +241,10 @@ The administrator is not an account: there is one, named in the server's setting
 
 | Step | Where | What happens |
 |---|---|---|
-| 1. Sign up | App | Role, name, email, mobile number, Aadhaar number, a photo and a password, with the company's name (managing director) or the code of the person they will report to (everyone else). The form says whose code it is before anything is sent, and is checked on the phone first, the Aadhaar check digit included. |
-| 2. Confirm the email | App | A six-digit code is emailed. It works for ten minutes and five tries. |
+| 1. Sign up | App or browser | Role, name, email, mobile number, Aadhaar number, a photo and a password, with the company's name (managing director) or the code of the person they will report to (everyone else). The form says whose code it is before anything is sent, and is checked before it is sent, the Aadhaar check digit included. In a browser the form is at `/signup`, reached from **Sign up** on the home page. |
+| 2. Confirm the email | App or browser | A six-digit code is emailed. It works for ten minutes and five tries. |
 | 3. Approve | Dashboard | The person above sees the details and photo, and approves or rejects with a reason. They are emailed when someone is waiting. |
-| 4. Unique ID | Server | Approval gives the ID the person signs in with. It is emailed, and the waiting app shows it. A managing director or manager also gets the code to hand to their own people. |
+| 4. Unique ID | Server | Approval gives the ID the person signs in with. It is emailed, and the waiting app or browser page shows it. A managing director or manager also gets the code to hand to their own people. |
 | 5. Sign in | App or dashboard | ID and password. The phone keeps the sign-in for 30 days, and the fingerprint unlocks the app each time it is opened. |
 
 **Forgot password** is on the sign-in screen of the app and of the dashboard, and takes three steps: a six-digit code is emailed to the address the account was made with; the code is checked; and only then is the new password chosen, typed twice. The DeskLess ID or the account's email address starts it. Checking the code uses it up and gives a pass that is good for ten minutes and for one change of password, so nothing can be changed by someone who has not seen the email, and the same pass cannot set the password a second time. A wrong code is told so and counted (five tries), and the code can be sent again after a minute. Five wrong passwords lock the account for fifteen minutes; a new password lifts the lock. The administrator's password is a setting of the server and is not changed this way.
@@ -261,6 +262,18 @@ An issue the inspector already saw repaired on site arrives closed.
 On the phone, a built report also offers **Copy action items**: what each owner has to do, as plain text on the clipboard. With iQOO Office Kit the laptop shares the phone's clipboard, so the list is pasted straight into an email or a sheet there.
 
 At each of these steps the dashboard's assistant has already read the issue: it says what it is, how pressing it is and why, who is best placed to take it, and what the person looking should do next. See [The assistant](#the-assistant).
+
+### The home page
+
+The bare address of the server is its front door: http://localhost:8800 on this computer, `https://www.shaikalthaf.in/competitions/iqoo/` on our server. It says what DeskLess is and shows it: the four steps on the phone, a report the app built, the 90-second film, what is in the app, screens of the app, the kinds of place it is for, the consoles of each role, the pitch deck (slide by slide, and as a PDF) and what it is built with. **Sign in** in its top bar opens the dashboard; **Sign up** opens the same form as the app's, in the browser.
+
+| File | What it is |
+|---|---|
+| `server/app/static/home.html`, `home.css`, `home.js` | The page. Plain HTML, CSS and JavaScript; no build step, no fonts or scripts from anywhere else. |
+| `server/app/static/signup.html`, `signup.css`, `signup.js` | Signing up in a browser: the form, the emailed code, the wait, the DeskLess ID. It uses the same `/api/signup` doors as the app. |
+| `server/app/static/site/` | What the page shows: `film.mp4` with its poster, the deck (`deck-01.webp` to `deck-11.webp`, small copies, and the PDF), screens of the app (`app-*.webp`), pages of a report (`report-*.webp`) and the consoles (`dash-*.webp`). Replace a file under the same name and the page shows the new one after the server is updated. |
+
+The screens of the app were captured on the Android emulator while it was being built, with its test pictures. The consoles show a sample company on a throwaway server. The film's screens are drawn. The deck is the concept deck from before the finale, without its team slide.
 
 ### The dashboards
 
@@ -391,6 +404,7 @@ The app works on its own with no network: it captures, runs the models and build
 
 | | Address |
 |---|---|
+| Home page | `https://www.shaikalthaf.in/competitions/iqoo/` |
 | Dashboards | `https://www.shaikalthaf.in/competitions/iqoo/dashboard` |
 | What the app talks to | `https://www.shaikalthaf.in/competitions/iqoo/api/...` |
 
@@ -442,7 +456,7 @@ It reads the machine's free memory and stops if there is less than 1.5 GB, since
 | `POST /api/signup` | The sign-up form with the photo (multipart). Emails the code. |
 | `GET /api/signup/invite` | Whose code this is: the company and the person the newcomer would report to |
 | `POST /api/signup/verify`, `/api/signup/resend` | Confirm the email address with the code; ask for a new code |
-| `GET /api/signup/status` | How a sign-up is doing and who is to decide it, for the phone that made it |
+| `GET /api/signup/status` | How a sign-up is doing and who is to decide it, for the phone or browser that made it |
 | `POST /api/login`, `POST /api/admin/login` | Sign in: a person with their unique ID, the administrator with their email address |
 | `GET /api/me`, `/api/me/photo` | The signed-in person's details and photo |
 | `POST /api/password/forgot`, `/api/password/verify`, `/api/password/reset` | A forgotten password: email a code, check it (which gives a pass for one change), set the new password |
@@ -461,7 +475,7 @@ It reads the machine's free memory and stops if there is less than 1.5 GB, since
 | `GET /api/dashboard` | Everything the signed-in person's console shows: numbers, the fortnight, who is online, what happened lately, what needs them first with the proposed step, the triage lines, and what was sent to them |
 | `GET /api/health` | Status |
 
-FastAPI and SQLAlchemy on PostgreSQL, in `server/`; the dashboard is one page of plain HTML, CSS and JavaScript in `server/app/static/`, with no build step. The assistant's rules are in `server/app/assistant.py` and the part that speaks to the model in `server/app/writer.py`. The tests run the account flow, the roles, the work on an issue, the assistant's ranks and proposals, an issue passed from the administrator down to the technician and answered, and each refusal:
+FastAPI and SQLAlchemy on PostgreSQL, in `server/`; the dashboard is one page of plain HTML, CSS and JavaScript in `server/app/static/`, with no build step, and so are the home page and the sign-up page beside it. The assistant's rules are in `server/app/assistant.py` and the part that speaks to the model in `server/app/writer.py`. The tests run the account flow, the roles, the work on an issue, the assistant's ranks and proposals, an issue passed from the administrator down to the technician and answered, and each refusal:
 
 ```bash
 docker build --target test -t deskless-server-test server

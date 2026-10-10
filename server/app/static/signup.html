@@ -1,0 +1,132 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#0f1115">
+<title>DeskLess · Sign up</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%23ffc31f'/%3E%3Ctext x='32' y='43' font-family='Arial,sans-serif' font-size='28' font-weight='800' text-anchor='middle' fill='%230f1115'%3EDL%3C/text%3E%3C/svg%3E">
+<link rel="stylesheet" href="static/signup.css">
+</head>
+<body>
+
+<header class="top">
+  <a class="brand" href="./" aria-label="DeskLess, home"><span class="mark">DL</span><span class="name">DeskLess</span></a>
+  <span class="have">Have a DeskLess ID?</span>
+  <a class="btn" href="dashboard">Sign in</a>
+</header>
+
+<main>
+  <div class="card">
+    <div class="stripes"></div>
+
+    <!-- the form -->
+    <section id="step-form">
+      <h1>Create your account</h1>
+      <p class="hint">Your details go to the person who approves your sign-up. Once they have, you get your DeskLess ID and sign in with it, here and in the app.</p>
+
+      <form id="form" novalidate>
+        <fieldset>
+          <legend>I am a</legend>
+          <div class="pills" id="roles">
+            <label><input type="radio" name="role" value="md" checked><span>Managing Director</span></label>
+            <label><input type="radio" name="role" value="manager"><span>Manager</span></label>
+            <label><input type="radio" name="role" value="inspector"><span>Inspector</span></label>
+            <label><input type="radio" name="role" value="technical"><span>Technical</span></label>
+          </div>
+          <p class="hint small" id="role-says"></p>
+        </fieldset>
+
+        <div class="photo">
+          <div class="face" id="face" aria-hidden="true"></div>
+          <div>
+            <span class="label">Your photo</span>
+            <label class="btn" for="photo">Choose a photo</label>
+            <input id="photo" type="file" accept="image/*" class="unseen">
+            <p class="hint small">A clear picture of your face. It is shown beside your name.</p>
+          </div>
+        </div>
+
+        <label for="name">Full name</label>
+        <input id="name" autocomplete="name" placeholder="As on your ID" maxlength="120">
+
+        <label for="email">Email</label>
+        <input id="email" type="email" autocomplete="email" placeholder="you@example.com" maxlength="254">
+        <p class="hint small">A code is sent here to confirm it is yours.</p>
+
+        <label for="phone">Mobile number</label>
+        <input id="phone" type="tel" autocomplete="tel-national" inputmode="numeric" placeholder="10 digits">
+
+        <div id="for-md">
+          <label for="organisation">Company or organisation</label>
+          <input id="organisation" autocomplete="organization" placeholder="As it should appear on reports" maxlength="160">
+          <p class="hint small">The DeskLess administrator approves a new company.</p>
+        </div>
+        <div id="for-team" hidden>
+          <label for="invite">Team code</label>
+          <input id="invite" class="code" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="ABCD-EFGH" maxlength="12">
+          <p class="hint small" id="invite-says">From the person you will report to. They find it on their dashboard.</p>
+        </div>
+
+        <label for="aadhaar">Aadhaar number</label>
+        <input id="aadhaar" inputmode="numeric" autocomplete="off" placeholder="12 digits" maxlength="14">
+        <p class="hint small">Stored encrypted. Everyone, the administrator included, sees only the last four digits.</p>
+
+        <label for="password">Password</label>
+        <input id="password" type="password" autocomplete="new-password" placeholder="At least 8 characters">
+        <label for="again">Password again</label>
+        <input id="again" type="password" autocomplete="new-password">
+
+        <div class="error" id="form-error" role="alert"></div>
+        <button class="btn solid wide" id="form-send">Create account</button>
+      </form>
+    </section>
+
+    <!-- the code -->
+    <section id="step-code" hidden>
+      <h1>Check your email</h1>
+      <p class="hint">We sent a 6-digit code to <b id="code-to"></b>. It is good for <span id="code-minutes">10</span> minutes.</p>
+      <form id="code-form" novalidate>
+        <label for="code">Code</label>
+        <input id="code" class="code big" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="······">
+        <div class="error" id="code-error" role="alert"></div>
+        <button class="btn solid wide">Confirm</button>
+      </form>
+      <button class="btn quiet wide" id="code-again">Send a new code</button>
+      <button class="btn quiet wide" id="code-back">Use another email address</button>
+    </section>
+
+    <!-- the wait -->
+    <section id="step-wait" class="middle" hidden>
+      <div class="sign wait" aria-hidden="true"></div>
+      <h1>Waiting for approval</h1>
+      <p class="hint">Your email address is confirmed. <span id="wait-who"></span> now looks at your sign-up. Your DeskLess ID appears here, and is emailed to you, as soon as it is approved.</p>
+      <div class="error" id="wait-error" role="alert"></div>
+      <button class="btn wide" id="wait-check">Check now</button>
+      <button class="btn quiet wide" id="wait-forget">Start again with other details</button>
+    </section>
+
+    <!-- approved -->
+    <section id="step-done" class="middle" hidden>
+      <div class="sign done" aria-hidden="true"></div>
+      <h1 class="good">Approved</h1>
+      <p class="hint">Your DeskLess ID</p>
+      <button class="id" id="done-id" title="Copy"></button>
+      <p class="hint" id="done-says">Sign in with this ID and the password you chose. It has been emailed to you as well.</p>
+      <a class="btn solid wide" href="dashboard">Sign in</a>
+    </section>
+
+    <!-- not approved -->
+    <section id="step-no" class="middle" hidden>
+      <div class="sign no" aria-hidden="true"></div>
+      <h1>Not approved</h1>
+      <p class="hint" id="no-why"></p>
+      <button class="btn wide" id="no-again">Sign up again</button>
+    </section>
+  </div>
+  <p class="back"><a href="./">Back to the home page</a></p>
+</main>
+
+<script src="static/signup.js"></script>
+</body>
+</html>

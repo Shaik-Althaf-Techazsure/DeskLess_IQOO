@@ -1,0 +1,77 @@
+/* Signing up in a browser. The look of the sign-in card of the dashboard. */
+:root {
+  color-scheme: dark;
+  --ink: #0f1115; --coal: #171a20; --steel: #20242c; --line: #2c313b; --edge: #3a404c;
+  --chalk: #f3f4f6; --fog: #b3bac6; --mute: #8a919e; --yellow: #ffc31f; --good-text: #3ecf7a; --bad-text: #ff7a6e;
+  --sign: Bahnschrift, "Roboto Condensed", "Avenir Next Condensed", "HelveticaNeue-CondensedBold", "Arial Narrow", sans-serif-condensed, "Segoe UI", system-ui, sans-serif;
+}
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body { margin: 0; min-height: 100vh; background: radial-gradient(900px 500px at 50% -10%, #2a2410 0, transparent 60%), var(--ink); color: var(--chalk); font: 15px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+h1, p, fieldset, legend { margin: 0; padding: 0; border: 0; }
+a { color: inherit; }
+[hidden] { display: none !important; }
+:focus-visible { outline: 2px solid var(--yellow); outline-offset: 2px; }
+
+.top { display: flex; align-items: center; gap: 12px; padding: 14px 20px; max-width: 980px; margin: 0 auto; }
+.brand { display: flex; align-items: center; gap: 11px; text-decoration: none; margin-right: auto; }
+.mark { width: 36px; height: 36px; border-radius: 10px; background: var(--yellow); color: var(--ink); display: grid; place-items: center; font-weight: 800; font-size: 14px; }
+.name { font-family: var(--sign); font-stretch: 75%; font-weight: 700; font-size: 24px; letter-spacing: .02em; }
+.have { color: var(--mute); font-size: 14px; }
+
+main { padding: 12px 16px 48px; }
+.card { width: min(460px, 100%); margin: 0 auto; background: var(--coal); border: 1px solid var(--line); border-radius: 18px; padding: 0 26px 26px; overflow: hidden; animation: rise .5s both; }
+.stripes { height: 5px; margin: 0 -26px 24px; background: repeating-linear-gradient(135deg, var(--yellow) 0 12px, var(--ink) 12px 24px); }
+h1 { font-family: var(--sign); font-stretch: 75%; text-transform: uppercase; letter-spacing: .02em; font-size: 30px; line-height: 1.05; margin-bottom: 8px; }
+h1.good { color: var(--good-text); }
+.hint { color: var(--fog); font-size: 13.5px; }
+.hint.small { font-size: 12px; margin-top: 6px; color: var(--mute); }
+.hint.good { color: var(--good-text); }
+.hint.bad { color: var(--bad-text); }
+.hint b { color: var(--chalk); }
+
+label, legend, .label { display: block; font-size: 12px; letter-spacing: .08em; text-transform: uppercase; color: var(--mute); margin: 16px 0 6px; }
+input { font: inherit; width: 100%; padding: 11px 13px; border-radius: 12px; border: 1.5px solid var(--edge); background: var(--steel); color: var(--chalk); }
+input:focus { border-color: var(--yellow); outline: none; }
+input.code { font-family: ui-monospace, Consolas, Menlo, monospace; letter-spacing: .12em; text-transform: uppercase; }
+input.code.big { font-size: 26px; text-align: center; letter-spacing: .4em; padding: 14px; }
+.unseen { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
+
+.pills { display: flex; flex-wrap: wrap; gap: 8px; }
+.pills label { margin: 0; letter-spacing: 0; text-transform: none; font-size: 14px; cursor: pointer; }
+.pills input { position: absolute; opacity: 0; width: 1px; height: 1px; }
+.pills span { display: block; padding: 8px 14px; border-radius: 999px; border: 1px solid var(--edge); color: var(--fog); transition: background .15s, color .15s, border-color .15s; }
+.pills input:checked + span { background: var(--yellow); border-color: var(--yellow); color: var(--ink); font-weight: 700; }
+.pills input:focus-visible + span { outline: 2px solid var(--yellow); outline-offset: 2px; }
+
+.photo { display: flex; align-items: center; gap: 16px; margin-top: 18px; }
+.photo .label { margin-top: 0; }
+.face { width: 84px; height: 84px; flex: none; border-radius: 50%; border: 2px solid var(--edge); background: var(--steel) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%238a919e'%3E%3Ccircle cx='12' cy='8.500' r='4'/%3E%3Cpath d='M4 20.500c.800-4 4-6 8-6s7.200 2 8 6z'/%3E%3C/svg%3E") center / 54% no-repeat; }
+.face.has { background-size: cover; border-color: var(--yellow); }
+
+.btn { display: inline-flex; align-items: center; justify-content: center; font: inherit; font-weight: 600; text-decoration: none; cursor: pointer; border-radius: 12px; border: 1px solid var(--edge); background: var(--steel); color: var(--chalk); padding: 9px 16px; transition: border-color .15s, transform .12s; }
+.btn:hover { border-color: var(--fog); }
+.btn:active { transform: scale(.98); }
+.btn.solid { background: var(--yellow); border-color: var(--yellow); color: var(--ink); font-weight: 700; padding: 13px 16px; }
+.btn.quiet { background: transparent; }
+.btn.wide { width: 100%; margin-top: 10px; }
+.btn:disabled { opacity: .5; cursor: default; }
+.error { color: var(--bad-text); min-height: 20px; margin-top: 14px; font-size: 14px; }
+
+.middle { text-align: center; padding-top: 10px; }
+.sign { width: 64px; height: 64px; margin: 6px auto 18px; border-radius: 50%; display: grid; place-items: center; }
+.sign::before { font: 800 30px/1 system-ui, sans-serif; }
+.sign.wait { background: rgba(255, 195, 31, .14); color: var(--yellow); animation: breathe 2.4s ease-in-out infinite; }
+.sign.wait::before { content: "…"; translate: 0 -8px; }
+.sign.done { background: rgba(62, 207, 122, .16); color: var(--good-text); }
+.sign.done::before { content: "✓"; }
+.sign.no { background: rgba(255, 122, 110, .14); color: var(--bad-text); }
+.sign.no::before { content: "×"; }
+.id { display: block; width: 100%; margin: 10px 0 14px; padding: 14px; border-radius: 14px; border: 1.5px solid var(--yellow); background: rgba(255, 195, 31, .08); color: var(--yellow); font: 700 30px/1 var(--sign); font-stretch: 75%; letter-spacing: .08em; cursor: copy; }
+.back { text-align: center; margin: 18px 0 0; font-size: 14px; color: var(--mute); }
+.back a { text-underline-offset: 3px; }
+
+@keyframes rise { from { opacity: 0; transform: translateY(12px); } }
+@keyframes breathe { 50% { transform: scale(1.08); } }
+@media (max-width: 480px) { .have { display: none; } .card { padding: 0 20px 22px; } .stripes { margin: 0 -20px 22px; } }
+@media (prefers-reduced-motion: reduce) { *, *::before { animation: none !important; transition: none !important; } }
