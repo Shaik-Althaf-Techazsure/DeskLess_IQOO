@@ -18,6 +18,7 @@ from ..db import get_db
 from ..models import APPROVED, SUSPENDED, Account, Otp, now
 from ..service import aware, current_account, get_mailer, profile, send_code, use_code
 from .signup import MIN_PASSWORD
+from .types import for_phone
 
 router = APIRouter(prefix="/api", tags=["auth"])
 
@@ -77,7 +78,8 @@ def login(body: Login, db: Session = Depends(get_db)) -> dict:
 
 @router.get("/me")
 def me(account: Account = Depends(current_account), db: Session = Depends(get_db)) -> dict:
-    return profile(db, account)
+    """The person's details, and with them the report types their company made and the one it usually starts with."""
+    return profile(db, account) | for_phone(db, account)
 
 
 @router.get("/me/photo")

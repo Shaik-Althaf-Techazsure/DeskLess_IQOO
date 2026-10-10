@@ -57,6 +57,7 @@ import androidx.compose.material.icons.rounded.QrCode2
 import androidx.compose.material.icons.rounded.Place
 import androidx.compose.material.icons.rounded.RestartAlt
 import androidx.compose.material.icons.rounded.Sensors
+import androidx.compose.material.icons.rounded.SettingsInputAntenna
 import androidx.compose.material.icons.rounded.SwapHoriz
 import androidx.compose.material.icons.rounded.Videocam
 import androidx.compose.material3.AlertDialog
@@ -303,16 +304,27 @@ fun HomeScreen(state: AppState) {
         ) {
             item(key = "brand") { BrandBar(state, onSideBar = { scope.launch { sideBar.open() } }) }
             item(key = "hero") { Hero(state, onNew = { confirmNew = true }, onChangeType = { pickTemplate = true }) }
-            // A question about the walk, asked aloud and answered on the phone.
-            if (state.issues.isNotEmpty()) {
-                item(key = "ask") {
+            // A question about the walk, asked aloud and answered on the phone; and push to talk with
+            // the linked phones, which needs no internet either.
+            item(key = "ask") {
+                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    if (state.issues.isNotEmpty()) {
+                        BrandButton(
+                            text = "Ask the walk",
+                            onClick = { state.screen = Screen.Ask },
+                            icon = Icons.Rounded.Mic,
+                            kind = ButtonKind.Secondary,
+                            height = 50.dp,
+                            modifier = Modifier.weight(1f),
+                        )
+                    }
                     BrandButton(
-                        text = "Ask about this walk",
-                        onClick = { state.screen = Screen.Ask },
-                        icon = Icons.Rounded.Mic,
+                        text = "Walkie-talkie" + state.talks.count { !it.heard }.let { if (it > 0) " · $it new" else "" },
+                        onClick = { state.screen = Screen.Radio },
+                        icon = Icons.Rounded.SettingsInputAntenna,
                         kind = ButtonKind.Secondary,
                         height = 50.dp,
-                        modifier = Modifier.fillMaxWidth(),
+                        modifier = Modifier.weight(1f),
                     )
                 }
             }
@@ -739,7 +751,11 @@ private fun TemplatePicker(current: Template, onPick: (Template) -> Unit, onDism
                             }
                             Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                                 Text(template.title, style = MaterialTheme.typography.titleMedium, color = Chalk)
-                                Text(template.blurb, style = MaterialTheme.typography.bodySmall, color = Fog)
+                                Text(
+                                    text = (if (template.custom) "Your company's own · " else "") + template.blurb,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = Fog,
+                                )
                             }
                             if (chosen) Icon(Icons.Rounded.Check, contentDescription = "Chosen", tint = SafetyYellow, modifier = Modifier.size(22.dp))
                         }

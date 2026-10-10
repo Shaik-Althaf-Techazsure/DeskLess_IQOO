@@ -284,7 +284,7 @@ private fun Welcome(state: AppState, onSignIn: () -> Unit, onSignUp: () -> Unit)
         Text("DeskLess", style = MaterialTheme.typography.displaySmall, color = Chalk)
         Spacer(Modifier.height(6.dp))
         Text(
-            text = "Site reports from a photo and your voice, made on the phone.",
+            text = "Inspection reports from a photo and your voice, made on the phone. For any kind of place.",
             style = MaterialTheme.typography.bodyLarge,
             color = Fog,
             textAlign = TextAlign.Center,

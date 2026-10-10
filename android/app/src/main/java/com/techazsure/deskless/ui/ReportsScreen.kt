@@ -150,9 +150,9 @@ fun ReportsScreen(state: AppState) {
             items(Template.entries.filter { template -> state.reports.any { it.template == template } }) { template ->
                 Pill(
                     text = template.title,
-                    selected = kind == template.ordinal,
+                    selected = kind == Template.entries.indexOf(template),
                     count = state.reports.count { it.template == template },
-                    onClick = { kind = template.ordinal },
+                    onClick = { kind = Template.entries.indexOf(template) },
                 )
             }
         }

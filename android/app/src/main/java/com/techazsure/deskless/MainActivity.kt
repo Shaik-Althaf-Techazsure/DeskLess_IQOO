@@ -51,9 +51,11 @@ import com.techazsure.deskless.link.Pairing
 import com.techazsure.deskless.link.Voice
 import com.techazsure.deskless.models.ModelStore
 import com.techazsure.deskless.report.ReportLibrary
+import com.techazsure.deskless.data.OwnTypes
 import com.techazsure.deskless.ui.AccountFlow
 import com.techazsure.deskless.ui.AskScreen
 import com.techazsure.deskless.ui.LockScreen
+import com.techazsure.deskless.ui.RadioScreen
 import com.techazsure.deskless.ui.ReportsScreen
 import com.techazsure.deskless.ui.CaptureScreen
 import com.techazsure.deskless.ui.EditScreen
@@ -78,6 +80,8 @@ class MainActivity : ComponentActivity() {
             statusBarStyle = SystemBarStyle.dark(Color.TRANSPARENT),
             navigationBarStyle = SystemBarStyle.dark(Color.TRANSPARENT),
         )
+        // The company's own report types are read first: the walk in hand may be of one of them.
+        OwnTypes.load(filesDir)
         state = AppState(
             applicationContext,
             IssueStore(applicationContext),
@@ -269,6 +273,7 @@ fun DeskLessApp(state: AppState, lifecycleOwner: LifecycleOwner) {
                 Screen.Reports -> ReportsScreen(state)
                 Screen.Scan -> ScanScreen(state, lifecycleOwner)
                 Screen.Ask -> AskScreen(state)
+                Screen.Radio -> RadioScreen(state)
                 is Screen.Edit -> {
                     val issue = state.issues.firstOrNull { it.id == screen.id }
                     if (issue == null) {
@@ -292,13 +297,14 @@ private fun keyOf(screen: Screen): String = when (screen) {
     Screen.Reports -> "reports"
     Screen.Scan -> "scan"
     Screen.Ask -> "ask"
+    Screen.Radio -> "radio"
     is Screen.Edit -> "edit-${screen.id}"
     is Screen.Report -> "report-${screen.path}"
 }
 
 private fun depthOf(screen: Screen): Int = when (screen) {
     Screen.Home -> 0
-    Screen.Models, Screen.Sensors, Screen.Reports, Screen.Scan, Screen.Ask -> 1
+    Screen.Models, Screen.Sensors, Screen.Reports, Screen.Scan, Screen.Ask, Screen.Radio -> 1
     // A retake is opened from an issue, so it sits above it; a new capture sits below.
     is Screen.Capture -> if (screen.retakeId != null) 3 else 1
     is Screen.Edit -> 2

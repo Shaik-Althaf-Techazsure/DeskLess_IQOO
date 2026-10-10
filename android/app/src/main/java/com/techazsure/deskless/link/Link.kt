@@ -628,8 +628,11 @@ class Link(
                     notify("A sealed report arrived that this phone could not open.")
                     return@post
                 }
-                voice.say("Report received")
-                notify("$title received from ${sender.name}" + if (via != null) ", carried by $via." else ".")
+                // A spoken message is played by the app as it arrives; only a report is announced.
+                if (title != VOICE_TITLE) {
+                    voice.say("Report received")
+                    notify("$title received from ${sender.name}" + if (via != null) ", carried by $via." else ".")
+                }
                 // The receipt tells the sender it arrived and lets every phone carrying a copy drop it.
                 if (label.id !in receipts) {
                     val receipt = Receipt(label.id, me.id, Seal.sign(keys, receiptText(label.id)), System.currentTimeMillis())

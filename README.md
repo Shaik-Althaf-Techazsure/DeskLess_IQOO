@@ -74,7 +74,11 @@ The walk is the same wherever it is done: picture, voice, report. What differs i
 
 | Report type | For | Issues are sorted into |
 |---|---|---|
+| **General inspection** | Any place at all: a building, a floor, a yard, a vehicle, a room. A new walk starts with this one. | Safety, Electrical, Water and sanitation, Cleanliness, Equipment, Security, Access |
 | Site inspection | Construction projects of any size, fit-outs and handovers | Structural, Electrical, Plumbing, Fire safety, Housekeeping, Security |
+| Factory round | Plants and workshops: machines, guards, floors, stores | Machine safety, Electrical, Chemicals and gases, Housekeeping, Fire safety, Protective equipment, Utilities |
+| Warehouse inspection | Warehouses and depots: racking, docks, forklifts, stock | Racking and storage, Forklifts and traffic, Loading docks, Electrical, Housekeeping, Fire safety, Security |
+| Hotel inspection | Hotels and restaurants: rooms, kitchens, corridors | Guest rooms, Kitchen and food hygiene, Electrical, Water and plumbing, Housekeeping, Fire safety, Security |
 | Campus inspection | Colleges and schools: classrooms, labs, hostels, canteens | Classrooms and furniture, Laboratories, Hostel and canteen, Electrical, Water and sanitation, Fire safety, Security |
 | Office inspection | Government and company offices: counters, records, access | Public counters and waiting, Records and storage, Electrical and IT, Water and sanitation, Accessibility, Fire safety, Security |
 | Apartment inspection | Apartment blocks and housing societies | Lifts, Water and plumbing, Electrical, Common areas, Parking, Fire safety, Security |
@@ -83,7 +87,15 @@ The walk is the same wherever it is done: picture, voice, report. What differs i
 | Medication audit | Pharmacy and ward stock, storage and labelling; reads the expiry date on a pack | Expired stock, Storage and cold chain, Labelling, Controlled drugs, Records, Hygiene |
 | Community issue | Roads, water, waste and public safety, for the local office | Roads, Water and drainage, Waste, Street lighting, Public safety, Welfare |
 
-The server and the dashboards make no difference between them: an issue is an issue, with its place, type and severity, and the assistant ranks, routes and chases a broken lift in an apartment block as it does a crack in a beam. Another kind of place is one more entry in `data/Template.kt`.
+The server and the dashboards make no difference between them: an issue is an issue, with its place, type and severity, and the assistant ranks, routes and chases a broken lift in an apartment block as it does a crack in a beam.
+
+**A company makes its own.** No list covers every kind of place, so a company whose place is none of these makes a report type for itself, on its dashboard, in a minute: a name ("Bus depot check"), what is walked and looked at, what the place is called ("Depot"), the kinds of issue (Tyres, Brakes, Lights, Fuel point), and in its own words what counts as serious there, which the model on the phone is then told. Its people's phones fetch the type the next time they reach the server and keep it for when there is no network, so **a new industry needs no new version of the app**. The managing director also says which type the company's walks start with; a newly installed phone starts with that one by itself, and anyone can still pick another for a walk.
+
+### Walkie-talkie
+
+With no internet and no mobile signal, people on the same site still need to talk. **Walkie-talkie** on the first screen is push to talk between linked phones: hold the button, speak, let go. The message is squeezed to about 4 KB for each second of speech and sent through the same sealed link that carries reports, over Bluetooth or Wi-Fi Direct. It plays on the other phone as it arrives. A phone out of reach gets it when it comes back into reach, or sooner through any DeskLess phone in between, which carries the message without being able to hear it. The speaker sees, for each linked phone, whether the message is waiting, being carried, or was heard.
+
+It is a walkie-talkie in how it is used, not a radio set. A phone has no long-range radio that an app may transmit on; what DeskLess uses is the phone's Bluetooth and Wi-Fi. So the phones have to be within that reach of each other, some tens of metres, or have DeskLess phones in between; and DeskLess has to be open on them.
 
 ### Ask DeskLess
 
@@ -164,6 +176,8 @@ Phones exchange their public keys the first time they connect after linking, und
 - Accuracy on mixed Hindi-English speech.
 - The accounts, the dashboards and the sending of reports on a real phone and a real server. They were tried with the Android emulator and the server in Docker on one computer: the sign-up form with a team code, sign-in, a report built on the emulator arriving on the manager's dashboard with its pictures, and the dashboards in a desktop browser at desktop and phone width. Email was sent only to the test mailbox.
 - Speed of the picture check on a video issue (three stills) on the phone.
+- The walkie-talkie between real phones: how far it reaches, how quickly a message crosses on Bluetooth alone, how it sounds, and whether the phones' battery managers let the link run. Between two emulators a 3-second message (13 KB) arrived and was listed within seconds, and the sender's screen went to "heard".
+- A company's own report type through the model on the phone; it was made, fetched and shown on an emulator, and a new walk started with it by itself.
 - The report types other than the site inspection. On an emulator, one typed note was run through the model under the hospital round ("The oxygen cylinder in ward three is not chained to the wall" came back as *Oxygen cylinder unsecured in ward three*, type Medical gases and equipment, High). The others were tried on screen only, and none has been used on the phone or in a real place of its kind.
 - How well a model of this size judges real site photos. This is why its verdict can always be overruled.
 - The sensor features on a real phone. They were written and tried on the Android emulator, where the capture stamp, the level, the noise and vibration meters, lift-to-talk, naming a tag (with a simulated tag) and the signed report work. Real NFC tags, the step counter, the torch, lens switching, the feel of the motor and how close the readings are to real instruments still have to be checked on the phone.
@@ -458,7 +472,7 @@ It reads the machine's free memory and stops if there is less than 1.5 GB, since
 | `POST /api/signup/verify`, `/api/signup/resend` | Confirm the email address with the code; ask for a new code |
 | `GET /api/signup/status` | How a sign-up is doing and who is to decide it, for the phone or browser that made it |
 | `POST /api/login`, `POST /api/admin/login` | Sign in: a person with their unique ID, the administrator with their email address |
-| `GET /api/me`, `/api/me/photo` | The signed-in person's details and photo |
+| `GET /api/me`, `/api/me/photo` | The signed-in person's details, with their company's own report types and its usual one; and their photo |
 | `POST /api/password/forgot`, `/api/password/verify`, `/api/password/reset` | A forgotten password: email a code, check it (which gives a pass for one change), set the new password |
 | `POST /api/web-link`, `/api/web-link/open` | A link that works once, with which the app opens the dashboard already signed in |
 | `GET /api/people`, `POST /api/people/{id}/approve`, `/reject` | The people below the one asking, the sign-ups waiting for them, and the deciding of those |
@@ -470,6 +484,8 @@ It reads the machine's free memory and stops if there is less than 1.5 GB, since
 | `GET /api/technicians`, `POST /api/issues/{id}/assign` | Who an issue can be given to; give it out with a deadline and a word to the technician |
 | `POST /api/issues/{id}/send`, `GET /api/inbox` | Pass an issue to someone with a note; what waits on the person asking, and what they wait on others for |
 | `POST /api/company/autopilot` | The managing director switches the assistant's own rounds on or off for their company |
+| `GET /api/report-types`, `POST /api/report-types`, `DELETE /api/report-types/{key}` | The report types that come with the app and the company's own; a managing director or manager makes one; the managing director removes one |
+| `POST /api/company/report-type` | The managing director says which report type the company's walks start with |
 | `POST /api/issues/{id}/fixed` | The technician marks it fixed, with a photo of the repair (multipart) |
 | `POST /api/issues/{id}/close`, `/reopen` | Accept a repair and close the issue; send it back |
 | `GET /api/dashboard` | Everything the signed-in person's console shows: numbers, the fortnight, who is online, what happened lately, what needs them first with the proposed step, the triage lines, and what was sent to them |

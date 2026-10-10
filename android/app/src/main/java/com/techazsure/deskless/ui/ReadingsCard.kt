@@ -115,7 +115,7 @@ fun ReadingsCard(state: AppState, issue: Issue) {
         modifier = Modifier.fillMaxWidth(),
     ) {
         Column(modifier = Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Text("SITE READINGS", style = MaterialTheme.typography.labelSmall, color = Fog)
+            Text("READINGS ON THE SPOT", style = MaterialTheme.typography.labelSmall, color = Fog)
 
             // What the sensors read by themselves at the moment of the picture.
             val stamped = listOfNotNull(

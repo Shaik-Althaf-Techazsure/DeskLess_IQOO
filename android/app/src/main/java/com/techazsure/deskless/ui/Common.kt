@@ -61,6 +61,11 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.AccountBalance
 import androidx.compose.material.icons.rounded.Apartment
 import androidx.compose.material.icons.rounded.Construction
+import androidx.compose.material.icons.rounded.FactCheck
+import androidx.compose.material.icons.rounded.Hotel
+import androidx.compose.material.icons.rounded.PrecisionManufacturing
+import androidx.compose.material.icons.rounded.Tune
+import androidx.compose.material.icons.rounded.Warehouse
 import androidx.compose.material.icons.rounded.LocalHospital
 import androidx.compose.material.icons.rounded.School
 import androidx.compose.material.icons.rounded.Storefront
@@ -228,16 +233,22 @@ fun SeverityPill(severity: Severity, modifier: Modifier = Modifier) {
     }
 }
 
-fun templateIcon(template: Template?): ImageVector = when (template) {
-    Template.SITE -> Icons.Rounded.Construction
-    Template.CAMPUS -> Icons.Rounded.School
-    Template.OFFICE -> Icons.Rounded.AccountBalance
-    Template.RESIDENTIAL -> Icons.Rounded.Apartment
-    Template.RETAIL -> Icons.Rounded.Storefront
-    Template.HOSPITAL -> Icons.Rounded.LocalHospital
-    Template.MEDICATION -> Icons.Rounded.Medication
-    Template.COMMUNITY -> Icons.Rounded.Groups
+fun templateIcon(template: Template?): ImageVector = when (template?.name) {
+    "GENERAL" -> Icons.Rounded.FactCheck
+    "SITE" -> Icons.Rounded.Construction
+    "FACTORY" -> Icons.Rounded.PrecisionManufacturing
+    "WAREHOUSE" -> Icons.Rounded.Warehouse
+    "CAMPUS" -> Icons.Rounded.School
+    "OFFICE" -> Icons.Rounded.AccountBalance
+    "RESIDENTIAL" -> Icons.Rounded.Apartment
+    "RETAIL" -> Icons.Rounded.Storefront
+    "HOTEL" -> Icons.Rounded.Hotel
+    "HOSPITAL" -> Icons.Rounded.LocalHospital
+    "MEDICATION" -> Icons.Rounded.Medication
+    "COMMUNITY" -> Icons.Rounded.Groups
     null -> Icons.Rounded.Description
+    // A type the company made for itself.
+    else -> Icons.Rounded.Tune
 }
 
 /** A rounded choice chip, used for filters and for picking an issue's type. */

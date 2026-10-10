@@ -983,7 +983,7 @@ private fun EntryCard(state: AppState, issue: Issue) {
                     }
                 }
             }
-            EntryField(Icons.Rounded.Place, "Location", issue.location, "Where on the site") { text ->
+            EntryField(Icons.Rounded.Place, "Location", issue.location, "Where in the place") { text ->
                 state.edit(issue.id) { it.copy(location = text) }
             }
             SeverityPicker(issue.severity) { severity -> state.edit(issue.id) { it.copy(severity = severity) } }

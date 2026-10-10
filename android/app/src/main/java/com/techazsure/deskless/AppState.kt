@@ -25,10 +25,14 @@ import com.techazsure.deskless.data.IssueStore
 import com.techazsure.deskless.data.Reading
 import com.techazsure.deskless.data.Readings
 import com.techazsure.deskless.data.Severity
+import com.techazsure.deskless.data.OwnTypes
 import com.techazsure.deskless.data.Stamp
 import com.techazsure.deskless.data.Template
 import com.techazsure.deskless.link.Link
 import com.techazsure.deskless.link.Peer
+import com.techazsure.deskless.link.Talk
+import com.techazsure.deskless.link.TalkMessage
+import com.techazsure.deskless.link.VOICE_TITLE
 import com.techazsure.deskless.link.Voice
 import com.techazsure.deskless.models.ModelDownloads
 import com.techazsure.deskless.models.ModelFetch
@@ -79,6 +83,9 @@ sealed interface Screen {
 
     /** A question about the walk, asked aloud or typed, answered on the phone. */
     data object Ask : Screen
+
+    /** Push to talk with the linked phones, with no internet. */
+    data object Radio : Screen
     data class Edit(val id: String) : Screen
 
     /** One built report. [fromLibrary] is where Back goes: the library, or the current walk. */
@@ -279,6 +286,19 @@ class AppState(
      * the main thread.
      */
     private fun takeIn(pack: File, from: Peer, via: String?): String? {
+        // A spoken message, not a report: it joins the others and is played at once.
+        val talkId = UUID.randomUUID().toString().take(8)
+        talk.unwrap(pack, talkId)?.let { seconds ->
+            val message = TalkMessage(talkId, from.id, from.name, System.currentTimeMillis(), seconds, heard = false)
+            scope.launch {
+                talks.add(message)
+                keepTalks()
+                haptics.filled()
+                notice = "${from.name} is talking" + if (via != null) " (carried by $via)." else "."
+                playTalk(message)
+            }
+            return VOICE_TITLE
+        }
         val (pdf, about) = ReportPack.unzip(pack, library.folder, from.id) ?: return null
         val entry = library.receive(pdf, about, from.name)
         scope.launch {
@@ -290,6 +310,68 @@ class AppState(
             }
         }
         return entry.place.takeIf { it.isNotBlank() }?.let { "The $it report" } ?: "A report"
+    }
+
+    // ---------------------------------------------------------------- walkie-talkie
+    //
+    // Push to talk with the linked phones, with no internet: what is said while the button is held goes
+    // through the same sealed link as the reports, and is played on the other phone as it arrives.
+
+    private val talk = Talk(context)
+
+    /** What has been said and heard, oldest first. */
+    val talks = mutableStateListOf<TalkMessage>().apply { addAll(talk.load()) }
+
+    /** The message being played right now, by its id. */
+    var talkPlaying by mutableStateOf<String?>(null)
+        private set
+
+    fun startTalking(): Boolean = talk.start()
+
+    fun cancelTalking() {
+        talk.stop()
+    }
+
+    /**
+     * The button was let go after [seconds]: the message is sealed for every linked phone and sent.
+     * Returns what to tell the person when it could not be, otherwise nothing.
+     */
+    fun stopTalking(seconds: Int): String? {
+        if (!talk.stop() || seconds < 1) return "Hold the button while you speak, then let go."
+        val to = link.peers.map { it.id }
+        if (to.isEmpty()) return "Link a phone first: the yellow button on the first screen."
+        val id = UUID.randomUUID().toString().take(8)
+        if (link.send(talk.wrap(seconds), "talk-$id", VOICE_TITLE, to) == 0) {
+            return "The linked phones have not met this one since linking. Open DeskLess on both, side by side, once."
+        }
+        talk.keepOwn(id)
+        talks.add(TalkMessage(id, "", "You", System.currentTimeMillis(), seconds, to))
+        keepTalks()
+        haptics.click()
+        return null
+    }
+
+    fun playTalk(message: TalkMessage) {
+        val at = talks.indexOfFirst { it.id == message.id }
+        if (at >= 0 && !talks[at].heard) {
+            talks[at] = talks[at].copy(heard = true)
+            keepTalks()
+        }
+        talkPlaying = message.id
+        talk.play(message) { if (talkPlaying == message.id) talkPlaying = null }
+    }
+
+    fun quietTalk() {
+        talk.quiet()
+        talkPlaying = null
+    }
+
+    private fun keepTalks() {
+        val kept = talk.save(talks.toList())
+        if (kept.size != talks.size) {
+            talks.clear()
+            talks.addAll(kept)
+        }
     }
 
     /** Reports that came from other phones and have not been opened here yet, newest first. */
@@ -313,6 +395,7 @@ class AppState(
     // building a report work with no network, and a report built offline is sent when the network is back.
 
     private val account = AccountStore(context)
+    private val filesDir: File = context.filesDir
     private val api = Api { account.server }
 
     /** The signed-in person; null when nobody is signed in. */
@@ -410,6 +493,8 @@ class AppState(
                 photoVersion++
                 if (inspection.inspector.isBlank()) updateInspection(inspection.site, person.name) else link.rename(person.name)
                 toldToSignIn = false
+                // The company's own report types, and the one it starts its walks with, come with the first check-in.
+                checkIn()
                 sendWalk()
                 sendToOffice()
                 null
@@ -577,11 +662,15 @@ class AppState(
     fun checkIn() {
         if (profile == null || account.token.isBlank()) return
         scope.launch {
-            online { Profile.from(api.me(account.token)) }.onSuccess { person ->
+            online { api.me(account.token) }.onSuccess { said ->
+                val person = Profile.from(said)
                 if (person != profile) {
                     account.signedIn(account.token, person)
                     profile = person
                 }
+                // With the person's details come the report types their company made for itself, and
+                // the one it usually starts with. A walk nobody has begun yet starts with that one.
+                OwnTypes.heard(filesDir, said)?.let { usual -> if (issues.isEmpty()) changeTemplate(usual) }
             }
         }
     }
@@ -881,7 +970,7 @@ class AppState(
     private fun walkLines(): String {
         val open = issues.count { !it.resolved }
         val head = listOfNotNull(
-            inspection.site.takeIf { it.isNotBlank() }?.let { "Site: $it." },
+            inspection.site.takeIf { it.isNotBlank() }?.let { "Place: $it." },
             "${issues.size} issues found, $open still open, ${issues.size - open} fixed.",
         ).joinToString(" ")
         return head + "\n" + issues.withIndex().joinToString("\n") { (i, issue) ->

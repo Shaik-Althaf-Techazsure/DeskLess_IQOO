@@ -80,7 +80,7 @@ data class Inspection(
     val site: String = "",
     val inspector: String = "",
     val startedAt: Long = System.currentTimeMillis(),
-    val template: Template = Template.SITE,
+    val template: Template = Template.GENERAL,
 )
 
 /** One inspection at a time: a JSON index plus the photo and voice files, all in app storage. */
@@ -98,7 +98,7 @@ class IssueStore(context: Context) {
                 site = root.optString("site"),
                 inspector = root.optString("inspector"),
                 startedAt = root.optLong("startedAt", System.currentTimeMillis()),
-                template = Template.entries.firstOrNull { it.name == root.optString("template") } ?: Template.SITE,
+                template = Template.named(root.optString("template").ifBlank { "SITE" }),
             )
             val array = root.optJSONArray("issues") ?: JSONArray()
             inspection to (0 until array.length()).map { issueFrom(array.getJSONObject(it)) }

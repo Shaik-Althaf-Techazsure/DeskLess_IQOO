@@ -49,7 +49,8 @@ def test_sign_up_code_approval_and_sign_in(client, mailbox, admin):
     }
     profile["invite_code"] = code
     me = {"Authorization": f"Bearer {signed_in.json()['token']}"}
-    assert client.get("/api/me", headers=me).json() == profile
+    # With the person's details the phone is told of its company's own report types; this company has none.
+    assert client.get("/api/me", headers=me).json() == profile | {"report_types": [], "report_type": ""}
     assert client.get("/api/me/photo", headers=me).headers["content-type"] == "image/jpeg"
 
 

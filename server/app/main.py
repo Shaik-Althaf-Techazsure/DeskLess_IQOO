@@ -20,7 +20,7 @@ from . import autopilot, metrics, writer
 from .config import settings
 from .db import SessionLocal, init_db
 from .mailer import Mailer
-from .routers import admin, auth, people, signup, work
+from .routers import admin, auth, people, signup, work, types
 
 STATIC = Path(__file__).parent / "static"
 
@@ -155,6 +155,7 @@ app.include_router(auth.router)
 app.include_router(admin.router)
 app.include_router(people.router)
 app.include_router(work.router)
+app.include_router(types.router)
 
 
 @app.exception_handler(HTTPException)

@@ -26,8 +26,8 @@ let reportSearch = "";
 
 const NAV = {
   admin: [["overview", "Control room", "grid"], ["inbox", "Inbox", "inbox"], ["approvals", "Approvals", "check"], ["companies", "Companies", "building"], ["people", "People", "users"], ["reports", "Reports", "file"], ["issues", "Issues", "alert"], ["system", "System", "pulse"]],
-  md: [["overview", "Console", "grid"], ["inbox", "Inbox", "inbox"], ["approvals", "Approvals", "check"], ["issues", "Issues", "alert"], ["reports", "Reports", "file"], ["people", "People", "users"]],
-  manager: [["overview", "Console", "grid"], ["inbox", "Inbox", "inbox"], ["approvals", "Approvals", "check"], ["issues", "Issues", "alert"], ["reports", "Reports", "file"], ["people", "My team", "users"]],
+  md: [["overview", "Console", "grid"], ["inbox", "Inbox", "inbox"], ["approvals", "Approvals", "check"], ["issues", "Issues", "alert"], ["reports", "Reports", "file"], ["people", "People", "users"], ["types", "Report types", "layers"]],
+  manager: [["overview", "Console", "grid"], ["inbox", "Inbox", "inbox"], ["approvals", "Approvals", "check"], ["issues", "Issues", "alert"], ["reports", "Reports", "file"], ["people", "My team", "users"], ["types", "Report types", "layers"]],
   inspector: [["overview", "Console", "grid"], ["inbox", "Inbox", "inbox"], ["reports", "My reports", "file"], ["issues", "My issues", "alert"]],
   technical: [["overview", "Console", "grid"], ["issues", "My jobs", "wrench"], ["inbox", "Inbox", "inbox"]],
 };
@@ -40,6 +40,7 @@ const ICONS = {
   alert: "M12 9v4M12 17h.01M10.3 3.9L1.8 18a2 2 0 001.7 3h17a2 2 0 001.7-3L13.7 3.9a2 2 0 00-3.4 0z",
   pulse: "M22 12h-4l-3 9L9 3l-3 9H2",
   wrench: "M14.7 6.3a4 4 0 00-5.4 5.4L3 18l3 3 6.3-6.3a4 4 0 005.4-5.4l-2.5 2.5-2.5-2.5z",
+  layers: "M12 2l10 5-10 5L2 7zM2 12l10 5 10-5M2 17l10 5 10-5",
   inbox: "M22 12h-6l-2 3h-4l-2-3H2M5.5 5.1L2 12v6a2 2 0 002 2h16a2 2 0 002-2v-6l-3.5-6.9A2 2 0 0016.8 4H7.2a2 2 0 00-1.7 1.1z",
 };
 const STATUS = { open: "To give out", assigned: "With technician", fixed: "Fixed, to check", closed: "Closed" };
@@ -1076,6 +1077,7 @@ const LISTS = {
   reports: () => "/reports",
   issues: () => "/issues" + (ofReport ? "?report=" + encodeURIComponent(ofReport.id) : ""),
   inbox: () => "/inbox",
+  types: () => "/report-types",
 };
 
 let loading = 0;
@@ -1100,7 +1102,7 @@ async function load(ready = null) {
       get("/dashboard").then((fresh) => { dash = fresh; drawNav(); }, () => {});
       if (mine !== loading) return;
       if (view === "issues") issues = rows;
-      content = { approvals, people, companies, reports, issues: issuesView, inbox: inboxView }[view](rows);
+      content = { approvals, people, companies, reports, issues: issuesView, inbox: inboxView, types: typesView }[view](rows);
     }
     if (mine !== loading) return;     // a newer request has overtaken this one
     board = !live ? null : view === "overview" ? overviewBoard() : systemBoard();
@@ -1265,7 +1267,7 @@ function overviewBoard() {
       health ? panel("Server health", health.node, "w4") : panel("Not closed, by severity", severity.node, leads ? "w4" : "w6")),
     el("div", { class: "cols" },
       health ? panel("Not closed, by severity", severity.node, "w4") : null,
-      el("div", { class: "card panel " + (health ? "w4" : "w6") }, el("div", { class: "head" }, el("h4", { text: "By site" }), closedKey.cloneNode(true)), sites.node),
+      el("div", { class: "card panel " + (health ? "w4" : "w6") }, el("div", { class: "head" }, el("h4", { text: "By place" }), closedKey.cloneNode(true)), sites.node),
       el("div", { class: "card panel " + (health ? "w4" : "w6") }, el("div", { class: "head" }, el("h4", { text: "By type" }), closedKey), kinds.node)),
     firms ? panel("Companies", firms.node, "") : null,
     teamsCard,
@@ -1616,7 +1618,7 @@ function issuesView() {
     el("div", { class: "tools" }, search,
       ofReport ? el("button", { text: "All issues", onclick: () => go("issues", issueFilter) }) : null,
       el("button", { text: "Export", onclick: () => download("deskless-issues.csv", [
-        ["Issue", "title"], ["Site", "site"], ["Where", "location"], ["Type", "category"], ["Severity", (row) => SEVERITY[row.severity] || row.severity],
+        ["Issue", "title"], ["Place", "site"], ["Where", "location"], ["Type", "category"], ["Severity", (row) => SEVERITY[row.severity] || row.severity],
         ["Stands", (row) => STATUS[row.status] || row.status], ["Overdue", (row) => (row.overdue ? "yes" : "")], ["Due", (row) => row.due_on || row.due_text],
         ["AI rank", (row) => row.priority.score], ["AI band", (row) => row.priority.band_name], ["Why", (row) => row.priority.why.join("; ")],
         ["Reported by", "reported_by"], ["Reported", (row) => when(row.captured_at)], ["With", "assigned_to_name"], ["Fixed", (row) => when(row.fixed_at)],
@@ -1782,6 +1784,84 @@ function talkBox(issue) {
     el("div", { class: "row end" }, sendIt));
 }
 
+// ---------------------------------------------------------------- report types
+//
+// DeskLess is not for one trade. The app comes with a type for many kinds of place and a general one for
+// any place; a company whose place is none of those makes its own here, and its phones pick it up.
+
+function typesView(data) {
+  heading("Report types", "DeskLess works for any kind of place. Say which type your walks start with, or make one of your own: the phones pick it up by themselves, with no new version of the app.");
+  const titles = Object.fromEntries([...data.built_in, ...data.own].map((one) => [one.key, one.title]));
+
+  const usual = el("select", { disabled: !data.may_set },
+    el("option", { value: "", text: "Each person chooses" }),
+    data.own.length ? el("optgroup", { label: "Your company's own" }, ...data.own.map((one) => el("option", { value: one.key, text: one.title }))) : null,
+    el("optgroup", { label: "Come with the app" }, ...data.built_in.map((one) => el("option", { value: one.key, text: one.title }))));
+  usual.value = data.usual;
+  usual.onchange = async () => {
+    try {
+      await post("/company/report-type", { key: usual.value });
+      note(usual.value ? `New walks now start as “${titles[usual.value]}”. Phones take it up when they next reach the server.` : "Each person now chooses the type of their walk.");
+    } catch (error) {
+      note(error.message, true);
+      load();
+    }
+  };
+
+  const own = data.own.length
+    ? data.own.map((one) => {
+      const remove = data.may_set ? el("button", { class: "small danger", text: "Remove" }) : null;
+      if (remove) twice(remove, "Remove", async () => { await api("/report-types/" + encodeURIComponent(one.key), { method: "DELETE" }); note(`“${one.title}” is removed.`); load(); });
+      return el("div", { class: "card kind" },
+        el("div", { class: "head" }, el("h4", { text: one.title }), chip("Yours", "role"), remove),
+        one.checks ? el("p", { text: "Checks " + one.checks + "." }) : null,
+        el("div", { class: "kinds" }, el("span", { text: `${one.place || "Place"} · sorted into` }), ...[...one.categories, "Other"].map((kind) => chip(kind))),
+        one.serious ? el("p", { class: "hint", text: "Treated as serious: " + one.serious }) : null,
+        el("p", { class: "hint", text: `Made by ${one.made_by}, ${when(one.made_at)}` }));
+    })
+    : [el("div", { class: "card hint", text: "Your company has made none yet. If none of the types below fits your place, make one: it takes a minute." })];
+
+  const field = (label, input) => el("div", {}, el("label", { text: label }), input);
+  const title = el("input", { maxlength: 40, placeholder: "Bus depot check", required: true });
+  const checks = el("input", { maxlength: 200, placeholder: "buses, bays and the fuel point of a bus depot" });
+  const place = el("input", { maxlength: 30, placeholder: "Depot" });
+  const kinds = el("input", { placeholder: "Tyres, Brakes, Lights, Fuel point, Cleanliness" });
+  const serious = el("input", { maxlength: 300, placeholder: "a fuel leak, or a bus with failed brakes" });
+  const add = el("button", { class: "primary", text: "Make this report type" });
+  const form = data.may_make ? el("form", { class: "card kind" },
+    el("div", { class: "head" }, el("h4", { text: "Make one for your kind of place" })),
+    el("div", { class: "pairs" }, field("Name of the report type", title), field("The place is called", place)),
+    field("What is walked and looked at", checks),
+    field("Kinds of issue, with commas between (up to seven; “Other” is always there)", kinds),
+    field("What counts as serious there (the AI on the phone is told this)", serious),
+    el("div", { class: "row end" }, add)) : null;
+  if (form) {
+    form.onsubmit = async (event) => {
+      event.preventDefault();
+      add.disabled = true;
+      try {
+        const made = await post("/report-types", { title: title.value, checks: checks.value, place: place.value, serious: serious.value, categories: kinds.value.split(",").map((kind) => kind.trim()).filter(Boolean) });
+        note(`“${made.title}” is made. It shows on your people's phones when they next reach the server.`);
+        load();
+      } catch (error) {
+        note(error.message, true);
+        add.disabled = false;
+      }
+    };
+  }
+
+  return [el("div", { class: "board" },
+    el("div", { class: "card kind" },
+      el("div", { class: "head" }, el("h4", { text: "The type a new walk starts with" })),
+      usual,
+      el("p", { class: "hint", text: data.may_set ? "Anyone can still pick another type for a walk on their phone." : "Set by your managing director. Anyone can still pick another type for a walk on their phone." })),
+    el("h3", { class: "section", text: `Your company's own · ${data.own.length}` }),
+    ...own,
+    form,
+    el("h3", { class: "section", text: `Come with the app · ${data.built_in.length}` }),
+    el("div", { class: "card kind" }, el("div", { class: "kinds" }, ...data.built_in.map((one) => chip(one.title)))))];
+}
+
 // ---------------------------------------------------------------- the inbox
 
 function inboxView(boxes) {
@@ -1810,7 +1890,7 @@ async function openIssue(id) {
     ? el("a", { href: `https://www.google.com/maps?q=${issue.lat},${issue.lon}`, target: "_blank", rel: "noopener", style: "color:#8fbcf5", text: `${issue.lat.toFixed(5)}, ${issue.lon.toFixed(5)}` })
     : null;
   const details = facts([
-    ["Site", issue.site], ["Where", issue.location], ["Type", issue.category],
+    ["Place", issue.site], ["Where", issue.location], ["Type", issue.category],
     ["Reported", `${issue.reported_by} · ${when(issue.captured_at)}`],
     ["Named in the note", issue.owner], ["Due", due],
     ["With", issue.assigned_to_name ? `${issue.assigned_to_name} · given by ${issue.assigned_by}, ${when(issue.assigned_at)}` : ""],

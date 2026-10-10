@@ -54,6 +54,34 @@ class Company(Base):
     #: Whether the assistant may chase work by itself in this company: remind, and take a stuck issue
     #: one level up. On unless the managing director switches it off.
     autopilot: Mapped[bool | None] = mapped_column(Boolean, nullable=True, default=True)
+    #: The report type the company's walks start with: one that comes with the app, or one of its own.
+    #: Empty leaves the choice to each person.
+    report_type: Mapped[str | None] = mapped_column(String(20), nullable=True, default="")
+
+
+class ReportType(Base):
+    """
+    A report type a company made for its own kind of place: a bus depot, a temple, a data centre. The
+    phones of its people fetch it, so nothing has to be built into the app for it.
+    """
+
+    __tablename__ = "report_type"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    company_id: Mapped[str] = mapped_column(String(32), index=True)
+    #: What a walk of this type is stored under, on the phone and here: "OWN-" and eight letters or digits.
+    key: Mapped[str] = mapped_column(String(20), unique=True)
+    title: Mapped[str] = mapped_column(String(40))
+    #: What is walked and looked at, in the company's words.
+    checks: Mapped[str] = mapped_column(String(200), default="")
+    #: What the place is called.
+    place: Mapped[str] = mapped_column(String(30), default="")
+    #: The kinds an issue can be sorted into, as a JSON list; the app adds "Other".
+    categories: Mapped[str] = mapped_column(Text, default="[]")
+    #: What counts as serious there, in the company's words; the phone's model is told it.
+    serious: Mapped[str] = mapped_column(String(300), default="")
+    made_by: Mapped[str] = mapped_column(String(120), default="")
+    made_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
 
 
 class Account(Base):
