@@ -155,6 +155,8 @@ class Structurer(private val models: ModelStore, private val cacheRoot: File) {
             "Reply with a single JSON object and nothing else, with exactly this key:",
             "\"answer\": the answer in one to three short sentences, as you would say it aloud. Name the issue numbers you mean.",
             "Use only the issues given. If they do not hold the answer, say that this walk does not show it. Do not invent names, places or dates.",
+            // Asked what to fix first, the model on the phone said it "depends on the priority". The priority is the severity it is given.
+            "When asked what to do or fix first, go by severity among the issues whose status is open: Critical before High, High before Medium, Medium before Low. Name the issues of the highest level by number and say what each is.",
             template.caution,
         ).filter { it.isNotBlank() }.joinToString("\n")
         val json = jsonIn(converse(system, emptyList(), "$issues\n\nQuestion: $question", maxTokens = 170))
