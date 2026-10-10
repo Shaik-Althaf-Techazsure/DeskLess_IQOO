@@ -17,3 +17,6 @@ media/
 /apk/
 /models/
 /reports/
+
+# Account server run without Docker keeps its photos and generated keys here
+/server/data/

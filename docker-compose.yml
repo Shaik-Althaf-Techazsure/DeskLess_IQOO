@@ -1,15 +1,22 @@
-# DeskLess: one command builds the Android app and starts the web prototype
-# (database, API with local speech-to-text, web app).
+# DeskLess: one command builds the Android app, starts the server it signs in and sends reports to,
+# and starts the web prototype (database, API with local speech-to-text, web app).
 #
-#   docker compose up --build                 Android APK + install page, and the web prototype
-#   docker compose up --build app             only the Android APK + install page
-#   docker compose --profile ai up --build    adds a local open-source LLM (Ollama) to the web prototype
+#   docker compose up --build                   everything
+#   docker compose up --build db server mail    only the server with its dashboards, its database and the test mailbox
+#   docker compose up --build app               only the Android APK + install page
+#   docker compose --profile ai up --build      adds a local open-source LLM (Ollama) to the web prototype
+#
+# On a real server only the server and its database run: see docker-compose.server.yml.
 name: deskless
 
 services:
   # The Android app: compiled in a container, then served with an install page.
   app:
-    build: ./android
+    build:
+      context: ./android
+      args:
+        # The server the built app signs in and sends reports to, e.g. https://deskless.example.com
+        SERVER_URL: ${APP_SERVER_URL:-${PUBLIC_URL:-}}
     ports:
       - "${APP_PORT:-8700}:80"       # http://localhost:8700, or http://<this machine's IP>:8700 from a phone
     volumes:
@@ -29,6 +36,52 @@ services:
       interval: 5s
       timeout: 3s
       retries: 20
+    restart: unless-stopped
+
+  # The server behind the Android app: accounts for five roles (sign-up with a code sent by email,
+  # approval by the level above, sign-in with a unique ID), the reports the phones send, and a dashboard
+  # for each role. Everyone signs in at http://localhost:8800.
+  server:
+    build: ./server
+    environment:
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-deskless}:${POSTGRES_PASSWORD:-deskless}@db:5432/${POSTGRES_DB:-deskless}
+      DATA_DIR: /data
+      # Where people reach the server from outside, path included; empty on a developer's machine.
+      PUBLIC_URL: ${PUBLIC_URL:-}
+      ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@deskless.local}
+      # Left empty, these three are made on first start and kept in the "accounts" volume. The admin
+      # password is then read with:  docker compose exec server sh -c "cat /data/admin-password.txt"
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
+      SECRET_KEY: ${SECRET_KEY:-}
+      AADHAAR_KEY: ${AADHAAR_KEY:-}
+      # The test mailbox below unless a real mail server is named in .env.
+      SMTP_HOST: ${SMTP_HOST:-mail}
+      SMTP_PORT: ${SMTP_PORT:-1025}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      SMTP_SECURITY: ${SMTP_SECURITY:-none}
+      MAIL_FROM: ${MAIL_FROM:-DeskLess <no-reply@deskless.local>}
+    ports:
+      - "${SERVER_PORT:-8800}:8000"  # http://localhost:8800, or http://<this machine's IP>:8800 from a phone
+    volumes:
+      - accounts:/data               # profile photos, reports, issue pictures and the generated keys
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health', timeout=3)"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+    restart: unless-stopped
+
+  # A test mailbox. It catches every email the server sends (sign-up codes, approvals, work given out) and shows
+  # them at http://localhost:8825. Only this machine can open it. Nothing is sent to the real addresses.
+  mail:
+    image: axllent/mailpit:latest
+    ports:
+      - "127.0.0.1:${MAIL_PORT:-8825}:8025"
     restart: unless-stopped
 
   backend:
@@ -89,6 +142,7 @@ services:
 
 volumes:
   db_data:
+  accounts:
   media:
   caddy_data:
   ollama:

@@ -4,6 +4,8 @@ import android.bluetooth.BluetoothAdapter
 import android.content.Intent
 import android.content.pm.ApplicationInfo
 import android.graphics.Color
+import android.net.ConnectivityManager
+import android.net.Network
 import android.nfc.NfcAdapter
 import android.os.Bundle
 import android.widget.Toast
@@ -49,6 +51,8 @@ import com.techazsure.deskless.link.Pairing
 import com.techazsure.deskless.link.Voice
 import com.techazsure.deskless.models.ModelStore
 import com.techazsure.deskless.report.ReportLibrary
+import com.techazsure.deskless.ui.AccountFlow
+import com.techazsure.deskless.ui.LockScreen
 import com.techazsure.deskless.ui.ReportsScreen
 import com.techazsure.deskless.ui.CaptureScreen
 import com.techazsure.deskless.ui.EditScreen
@@ -101,10 +105,20 @@ class MainActivity : ComponentActivity() {
     override fun onStart() {
         super.onStart()
         state.link.start()
+        // Reports built with no network go to the office as soon as there is one.
+        state.sendToOffice()
+        runCatching { getSystemService(ConnectivityManager::class.java).registerDefaultNetworkCallback(network) }
+    }
+
+    private val network = object : ConnectivityManager.NetworkCallback() {
+        override fun onAvailable(found: Network) {
+            runOnUiThread { state.sendToOffice() }
+        }
     }
 
     override fun onStop() {
         state.link.stop()
+        runCatching { getSystemService(ConnectivityManager::class.java).unregisterNetworkCallback(network) }
         super.onStop()
     }
 
@@ -203,8 +217,11 @@ fun DeskLessApp(state: AppState, lifecycleOwner: LifecycleOwner) {
         }
         state.link.start()
     }
-    LaunchedEffect(introDone) {
-        if (!introDone) return@LaunchedEffect
+    // Nothing of the app is reachable until somebody is signed in and, on a phone with a fingerprint set
+    // up, has unlocked it.
+    val inside = introDone && state.profile != null && state.unlocked
+    LaunchedEffect(inside) {
+        if (!inside) return@LaunchedEffect
         when {
             !state.link.allowed -> allowLink.launch(state.link.permissions)
             state.link.bluetoothOn == false -> runCatching { turnBluetoothOn.launch(Intent(BluetoothAdapter.ACTION_REQUEST_ENABLE)) }
@@ -216,7 +233,11 @@ fun DeskLessApp(state: AppState, lifecycleOwner: LifecycleOwner) {
             .fillMaxSize()
             .background(Ink),
     ) {
-        AnimatedContent(
+        if (introDone && state.profile == null) {
+            AccountFlow(state)
+        } else if (introDone && !state.unlocked) {
+            LockScreen(state)
+        } else AnimatedContent(
             targetState = if (introDone) state.screen else null,
             contentKey = { it?.let(::keyOf) ?: "intro" },
             transitionSpec = {

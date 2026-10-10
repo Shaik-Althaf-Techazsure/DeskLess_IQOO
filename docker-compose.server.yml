@@ -1,0 +1,68 @@
+# DeskLess on a real server: the API the app talks to and the dashboards, with their database.
+# Nothing else from this repository runs there: no APK build, no web prototype, no test mailbox.
+#
+#   cp .env.example .env        then fill in the server's part of it
+#   docker compose -f docker-compose.server.yml up -d --build
+#
+# The server listens on this machine only (127.0.0.1:8800). The site's own web server adds HTTPS and
+# passes the path in PUBLIC_URL on to it; deploy/nginx.conf has the lines for that.
+# To update after a push to GitHub:  sh deploy/update.sh
+name: deskless
+
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-deskless}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-deskless}
+      POSTGRES_DB: ${POSTGRES_DB:-deskless}
+    volumes:
+      - db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
+  server:
+    build: ./server
+    environment:
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-deskless}:${POSTGRES_PASSWORD:-deskless}@db:5432/${POSTGRES_DB:-deskless}
+      DATA_DIR: /data
+      # Where people reach the server, path included, e.g. https://shaikalthaf.in/competitions/IQOO
+      PUBLIC_URL: ${PUBLIC_URL:?Set PUBLIC_URL in .env to the address people reach the server at}
+      ADMIN_EMAIL: ${ADMIN_EMAIL:?Set ADMIN_EMAIL in .env}
+      # On a real server these three are set, and kept: a lost SECRET_KEY signs everyone out, and a lost
+      # AADHAAR_KEY makes the stored Aadhaar numbers unreadable for good.
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:?Set ADMIN_PASSWORD in .env}
+      SECRET_KEY: ${SECRET_KEY:?Set SECRET_KEY in .env}
+      AADHAAR_KEY: ${AADHAAR_KEY:?Set AADHAAR_KEY in .env}
+      # A real mail server. Left empty, no email leaves the machine and each one is written to the
+      # server's log instead, which is enough for a first check and nothing more.
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      SMTP_SECURITY: ${SMTP_SECURITY:-starttls}
+      MAIL_FROM: ${MAIL_FROM:-DeskLess <no-reply@deskless.local>}
+      UTC_OFFSET_MINUTES: ${UTC_OFFSET_MINUTES:-330}
+    ports:
+      # Only this machine can reach it; the site's web server stands in front.
+      - "${SERVER_BIND:-127.0.0.1}:${SERVER_PORT:-8800}:8000"
+    volumes:
+      - accounts:/data               # profile photos, reports, issue pictures
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health', timeout=3)"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+    restart: unless-stopped
+
+volumes:
+  db_data:
+  accounts:

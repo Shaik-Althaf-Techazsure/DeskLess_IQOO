@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#0f1115">
+<title>DeskLess · Dashboard</title>
+<link rel="stylesheet" href="static/app.css">
+</head>
+<body>
+<header>
+  <div class="mark">DL</div>
+  <div class="brand">
+    <h1>DeskLess</h1>
+    <span id="company"></span>
+  </div>
+  <div class="who" id="who" hidden>
+    <div>
+      <strong id="who-name"></strong>
+      <span id="who-role"></span>
+    </div>
+    <button id="signout">Sign out</button>
+  </div>
+</header>
+<div class="stripes"></div>
+<nav id="nav" hidden></nav>
+
+<main>
+  <section id="signin" class="card" hidden>
+    <h2>Sign in</h2>
+    <p class="hint">Use the DeskLess ID you got when your account was approved, and the password you chose in the app.</p>
+    <form id="signin-form">
+      <label for="id">DeskLess ID</label>
+      <input id="id" autocomplete="username" autocapitalize="characters" spellcheck="false" placeholder="DL-MGR-0001" required>
+      <label for="password">Password</label>
+      <input id="password" type="password" autocomplete="current-password" required>
+      <div class="error" id="signin-error"></div>
+      <button class="primary wide">Sign in</button>
+    </form>
+    <p class="hint small">No account yet? Sign up in the DeskLess app. Forgot the password? Reset it in the app.<br>The administrator signs in with their email address.</p>
+  </section>
+
+  <section id="view" hidden></section>
+</main>
+
+<dialog id="sheet"></dialog>
+<dialog id="big"><img alt="Picture"></dialog>
+<div id="note" role="status" hidden></div>
+
+<script src="static/app.js"></script>
+</body>
+</html>

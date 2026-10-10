@@ -1,6 +1,6 @@
 # DeskLess
 
-**Site inspection reports, without the desk.** Walk the site, photograph each issue and say what is wrong in your own mix of Hindi and English. DeskLess turns the voice note into English text, structures it (issue, location, severity, owner, due date) and builds a formatted English PDF report. Nothing is sent to the internet.
+**Site inspection reports, without the desk.** Walk the site, photograph each issue and say what is wrong in your own mix of Hindi and English. DeskLess turns the voice note into English text, structures it (issue, location, severity, owner, due date) and builds a formatted English PDF report. The models run on the phone and a report is made with no network. When the phone has a network, the finished report goes to the company's server, where each role has its own dashboard.
 
 Team **techazsure** · iQOO Hackathon 2026 Grand Finale · Productivity track
 
@@ -8,7 +8,9 @@ Team **techazsure** · iQOO Hackathon 2026 Grand Finale · Productivity track
 
 | Folder | What it is | Written |
 |---|---|---|
-| `android/` | **The finale build.** A native Android app that does everything on the phone: camera, voice, speech-to-text and a language model on the device, readings from the phone's sensors, PDF report, and reports passed from phone to phone with no network. No server, and it works in airplane mode. | During the finale, 9–11 Oct 2026 |
+| `android/` | **The finale build.** A native Android app that does everything on the phone: camera, voice, speech-to-text and a language model on the device, readings from the phone's sensors, PDF report, and reports passed from phone to phone with no network. No server takes part in making a report, and once signed in the app captures and builds reports in airplane mode. | During the finale, 9–11 Oct 2026 |
+| `server/` | **The server.** Accounts for five roles (sign-up with a code sent by email, approval by the level above, sign-in with a unique ID), the reports the phones send, the work on their issues, and a web dashboard for each role. | During the finale, 9–11 Oct 2026 |
+| `docker-compose.server.yml`, `deploy/` | **The server on a real machine.** The server and its database alone, the nginx lines that put them under a path of an existing site, and the script that updates them after a push. | During the finale, 9–11 Oct 2026 |
 | `backend/`, `frontend/` | The web prototype sent with the registration. The phone is the capture device and the models run on the computer that runs Docker. | Before the finale, 4 Oct 2026 |
 
 ---
@@ -24,6 +26,8 @@ docker compose up --build
 | Address | What you get |
 |---|---|
 | **http://localhost:8700** | The Android app: an install page with the APK that was just built from `android/` |
+| **http://localhost:8800/dashboard** | The sign-in page of the dashboards: administrator, managing director, manager, inspector, technical |
+| **http://localhost:8825** | A test mailbox that catches every email the server sends (opens on this computer only) |
 | **http://localhost:8600** | The web prototype. Tap **Load the sample walk-through** to see a finished report |
 
 The APK is also written to `apk/DeskLess.apk` next to `docker-compose.yml`.
@@ -57,6 +61,7 @@ Every push also runs the same build on GitHub Actions (`.github/workflows/build.
 | 5. Review | Every field can be edited. Fields filled by a model are marked. | Jetpack Compose |
 | 6. Report | An English PDF: counts by severity and type, then one entry per issue with its picture. | Android `PdfDocument` |
 | 7. Hand-off | Save to `Documents/DeskLess`, share, send to a laptop with iQOO Office Kit file transfer, or pass it to another phone running DeskLess, directly or through relay phones. | Share sheet, Office Kit, Nearby Connections |
+| 8. To the office | The finished report is sent to the company's server by itself, at once or when the phone next has a network. There its issues are given to technicians, fixed and checked, and each role follows them on a dashboard. | The DeskLess server, see [Accounts, roles and dashboards](#accounts-roles-and-dashboards) |
 
 Fields the note did not mention are left empty and printed as "Not stated". The AI check is an opinion: when the inspector overrules it, the report says so.
 
@@ -133,6 +138,7 @@ Phones exchange their public keys the first time they connect after linking, und
 ### Not measured yet
 
 - Accuracy on mixed Hindi-English speech.
+- The accounts, the dashboards and the sending of reports on a real phone and a real server. They were tried with the Android emulator and the server in Docker on one computer: the sign-up form with a team code, sign-in, a report built on the emulator arriving on the manager's dashboard with its pictures, and the dashboards in a desktop browser at desktop and phone width. Email was sent only to the test mailbox.
 - Speed of the picture check on a video issue (three stills) on the phone.
 - The medication audit and community issue report types: they were tried on screen only, and no issue has been run through the model under them.
 - How well a model of this size judges real site photos. This is why its verdict can always be overruled.
@@ -179,8 +185,175 @@ android/
     ├── models/               model import and checks
     ├── report/               PDF report, report pack, saved reports, hand-off, fingerprint sign-off, AI review
     ├── link/                 QR pairing, phone-to-phone link, relay and sealed reports, spoken confirmation
+    ├── account/              sign-up and sign-in, fingerprint unlock, the outbox that sends reports to the server
     ├── data/                 issues and their readings, their storage, report types
     └── ui/                   screens and theme
+```
+
+---
+
+## Accounts, roles and dashboards
+
+Nobody uses the app without an account, and every account is approved by the person above. A company has four kinds of people; the platform has one administrator.
+
+| Role | Signs up with | Approved by | ID | What they do |
+|---|---|---|---|---|
+| Managing Director | The company's name | The administrator | `DL-MD-0001` | Brings the company to DeskLess and sees everything in it. |
+| Manager | The managing director's company code | The managing director | `DL-MGR-0001` | Gives issues to technicians, checks their repairs, approves their own team. |
+| Inspector | Their manager's team code | Their manager | `DL-INS-0001` | Walks the site and makes the reports, in the app. |
+| Technical | Their manager's team code | Their manager | `DL-TEC-0001` | Fixes the issues given to them and shows each repair with a photo. |
+
+The administrator is not an account: there is one, named in the server's settings. The administrator approves each managing director, which creates the company, and may decide any other sign-up. A managing director may decide any sign-up in their company. In a company with no managers, inspectors and technicians can join with the managing director's code.
+
+### From sign-up to sign-in
+
+| Step | Where | What happens |
+|---|---|---|
+| 1. Sign up | App | Role, name, email, mobile number, Aadhaar number, a photo and a password, with the company's name (managing director) or the code of the person they will report to (everyone else). The form says whose code it is before anything is sent, and is checked on the phone first, the Aadhaar check digit included. |
+| 2. Confirm the email | App | A six-digit code is emailed. It works for ten minutes and five tries. |
+| 3. Approve | Dashboard | The person above sees the details and photo, and approves or rejects with a reason. They are emailed when someone is waiting. |
+| 4. Unique ID | Server | Approval gives the ID the person signs in with. It is emailed, and the waiting app shows it. A managing director or manager also gets the code to hand to their own people. |
+| 5. Sign in | App or dashboard | ID and password. The phone keeps the sign-in for 30 days, and the fingerprint unlocks the app each time it is opened. |
+
+A forgotten password is reset in the app with a code sent to the account's email address. Five wrong passwords lock the account for fifteen minutes.
+
+### From a report to a closed issue
+
+1. **The inspector builds a report in the app.** The app sends it to the server by itself: at once when the phone has a network, otherwise it waits on the phone and goes when the network is back. The reports list shows which have been sent. A report built again for the same walk replaces the earlier one, and work already done on its issues is kept.
+2. **The manager gives each issue to a technician**, with a day to have it done by. The technician is emailed.
+3. **The technician fixes it and marks it fixed with a photo of the repair**, from the dashboard on their phone.
+4. **The manager compares the two pictures** and accepts the repair, which closes the issue, or sends it back with what is still wrong.
+5. **The managing director sees all of it in numbers**: what is open, what is overdue, which team is behind.
+
+An issue the inspector already saw repaired on site arrives closed.
+
+### The dashboards
+
+One page for everybody: http://localhost:8800/dashboard on this computer, `https://shaikalthaf.in/competitions/IQOO/dashboard` on our server. What it shows depends on who signs in. In the app, **My dashboard** in the side bar opens it already signed in, with a link that works once.
+
+| Who | What they see and do |
+|---|---|
+| Administrator | Every company with its managing director and numbers; the sign-ups waiting; all people, reports and issues. Decides sign-ups; does not hand out work. |
+| Managing Director | The company: reports, issues not closed, high or critical, overdue, fixed and waiting for a check; issues by severity, site and type; the last 14 days; each manager's team side by side; what happened lately. Approves managers, and can give out and close any issue. Their company code. |
+| Manager | Their team: issues to give out, with technicians, to check, overdue; the team's reports with each PDF and the AI review's verdict; the people in the team and what each has in hand. Approves their inspectors and technicians. Their team code. |
+| Inspector | Their own reports, and what has become of each issue they reported. |
+| Technical | Their jobs: to do, fixed and waiting for the check, done. Opens a job to see the picture, the note, the place and the deadline, and marks it fixed with a photo. |
+
+What each may see is decided on the server, not on the page: a manager cannot open another team's issue, and one company sees nothing of another.
+
+### Try it on this computer
+
+```bash
+docker compose up --build db server mail
+```
+
+1. In the app, sign up as **Managing Director** with a company name. The code arrives in the test mailbox at http://localhost:8825.
+2. Open http://localhost:8800/dashboard and sign in as the administrator, `admin@deskless.local`. The password was made on the first start; read it with:
+
+   ```bash
+   docker compose exec server sh -c "cat /data/admin-password.txt"
+   ```
+
+3. Approve the managing director. The app shows the new ID within a few seconds; sign in with it. The side bar now shows the company code.
+4. On other phones (or after signing out), sign up a **Manager** with the company code, then an **Inspector** and a **Technical** with the manager's team code. Each is approved on the dashboard of the person above.
+5. As the inspector, build a report. It appears on the manager's dashboard; give an issue to the technician, mark it fixed as the technician, and close it as the manager.
+
+The app has to be able to reach the server. An emulator on the same computer does so as built. For a phone on the same Wi-Fi, build the app with the computer's address (`APP_SERVER_URL=http://<this computer's IP>:8800` in `.env`, or `./gradlew assembleDebug -PserverUrl=...`), or type the address on the app's first screen. A test build may use plain `http://` for this; a release build accepts `https://` only.
+
+### What is stored, and how
+
+| What | How it is kept |
+|---|---|
+| Password | Never stored. Only a salted scrypt hash of it is. |
+| Aadhaar number | Encrypted (AES-256-GCM) with a key that is not in the database. Beside it are its last four digits, for display, and a keyed fingerprint, so the same number cannot be registered twice. No part of the API returns the number: the app, the dashboards and the emails show `XXXX XXXX 1234`. |
+| Profile photo | Re-drawn as a plain JPEG of modest size, which drops anything else the file carried, such as where it was taken. Only the person and those above them can fetch it. |
+| Reports | The PDF as the phone built it, and each issue's fields. Only the author and those above them in the same company can open them. |
+| Issue pictures | Made smaller on the phone before they are sent, and re-drawn on the server like the profile photos. |
+| Emailed codes | Only a keyed hash of each code is stored. |
+| Sign-in | A signed token: in the app's private storage on the phone, and for the length of the browser session on a dashboard. |
+
+Aadhaar numbers are personal data, and Indian law restricts who may collect and keep them. The handling above is the technical part; whether an organisation may hold them at all is for that organisation to settle before real use.
+
+### On a real server
+
+The app works on its own with no network: it captures, runs the models and builds the report on the phone, and keeps each finished report in an outbox. The server is the other half. It runs in the cloud, takes the reports as the phones come online, and serves the dashboards. Our own runs beside an existing website, under a path of its domain:
+
+| | Address |
+|---|---|
+| Dashboards | `https://shaikalthaf.in/competitions/IQOO/dashboard` |
+| What the app talks to | `https://shaikalthaf.in/competitions/IQOO/api/...` |
+
+Only the server and its database run there, from `docker-compose.server.yml`: no APK build, no web prototype, no test mailbox. The site's own web server stays in front, adds HTTPS, and passes that one path on.
+
+**First time, on the server** (it needs Docker and git):
+
+```bash
+git clone https://github.com/Shaik-Althaf-Techazsure/DeskLess_IQOO.git
+cd DeskLess_IQOO
+cp .env.example .env
+```
+
+Fill in the server's part of `.env`; the file explains each line:
+
+| Setting | What to put |
+|---|---|
+| `PUBLIC_URL` | The address people reach the server at, path included: `https://shaikalthaf.in/competitions/IQOO` |
+| `ADMIN_EMAIL`, `ADMIN_PASSWORD` | The administrator's sign-in on the dashboard |
+| `SECRET_KEY`, `AADHAAR_KEY` | Two keys made once (`openssl rand -base64 48` and `openssl rand -base64 32`) and kept safe: a lost `SECRET_KEY` signs everyone out, a lost `AADHAAR_KEY` makes the stored Aadhaar numbers unreadable for good |
+| `SMTP_HOST` and the other `SMTP_*` | A real mail server. Without one nobody receives their sign-up code; it is only written to the server's log |
+
+The server will not start while `PUBLIC_URL`, `ADMIN_EMAIL`, `ADMIN_PASSWORD`, `SECRET_KEY` or `AADHAAR_KEY` is missing, and says which. Then:
+
+```bash
+docker compose -f docker-compose.server.yml up -d --build
+```
+
+It listens on that machine only (`127.0.0.1:8800`). To put it on the site, add the block in `deploy/nginx.conf` to the site's nginx `server { ... }`, above the `location /` that serves the rest of the site, and reload nginx:
+
+```bash
+sudo nginx -t && sudo systemctl reload nginx
+```
+
+That block passes `/competitions/IQOO/` on, in capitals or small letters, and allows uploads of 64 MB, because a report arrives as one upload with a picture per issue (nginx alone would stop at 1 MB). The rest of the site is untouched. The server answers the same whether the web server passes the path on or cuts it off, and the dashboard page asks for its style, its script and the API beside itself, so nothing in it depends on the path.
+
+**After every push to GitHub**, on the server:
+
+```bash
+sh deploy/update.sh
+```
+
+It pulls, rebuilds, restarts and waits until the server answers. Accounts, reports and pictures are kept: they live in Docker volumes, and a database from an earlier version gains its new columns at start; nothing is dropped.
+
+**The app** has to be built for that address. With Docker: `APP_SERVER_URL=https://shaikalthaf.in/competitions/IQOO` in `.env` (or just `PUBLIC_URL`, which it falls back to). With Gradle: `./gradlew assembleDebug -PphoneOnly -PserverUrl=https://shaikalthaf.in/competitions/IQOO`. On GitHub, set the repository variable `APP_SERVER_URL` (Settings, Secrets and variables, Actions, Variables) and the APK that every push builds signs in there. The address can also be typed on the app's first screen.
+
+### API
+
+| Method and path | Purpose |
+|---|---|
+| `POST /api/signup` | The sign-up form with the photo (multipart). Emails the code. |
+| `GET /api/signup/invite` | Whose code this is: the company and the person the newcomer would report to |
+| `POST /api/signup/verify`, `/api/signup/resend` | Confirm the email address with the code; ask for a new code |
+| `GET /api/signup/status` | How a sign-up is doing and who is to decide it, for the phone that made it |
+| `POST /api/login`, `POST /api/admin/login` | Sign in: a person with their unique ID, the administrator with their email address |
+| `GET /api/me`, `/api/me/photo` | The signed-in person's details and photo |
+| `POST /api/password/forgot`, `/api/password/reset` | Reset a forgotten password with an emailed code |
+| `POST /api/web-link`, `/api/web-link/open` | A link that works once, with which the app opens the dashboard already signed in |
+| `GET /api/people`, `POST /api/people/{id}/approve`, `/reject` | The people below the one asking, the sign-ups waiting for them, and the deciding of those |
+| `GET /api/admin/companies` | Every company, for the administrator |
+| `POST /api/reports` | A phone sends a finished report: its details, the PDF and a picture per issue (multipart) |
+| `GET /api/reports`, `/api/reports/{id}/pdf` | The reports in view, and a report's PDF |
+| `GET /api/issues`, `/api/issues/{id}`, `/photo`, `/fix-photo` | The issues in view, one issue with its history, and its pictures |
+| `GET /api/technicians`, `POST /api/issues/{id}/assign` | Who an issue can be given to; give it out with a deadline |
+| `POST /api/issues/{id}/fixed` | The technician marks it fixed, with a photo of the repair (multipart) |
+| `POST /api/issues/{id}/close`, `/reopen` | Accept a repair and close the issue; send it back |
+| `GET /api/dashboard` | The numbers for the signed-in person's dashboard |
+| `GET /api/health` | Status |
+
+FastAPI and SQLAlchemy on PostgreSQL, in `server/`; the dashboard is one page of plain HTML, CSS and JavaScript in `server/app/static/`, with no build step. The tests run the account flow, the roles, the work on an issue and each refusal:
+
+```bash
+docker build --target test -t deskless-server-test server
+docker run --rm deskless-server-test
 ```
 
 ---
@@ -314,6 +487,14 @@ Everything works without configuration. To change a setting, copy `.env.example`
 | Variable | Default | Meaning |
 |---|---|---|
 | `APP_PORT` | `8700` | Port of the Android app's install page |
+| `SERVER_PORT` | `8800` | Port of the server: the app's API and the dashboards |
+| `PUBLIC_URL` | empty | On a real server, the address people reach it at, with the path it sits under on the domain. Empty on a developer's machine. |
+| `MAIL_PORT` | `8825` | Port of the test mailbox |
+| `APP_SERVER_URL` | `PUBLIC_URL` | The server the built app signs in and sends reports to. With both empty, the app is built for an emulator on this computer. |
+| `ADMIN_EMAIL` | `admin@deskless.local` | The administrator, who approves each company's managing director |
+| `ADMIN_PASSWORD`, `SECRET_KEY`, `AADHAAR_KEY` | made on first start | The administrator's password, the key that signs sign-ins, and the key that encrypts Aadhaar numbers. Set all three on a real server. |
+| `SMTP_HOST`, `SMTP_PORT`, `SMTP_SECURITY`, `SMTP_USER`, `SMTP_PASSWORD`, `MAIL_FROM` | the test mailbox | A real mail server, to send real email |
+| `UTC_OFFSET_MINUTES` | `330` | The company's clock against UTC (330 is India). A deadline is overdue by that clock. |
 | `WEB_PORT` | `8600` | HTTP port of the web prototype |
 | `WEB_TLS_PORT` | `8643` | HTTPS port of the web prototype (for phones) |
 | `WHISPER_MODEL` | `small` | Speech model baked into the prototype's backend image: `tiny`, `base`, `small`, `medium`. Larger is more accurate with mixed Hindi-English but slower. Rebuild after changing it. |
@@ -323,7 +504,10 @@ Everything works without configuration. To change a setting, copy `.env.example`
 
 ## Troubleshooting
 
-- **A port is already in use.** Set `APP_PORT`, `WEB_PORT` and `WEB_TLS_PORT` in `.env` to free ports.
+- **A port is already in use.** Set `APP_PORT`, `SERVER_PORT`, `MAIL_PORT`, `WEB_PORT` and `WEB_TLS_PORT` in `.env` to free ports.
+- **The app says it cannot reach the server.** Open `http://<the computer's IP>:8800` in the phone's browser. If that does not open either, the phone is on another network or the computer's firewall blocks port 8800. If it opens, tap the server address on the app's first screen and correct it.
+- **The sign-up code does not arrive.** Without `SMTP_*` settings no real email is sent: the code is in the test mailbox at http://localhost:8825.
+- **A report does not show on the dashboard.** The app's reports list says whether it was sent. One that is still waiting goes when the phone can reach the server; opening the app with a network sends it.
 - **The phone cannot reach the computer.** Both devices must be on the same network, and the computer's firewall must allow the ports.
 - **Android refuses to install the APK over an older DeskLess.** Every build from this repository is signed with the same debug key (`android/app/debug.keystore`), so builds install over each other. A copy signed elsewhere has to be uninstalled first, which also removes the imported models.
 - **The first build stops on a slow connection.** Run the command again. Finished downloads are kept.

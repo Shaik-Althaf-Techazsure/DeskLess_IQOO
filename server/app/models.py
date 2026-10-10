@@ -1,0 +1,221 @@
+"""
+What is kept: companies and the accounts of the people in them, the one-time codes sent to those people,
+the counters behind the unique IDs, and the inspection reports with their issues and what was done about each.
+"""
+
+from datetime import date, datetime, timezone
+from uuid import uuid4
+
+from sqlalchemy import Boolean, Date, DateTime, Float, ForeignKey, Integer, LargeBinary, String, Text, UniqueConstraint
+from sqlalchemy.orm import Mapped, mapped_column
+
+from .db import Base
+
+# The kinds of account in a company, with the middle part of their unique ID. The platform's
+# administrator is not an account: there is one, named in the server's settings.
+ROLES = {"md": "MD", "manager": "MGR", "inspector": "INS", "technical": "TEC"}
+ROLE_NAMES = {"md": "Managing Director", "manager": "Manager", "inspector": "Inspector", "technical": "Technical"}
+#: Those who have people answering to them, and so hand out a code to sign up with.
+LEADS = ("md", "manager")
+
+# Where an account stands, in the order it moves through them.
+EMAIL_PENDING = "email_pending"        # signed up; the email address is not confirmed yet
+PENDING_APPROVAL = "pending_approval"  # email confirmed; waiting for the person above
+APPROVED = "approved"                  # has a unique ID and can sign in
+REJECTED = "rejected"
+
+# Where an issue stands.
+OPEN = "open"            # reported; nobody has been given it
+ASSIGNED = "assigned"    # a technician has it
+FIXED = "fixed"          # the technician says it is done and has shown a picture; waiting to be checked
+CLOSED = "closed"        # checked and accepted
+STATUSES = (OPEN, ASSIGNED, FIXED, CLOSED)
+
+SEVERITIES = ("CRITICAL", "HIGH", "MEDIUM", "LOW")
+
+
+def now() -> datetime:
+    return datetime.now(timezone.utc)
+
+
+def _id() -> str:
+    return uuid4().hex
+
+
+class Company(Base):
+    """Made when the administrator approves its managing director."""
+
+    __tablename__ = "company"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_id)
+    name: Mapped[str] = mapped_column(String(160))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+
+
+class Account(Base):
+    __tablename__ = "account"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_id)
+    role: Mapped[str] = mapped_column(String(16))
+    name: Mapped[str] = mapped_column(String(120))
+    email: Mapped[str] = mapped_column(String(254), index=True)
+    phone: Mapped[str] = mapped_column(String(16))
+    #: The company's name: typed by a managing director, taken from the company for everyone else.
+    organisation: Mapped[str] = mapped_column(String(160), default="")
+
+    #: The company the person belongs to. A managing director gets one on approval.
+    company_id: Mapped[str | None] = mapped_column(String(32), nullable=True, index=True)
+    #: Who this person answers to: a manager's managing director, an inspector's or technician's manager.
+    #: That person approves the sign-up.
+    reports_to: Mapped[str | None] = mapped_column(String(32), nullable=True, index=True)
+    #: The code a managing director or manager gives to the people who are to answer to them.
+    invite_code: Mapped[str | None] = mapped_column(String(12), nullable=True, unique=True)
+
+    # The Aadhaar number is never stored as typed: only encrypted, with its last four digits beside it for
+    # display and a keyed fingerprint to notice the same number being registered twice.
+    aadhaar_sealed: Mapped[bytes] = mapped_column(LargeBinary)
+    aadhaar_last4: Mapped[str] = mapped_column(String(4))
+    aadhaar_fingerprint: Mapped[str] = mapped_column(String(64), index=True)
+
+    #: File name of the profile photo in the photos folder.
+    photo: Mapped[str] = mapped_column(String(64))
+    password_hash: Mapped[str] = mapped_column(String(255))
+
+    status: Mapped[str] = mapped_column(String(20), default=EMAIL_PENDING, index=True)
+    #: Given on approval, e.g. "DL-INS-0042". It is what the person signs in with.
+    unique_id: Mapped[str | None] = mapped_column(String(20), unique=True, nullable=True)
+    #: Hash of the ticket the phone holds to ask how its sign-up is doing, before it can sign in.
+    ticket_hash: Mapped[str] = mapped_column(String(64))
+
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+    email_verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    decided_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    decided_by: Mapped[str] = mapped_column(String(254), default="")
+    reject_reason: Mapped[str] = mapped_column(Text, default="")
+
+    # Wrong passwords in a row, and until when sign-in is refused after too many.
+    failed_logins: Mapped[int] = mapped_column(Integer, default=0)
+    locked_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class Otp(Base):
+    """A one-time code: emailed to confirm an address or reset a password, or handed to the app to open
+    the person's dashboard in a browser. Only its hash is kept."""
+
+    __tablename__ = "otp"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    account_id: Mapped[str] = mapped_column(ForeignKey(Account.id, ondelete="CASCADE"), index=True)
+    #: "signup", "reset" or "web".
+    purpose: Mapped[str] = mapped_column(String(10))
+    code_hash: Mapped[str] = mapped_column(String(64))
+    sent_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    attempts: Mapped[int] = mapped_column(Integer, default=0)
+    used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class Counter(Base):
+    """The last number given out for each kind of account."""
+
+    __tablename__ = "counter"
+
+    role: Mapped[str] = mapped_column(String(16), primary_key=True)
+    last: Mapped[int] = mapped_column(Integer, default=0)
+
+
+class Report(Base):
+    """One walk of a site, as the phone that made it sent it: the PDF and what it holds."""
+
+    __tablename__ = "report"
+    # A report built again for the same walk takes the place of the one sent before.
+    __table_args__ = (UniqueConstraint("account_id", "walk"),)
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_id)
+    #: Who made it.
+    account_id: Mapped[str] = mapped_column(String(32), index=True)
+    company_id: Mapped[str | None] = mapped_column(String(32), nullable=True, index=True)
+    #: The phone's own name for the walk.
+    walk: Mapped[str] = mapped_column(String(40))
+    #: The kind of report, as the app names it: SITE, MEDICATION or COMMUNITY.
+    template: Mapped[str] = mapped_column(String(20), default="")
+    title: Mapped[str] = mapped_column(String(80), default="")
+    place: Mapped[str] = mapped_column(String(200), default="")
+    #: The name printed on the report.
+    person: Mapped[str] = mapped_column(String(120), default="")
+    built_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+    received_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+    issue_count: Mapped[int] = mapped_column(Integer, default=0)
+    #: What the phone's own review made of the report: GENUINE, DOUBTFUL, FAKE or blank.
+    verdict: Mapped[str] = mapped_column(String(12), default="")
+    verdict_reason: Mapped[str] = mapped_column(Text, default="")
+    #: True when the inspector signed the PDF with their fingerprint.
+    signed: Mapped[bool] = mapped_column(Boolean, default=False)
+    #: File name of the PDF in the reports folder.
+    pdf: Mapped[str] = mapped_column(String(64), default="")
+    pdf_name: Mapped[str] = mapped_column(String(160), default="")
+
+
+class Issue(Base):
+    """One thing found on a walk, and what has been done about it since."""
+
+    __tablename__ = "issue"
+    __table_args__ = (UniqueConstraint("report_id", "client_id"),)
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_id)
+    report_id: Mapped[str] = mapped_column(ForeignKey(Report.id, ondelete="CASCADE"), index=True)
+    #: The phone's own name for the issue; it stays the same when the report is built again.
+    client_id: Mapped[str] = mapped_column(String(40))
+    company_id: Mapped[str | None] = mapped_column(String(32), nullable=True, index=True)
+    #: Who reported it.
+    author_id: Mapped[str] = mapped_column(String(32), index=True)
+    number: Mapped[int] = mapped_column(Integer, default=0)
+    site: Mapped[str] = mapped_column(String(200), default="")
+
+    title: Mapped[str] = mapped_column(String(200), default="")
+    note: Mapped[str] = mapped_column(Text, default="")
+    location: Mapped[str] = mapped_column(String(200), default="")
+    category: Mapped[str] = mapped_column(String(60), default="")
+    severity: Mapped[str] = mapped_column(String(10), default="MEDIUM")
+    #: The person named in the spoken note as the one to fix it, and the deadline as it was said.
+    owner: Mapped[str] = mapped_column(String(120), default="")
+    due_text: Mapped[str] = mapped_column(String(60), default="")
+    due_on: Mapped[date | None] = mapped_column(Date, nullable=True)
+    #: What the on-device model made of the picture: MATCH, UNSURE, MISMATCH, CONFIRMED or NONE.
+    ai_check: Mapped[str] = mapped_column(String(12), default="")
+    seen: Mapped[str] = mapped_column(Text, default="")
+    #: What the phone's sensors and instruments read, in words.
+    measured: Mapped[str] = mapped_column(Text, default="")
+    lat: Mapped[float | None] = mapped_column(Float, nullable=True)
+    lon: Mapped[float | None] = mapped_column(Float, nullable=True)
+    captured_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+    photo: Mapped[str] = mapped_column(String(64), default="")
+
+    status: Mapped[str] = mapped_column(String(12), default=OPEN, index=True)
+    assigned_to: Mapped[str | None] = mapped_column(String(32), nullable=True, index=True)
+    assigned_by: Mapped[str] = mapped_column(String(120), default="")
+    assigned_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    fix_note: Mapped[str] = mapped_column(Text, default="")
+    fix_photo: Mapped[str] = mapped_column(String(64), default="")
+    fixed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    closed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    closed_by: Mapped[str] = mapped_column(String(120), default="")
+
+
+class Event(Base):
+    """Something that happened to a report or an issue, kept for the history and the dashboards."""
+
+    __tablename__ = "event"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now, index=True)
+    company_id: Mapped[str | None] = mapped_column(String(32), nullable=True, index=True)
+    report_id: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    issue_id: Mapped[str | None] = mapped_column(String(32), nullable=True, index=True)
+    #: Whose report or issue it is about, and who has been given the issue: they decide who may see it.
+    author_id: Mapped[str | None] = mapped_column(String(32), nullable=True, index=True)
+    assignee_id: Mapped[str | None] = mapped_column(String(32), nullable=True, index=True)
+    #: "report", "assigned", "fixed", "closed", "reopened" or "joined".
+    kind: Mapped[str] = mapped_column(String(12))
+    actor: Mapped[str] = mapped_column(String(120), default="")
+    text: Mapped[str] = mapped_column(Text, default="")

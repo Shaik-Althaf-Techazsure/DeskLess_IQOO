@@ -6,6 +6,20 @@ on:
   workflow_dispatch:
 
 jobs:
+  server:
+    name: Server (tests)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+
+      # The image `docker compose up --build` makes, stopped at its test stage.
+      - name: Build the test image
+        run: docker build --target test --tag deskless-server-test server
+
+      - name: Run the tests
+        run: docker run --rm deskless-server-test
+
   android:
     name: Android app (unit tests + APK)
     runs-on: ubuntu-latest
@@ -13,12 +27,17 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - name: Check the compose file
-        run: docker compose config --quiet
+      - name: Check the compose files
+        run: |
+          docker compose config --quiet
+          PUBLIC_URL=https://example.com/deskless ADMIN_EMAIL=a@example.com ADMIN_PASSWORD=x SECRET_KEY=x AADHAAR_KEY=x \
+            docker compose -f docker-compose.server.yml config --quiet
 
       # The same image `docker compose up --build` makes: unit tests, then the APK.
+      # With the repository variable APP_SERVER_URL set (Settings, Variables), the APK is built to sign
+      # in to that server; without it, to an emulator's own computer.
       - name: Build the app image
-        run: docker build --tag deskless-app android
+        run: docker build --build-arg SERVER_URL="${{ vars.APP_SERVER_URL }}" --tag deskless-app android
 
       - name: Take the APK out of the image
         run: |

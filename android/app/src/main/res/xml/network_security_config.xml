@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The app talks to its account server over HTTPS only. A test build is allowed plain HTTP as well,
+     for a server running on a developer's own computer; see src/debug. -->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="false" />
+</network-security-config>

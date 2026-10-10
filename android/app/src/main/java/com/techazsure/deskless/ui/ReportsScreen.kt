@@ -260,6 +260,19 @@ private fun ReportCard(state: AppState, entry: ReportEntry) {
                         }
                     }
                 }
+                // Whether the office has it yet. Only reports built on this phone are sent from it.
+                val atOffice = when (entry.fileName) {
+                    in state.sentToOffice -> true
+                    in state.waitingForOffice -> false
+                    else -> null
+                }
+                if (atOffice != null) {
+                    Text(
+                        text = if (atOffice) "Sent to the office" else "Waiting to be sent to the office",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = if (atOffice) GoGreen else SafetyYellow,
+                    )
+                }
                 // What the AI review decided, and where the report came from if not from this phone.
                 val reviewed = Verdict.entries.firstOrNull { it.name == entry.review }
                 if (reviewed != null || entry.from.isNotBlank()) {

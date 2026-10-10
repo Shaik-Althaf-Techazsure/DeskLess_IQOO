@@ -18,6 +18,10 @@ android {
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
+        // The account server this build signs in to. Give your own with -PserverUrl=https://your.server;
+        // the default is the developer's computer as an emulator sees it. It can be changed in the app.
+        manifestPlaceholders["serverUrl"] = (project.findProperty("serverUrl") as String?) ?: "http://10.0.2.2:8800"
+
         // The phone is arm64; x86_64 is kept so the same build runs on the PC emulator.
         // Build with -PphoneOnly for an installer without the emulator's libraries (about half the size).
         ndk {

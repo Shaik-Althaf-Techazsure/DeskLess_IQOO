@@ -1,5 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <paths>
+    <!-- Where the phone's camera app leaves the photo taken for a sign-up. -->
+    <cache-path
+        name="signup"
+        path="signup/" />
     <files-path
         name="reports"
         path="reports/" />

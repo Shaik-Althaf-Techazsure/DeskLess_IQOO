@@ -406,18 +406,15 @@ fun ReportScreen(state: AppState, file: File, fromLibrary: Boolean = false) {
                     kind = ButtonKind.Secondary,
                     modifier = Modifier.weight(1f),
                 )
-                // With phones linked, Share sends to the ones you choose: nobody is asked to accept on
-                // either side, and the phone says when it has gone. With one linked phone there is nothing
-                // to choose, and with none it is the usual share sheet.
+                // With phones linked, Share shows them and sends to the ones you choose: nobody is asked to
+                // accept on either side, and the phone says when it has gone. The list is shown even for a
+                // single linked phone, so it is always plain where the report is going. With none linked
+                // it is the usual share sheet.
                 val peers = state.link.peers
                 BrandButton(
                     text = "Share",
                     onClick = {
-                        when (peers.size) {
-                            0 -> context.startActivity(Handoff.shareIntent(context, file))
-                            1 -> sendNote = state.sendReport(file, listOf(peers[0].id))
-                            else -> choosing = true
-                        }
+                        if (peers.isEmpty()) context.startActivity(Handoff.shareIntent(context, file)) else choosing = true
                     },
                     icon = if (peers.isNotEmpty()) Icons.Rounded.SendToMobile else Icons.Rounded.Share,
                     kind = ButtonKind.Secondary,
@@ -448,10 +445,7 @@ fun ReportScreen(state: AppState, file: File, fromLibrary: Boolean = false) {
                 }
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
-                        text = sendNote ?: when (state.link.peers.size) {
-                            1 -> "Share sends to ${state.link.peers[0].name} with no prompt."
-                            else -> "Share lets you choose which linked phones get it."
-                        },
+                        text = sendNote ?: "Share lets you choose which linked phones get it.",
                         style = MaterialTheme.typography.bodySmall,
                         color = if (sendNote != null) SafetyYellow else Fog,
                         modifier = Modifier.weight(1f),

@@ -6,6 +6,12 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import com.techazsure.deskless.account.AccountStore
+import com.techazsure.deskless.account.Api
+import com.techazsure.deskless.account.ApiError
+import com.techazsure.deskless.account.Outbox
+import com.techazsure.deskless.account.PendingSignUp
+import com.techazsure.deskless.account.Profile
 import com.techazsure.deskless.capture.Haptics
 import com.techazsure.deskless.capture.Locator
 import com.techazsure.deskless.capture.SiteSensors
@@ -29,6 +35,7 @@ import com.techazsure.deskless.report.ReportLibrary
 import com.techazsure.deskless.report.ReportPack
 import com.techazsure.deskless.report.Review
 import com.techazsure.deskless.report.Reviewer
+import com.techazsure.deskless.report.SignOff
 import com.techazsure.deskless.speech.Transcriber
 import com.techazsure.deskless.structure.Fields
 import com.techazsure.deskless.structure.Rules
@@ -189,11 +196,12 @@ class AppState(
 
     fun reportFile(entry: ReportEntry): File = library.file(entry)
 
-    /** Adds a freshly built PDF to the library, with what the review made of it. */
+    /** Adds a freshly built PDF to the library, with what the review made of it, and queues it for the office. */
     fun recordReport(file: File, inspection: Inspection, issues: List<Issue>, review: Review? = null) {
         val entry = library.record(file, inspection, issues, flagged = issues.count(::needsALook), review = review)
         reports.removeAll { it.fileName == entry.fileName }
         reports.add(0, entry)
+        queueForOffice(file, inspection, issues, review)
     }
 
     /**
@@ -287,6 +295,210 @@ class AppState(
 
     /** Keeps the phone finding its position while the camera is open, so a picture is stamped at once. */
     fun watchPosition(on: Boolean) = if (on) locator.warm() else locator.cool()
+
+    // ---------------------------------------------------------------- the account
+    //
+    // The server is spoken to while signing up and signing in, and to send finished reports to the office.
+    // Once signed in, the phone holds the sign-in and the person's details: capturing, the models and
+    // building a report work with no network, and a report built offline is sent when the network is back.
+
+    private val account = AccountStore(context)
+    private val api = Api { account.server }
+
+    /** The signed-in person; null when nobody is signed in. */
+    var profile by mutableStateOf(account.profile)
+        private set
+
+    /** A sign-up that is waiting for its emailed code or for the administrator. */
+    var pending by mutableStateOf(account.pending)
+        private set
+
+    /** The address of the account server. */
+    var server by mutableStateOf(account.server)
+        private set
+
+    /** True once the app has been unlocked in this run, by signing in or with the fingerprint. */
+    var unlocked by mutableStateOf(false)
+
+    /** The signed-in person's photo, and a number that changes when the file does. */
+    val accountPhoto: File get() = account.photo
+    var photoVersion by mutableStateOf(0)
+        private set
+
+    /** How a sign-up is doing, as the server last said. [approver] is who decides it, in words. */
+    data class SignUpStatus(val status: String, val uniqueId: String, val reason: String, val approver: String)
+
+    fun useServer(address: String) {
+        account.useServer(address)
+        server = account.server
+    }
+
+    private suspend fun <T> online(call: () -> T): Result<T> = withContext(Dispatchers.IO) { runCatching(call) }
+
+    private fun why(error: Throwable): String = (error as? ApiError)?.message ?: "Something went wrong. Try again."
+
+    /** Sends the sign-up form with the photo. Null when it went through; otherwise what to tell the person. */
+    suspend fun signUp(fields: Map<String, String>, photo: File): String? =
+        online { api.signUp(fields, photo) }.fold(
+            onSuccess = { answer ->
+                account.waitingFor(PendingSignUp(answer.getString("email"), answer.getString("ticket"), fields["name"].orEmpty()))
+                pending = account.pending
+                null
+            },
+            onFailure = ::why,
+        )
+
+    /**
+     * Asks whose code this is, for someone signing up as [role]. The answer is a sentence for the form:
+     * which company they are about to join and who will approve them, or why the code will not do.
+     */
+    suspend fun whoseCode(code: String, role: String): Result<String> =
+        online { api.invite(code, role) }.map {
+            "You are joining ${it.optString("company")}. ${it.optString("lead")} (${it.optString("lead_role")}) approves your sign-up."
+        }
+
+    /** Confirms the email address with the code that was emailed. */
+    suspend fun verifyCode(code: String): String? {
+        val waiting = pending ?: return "Sign up again."
+        return online { api.verify(waiting.email, code) }.fold({ null }, ::why)
+    }
+
+    suspend fun resendCode(): String? {
+        val waiting = pending ?: return "Sign up again."
+        return online { api.resend(waiting.email) }.fold({ null }, ::why)
+    }
+
+    /** Asks the server how the sign-up is doing. */
+    suspend fun signUpStatus(): Result<SignUpStatus> {
+        val waiting = pending ?: return Result.failure(ApiError("Sign up again."))
+        return online { api.status(waiting.email, waiting.ticket) }
+            .map { SignUpStatus(it.optString("status"), it.optString("unique_id"), it.optString("reason"), it.optString("approver")) }
+    }
+
+    /** Drops a sign-up that was rejected or abandoned, so a new one can be started. */
+    fun forgetSignUp() {
+        account.waitingFor(null)
+        pending = null
+    }
+
+    /**
+     * Signs in with the unique ID and password. On success the sign-in and the person's details are kept on
+     * the phone, their photo is fetched, and their name goes on the reports and to linked phones.
+     */
+    suspend fun signIn(uniqueId: String, password: String): String? =
+        online {
+            val answer = api.login(uniqueId.trim(), password)
+            val token = answer.getString("token")
+            api.photo(token, account.photo)
+            token to Profile.from(answer.getJSONObject("profile"))
+        }.fold(
+            onSuccess = { (token, person) ->
+                account.signedIn(token, person)
+                pending = null
+                profile = person
+                unlocked = true
+                photoVersion++
+                if (inspection.inspector.isBlank()) updateInspection(inspection.site, person.name) else link.rename(person.name)
+                toldToSignIn = false
+                sendToOffice()
+                null
+            },
+            onFailure = ::why,
+        )
+
+    suspend fun forgotPassword(uniqueId: String): String? = online { api.forgot(uniqueId.trim()) }.fold({ null }, ::why)
+
+    suspend fun resetPassword(uniqueId: String, code: String, password: String): String? =
+        online { api.reset(uniqueId.trim(), code.trim(), password) }.fold({ null }, ::why)
+
+    // ---------------------------------------------------------------- reports to the office
+    //
+    // Every report built on this phone is sent to the company's server, where the manager and the
+    // managing director see it on their dashboards. Nobody has to press anything: with a network it goes
+    // at once, without one it waits in the outbox and goes when the network is back.
+
+    private val outbox = Outbox(context)
+
+    /** File names of the reports that wait to be sent to the office, and of those the office has. */
+    val waitingForOffice = mutableStateListOf<String>().apply { addAll(outbox.waitingNames()) }
+    val sentToOffice = mutableStateListOf<String>().apply { addAll(outbox.sent()) }
+    private var sending = false
+    private var toldToSignIn = false
+
+    private fun queueForOffice(file: File, inspection: Inspection, issues: List<Issue>, review: Review?) {
+        val listed = issues.toList()
+        scope.launch {
+            // Copying and shrinking the pictures takes a moment; the screen is not kept waiting for it.
+            withContext(Dispatchers.IO) {
+                runCatching { outbox.add(file, inspection, listed, review, SignOff.fileFor(file).isFile, store::file) }
+            }
+            showOutbox()
+            sendToOffice()
+        }
+    }
+
+    private fun showOutbox() {
+        waitingForOffice.clear()
+        waitingForOffice.addAll(outbox.waitingNames())
+        sentToOffice.clear()
+        sentToOffice.addAll(outbox.sent())
+    }
+
+    /**
+     * Sends whatever waits in the outbox, oldest first. Called when a report is built, when the app
+     * comes to the front and when the phone finds a network. With no network it simply stops and the
+     * reports go on waiting.
+     */
+    fun sendToOffice() {
+        if (sending || profile == null || account.token.isBlank()) return
+        sending = true
+        scope.launch {
+            val trouble = withContext(Dispatchers.IO) {
+                var said: String? = null
+                for (report in outbox.waiting { File(library.folder, it) }) {
+                    val error = runCatching { api.sendReport(account.token, report.about, report.pdf, report.pictures) }.exceptionOrNull()
+                    if (error == null) {
+                        outbox.done(report)
+                        continue
+                    }
+                    val refusal = error as? ApiError
+                    if (refusal?.status == 401) {
+                        // Said once in a run of the app, not at every try.
+                        if (!toldToSignIn) said = "Sign in again to send your reports to the office. They are kept on the phone until then."
+                        toldToSignIn = true
+                    } else if (refusal?.refused == true && (refusal.status == 413 || refusal.status == 422)) {
+                        // The DeskLess server itself says it will never take this one; the others still can go.
+                        outbox.drop(report)
+                        said = "A report could not be sent to the office: ${error.message}"
+                        continue
+                    }
+                    // Anything else, such as no network, a wrong address or a server that is not up yet,
+                    // leaves the report waiting on the phone for the next try.
+                    break
+                }
+                said
+            }
+            showOutbox()
+            sending = false
+            trouble?.let { notice = it }
+        }
+    }
+
+    /**
+     * The address that opens this person's dashboard in a browser, already signed in: the link in it
+     * works once and for two minutes. Needs the network.
+     */
+    suspend fun dashboardAddress(): Result<String> =
+        online { account.server.trimEnd('/') + "/dashboard#code=" + api.webLink(account.token) }
+            .recoverCatching { throw ApiError(if ((it as? ApiError)?.status == 401) "Sign in again to open your dashboard." else why(it)) }
+
+    /** Signs out of this phone. The inspection in progress and the reports stay where they are. */
+    fun signOut() {
+        account.signOut()
+        profile = null
+        unlocked = false
+        screen = Screen.Home
+    }
 
     fun fileOf(name: String): File = store.file(name)
 

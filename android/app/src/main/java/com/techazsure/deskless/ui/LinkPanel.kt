@@ -2,6 +2,7 @@ package com.techazsure.deskless.ui
 
 import android.bluetooth.BluetoothAdapter
 import android.content.Intent
+import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
@@ -26,6 +27,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Bluetooth
 import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.Dashboard
 import androidx.compose.material.icons.rounded.Lock
 import androidx.compose.material.icons.rounded.PhoneAndroid
 import androidx.compose.material.icons.rounded.QrCodeScanner
@@ -34,10 +36,13 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -46,6 +51,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.techazsure.deskless.AppState
@@ -62,6 +68,7 @@ import com.techazsure.deskless.ui.theme.SafetyYellow
 import com.techazsure.deskless.ui.theme.SeverityMedium
 import com.techazsure.deskless.ui.theme.SignalRed
 import com.techazsure.deskless.ui.theme.Steel
+import kotlinx.coroutines.launch
 
 /**
  * The side bar: this phone's QR code, the phones it is linked with, and what the link is doing. Another
@@ -71,6 +78,8 @@ import com.techazsure.deskless.ui.theme.Steel
 @Composable
 fun LinkPanel(state: AppState, onScan: () -> Unit) {
     val link = state.link
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
     // Coming back from a system prompt redraws the rows below with the new answer.
     var asked by remember { mutableIntStateOf(0) }
     val turnOn = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) {
@@ -92,6 +101,73 @@ fun LinkPanel(state: AppState, onScan: () -> Unit) {
             .padding(20.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {
+        // Who is signed in on this phone.
+        state.profile?.let { person ->
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                Profile(state, Modifier.size(56.dp))
+                Column(Modifier.weight(1f)) {
+                    Text(person.name, style = MaterialTheme.typography.titleMedium, color = Chalk, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text("${person.uniqueId} · ${person.roleName}", style = MaterialTheme.typography.labelMedium, color = SafetyYellow)
+                }
+                TextButton(onClick = { state.signOut() }) { Text("Sign out", color = Fog) }
+            }
+            if (person.organisation.isNotBlank() || person.reportsTo.isNotBlank()) {
+                Text(
+                    text = listOfNotNull(
+                        person.organisation.takeIf { it.isNotBlank() },
+                        person.reportsTo.takeIf { it.isNotBlank() }?.let { "reporting to $it" },
+                    ).joinToString(" · "),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = Fog,
+                )
+            }
+            // A managing director's or manager's code, for the people who are to answer to them.
+            if (person.inviteCode.isNotBlank()) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(Steel, RoundedCornerShape(14.dp))
+                        .padding(horizontal = 14.dp, vertical = 10.dp),
+                ) {
+                    Text(if (person.role == "md") "COMPANY CODE" else "TEAM CODE", style = MaterialTheme.typography.labelSmall, color = Fog)
+                    Text(person.inviteCode, style = MaterialTheme.typography.titleLarge, color = SafetyYellow)
+                    Text(
+                        "The people who report to you type this when they sign up. You then approve them on your dashboard.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = Fog,
+                    )
+                }
+            }
+            // The dashboard is a web page on the company's server; the app opens it already signed in.
+            var opening by remember { mutableStateOf(false) }
+            BrandButton(
+                text = if (opening) "Opening…" else "My dashboard",
+                icon = Icons.Rounded.Dashboard,
+                kind = ButtonKind.Secondary,
+                enabled = !opening,
+                modifier = Modifier.fillMaxWidth(),
+                onClick = {
+                    opening = true
+                    scope.launch {
+                        state.dashboardAddress()
+                            .onSuccess { address ->
+                                runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(address))) }
+                                    .onFailure { state.notice = "No browser could be opened." }
+                            }
+                            .onFailure { state.notice = it.message }
+                        opening = false
+                    }
+                },
+            )
+            val waiting = state.waitingForOffice.size
+            if (waiting > 0) {
+                Text(
+                    text = "$waiting report${if (waiting == 1) "" else "s"} waiting to be sent to the office. They go when the phone has a network.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = SafetyYellow,
+                )
+            }
+        }
         Text("LINK PHONES", style = MaterialTheme.typography.headlineSmall, color = Chalk)
         Text(
             text = "Scan this code with DeskLess on another phone. The two are then linked: reports pass " +

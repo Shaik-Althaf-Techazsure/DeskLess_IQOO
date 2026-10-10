@@ -52,10 +52,14 @@ COPY settings.gradle.kts build.gradle.kts gradle.properties ./
 COPY gradle gradle
 COPY app app
 
+# The server the app signs in and sends reports to. Empty keeps the build's own default; the address can also be
+# changed on the app's first screen.
+ARG SERVER_URL=""
+
 # -PphoneOnly leaves out the emulator's x86_64 libraries, which halves the APK.
 # Downloaded dependencies stay in a build cache, so a rebuild after an edit does not fetch them again.
 RUN --mount=type=cache,target=/root/.gradle \
-    gradle --no-daemon testDebugUnitTest assembleDebug -PphoneOnly \
+    gradle --no-daemon testDebugUnitTest assembleDebug -PphoneOnly ${SERVER_URL:+-PserverUrl=$SERVER_URL} \
  && cp app/build/outputs/apk/debug/app-debug.apk /DeskLess.apk
 
 

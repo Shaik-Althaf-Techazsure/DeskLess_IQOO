@@ -1,0 +1,98 @@
+"""
+The DeskLess server: accounts (sign-up with a code by email, approval by the level above, sign-in with a
+unique ID), the reports the phones send, the work that follows from them, and a dashboard for each role.
+"""
+
+from contextlib import asynccontextmanager
+from pathlib import Path
+
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
+from sqlalchemy import text
+
+from .config import settings
+from .db import SessionLocal, init_db
+from .mailer import Mailer
+from .routers import admin, auth, people, signup, work
+
+STATIC = Path(__file__).parent / "static"
+
+
+class UnderItsPath:
+    """
+    On its real domain the server lives under a path, such as /competitions/IQOO, behind the site's own
+    web server. Some set-ups pass that path on with each request and some cut it off first. Either way
+    the routes below see the request as if the server sat at the root. Capitals in the path do not matter.
+    """
+
+    def __init__(self, app, base: str):
+        self.app = app
+        self.base = base
+
+    async def __call__(self, scope, receive, send):
+        if self.base and scope["type"] == "http":
+            path = scope["path"]
+            under = path.lower().startswith(self.base.lower()) and path[len(self.base):len(self.base) + 1] in ("", "/")
+            if under:
+                scope = dict(scope, path=path[len(self.base):] or "/")
+                # The same path as the browser sent it; it is rebuilt from the one above when needed.
+                scope.pop("raw_path", None)
+        await self.app(scope, receive, send)
+
+
+# The dashboard is one page with its style and script beside it.
+_PAGE_FILES = {"app.css": "text/css", "app.js": "text/javascript"}
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    init_db()
+    yield
+
+
+app = FastAPI(title="DeskLess", version="2.0", lifespan=lifespan, docs_url="/api/docs", redoc_url=None, openapi_url="/api/openapi.json")
+app.state.mailer = Mailer()
+app.add_middleware(UnderItsPath, base=settings().base_path)
+app.include_router(signup.router)
+app.include_router(auth.router)
+app.include_router(admin.router)
+app.include_router(people.router)
+app.include_router(work.router)
+
+
+@app.exception_handler(HTTPException)
+async def say_why(_: Request, error: HTTPException) -> JSONResponse:
+    """Every refusal carries one sentence the app can show as it is."""
+    return JSONResponse({"detail": error.detail}, status_code=error.status_code, headers=error.headers)
+
+
+@app.get("/api/health")
+def health() -> dict:
+    with SessionLocal() as db:
+        db.execute(text("SELECT 1"))
+    return {"status": "ok", "mail": bool(settings().smtp_host)}
+
+
+# The pages are not cached, so a new version is seen as soon as the server is updated.
+_FRESH = {"Cache-Control": "no-store"}
+
+
+@app.get("/dashboard", include_in_schema=False)
+def dashboard_page() -> FileResponse:
+    """The one page everybody signs in on. It asks for its style, its script and the API beside itself,
+    so it works under whatever path the server is given."""
+    return FileResponse(STATIC / "index.html", headers=_FRESH)
+
+
+@app.get("/static/{name}", include_in_schema=False)
+def page_file(name: str) -> FileResponse:
+    if name not in _PAGE_FILES:
+        raise HTTPException(404, "Not found.")
+    return FileResponse(STATIC / name, media_type=_PAGE_FILES[name], headers=_FRESH)
+
+
+@app.get("/", include_in_schema=False)
+@app.get("/admin", include_in_schema=False)
+def to_the_dashboard() -> RedirectResponse:
+    """The bare address, and where the administrator's page used to be, lead to the dashboard."""
+    return RedirectResponse(f"{settings().base_path}/dashboard")
