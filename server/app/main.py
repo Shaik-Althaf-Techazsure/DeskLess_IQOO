@@ -13,7 +13,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
 from sqlalchemy import text
 
-from . import metrics
+from . import metrics, writer
 from .config import settings
 from .db import SessionLocal, init_db
 from .mailer import Mailer
@@ -120,6 +120,8 @@ _PAGE_FILES = {"app.css": "text/css", "app.js": "text/javascript"}
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     init_db()
+    # Where a writing model is named in the settings, it works beside the server from here on.
+    writer.start()
     yield
 
 
@@ -146,7 +148,7 @@ async def say_why(_: Request, error: HTTPException) -> JSONResponse:
 def health() -> dict:
     with SessionLocal() as db:
         db.execute(text("SELECT 1"))
-    return {"status": "ok", "mail": bool(settings().smtp_host)}
+    return {"status": "ok", "mail": bool(settings().smtp_host), "ai": writer.status()["on"]}
 
 
 def _mark() -> str:

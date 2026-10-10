@@ -36,6 +36,12 @@ class Settings:
     #: Where people reach this server from outside, e.g. "https://example.com/competitions/IQOO".
     #: Empty on a developer's machine, where it sits at the root of its own port.
     public_url: str = ""
+    #: Where the writing model answers, e.g. "http://ai:8080": an open-source model run on this machine,
+    #: spoken to in the way llama.cpp and Ollama both understand. Empty, or nothing answering there,
+    #: and the assistant words things itself from the fields each issue came with.
+    ai_url: str = ""
+    #: The model's name where the runner serves several (Ollama); llama.cpp serves one and ignores it.
+    ai_model: str = ""
 
     @property
     def base_path(self) -> str:
@@ -124,4 +130,6 @@ def settings() -> Settings:
         token_days=int(env.get("TOKEN_DAYS", "30")),
         utc_offset_minutes=int(env.get("UTC_OFFSET_MINUTES", "330")),
         public_url=env.get("PUBLIC_URL", "").strip().rstrip("/"),
+        ai_url=env.get("AI_URL", "").strip().rstrip("/"),
+        ai_model=env.get("AI_MODEL_NAME", "").strip(),
     )

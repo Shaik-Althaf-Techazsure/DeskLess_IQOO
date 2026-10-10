@@ -220,7 +220,55 @@ class Event(Base):
     #: Whose report or issue it is about, and who has been given the issue: they decide who may see it.
     author_id: Mapped[str | None] = mapped_column(String(32), nullable=True, index=True)
     assignee_id: Mapped[str | None] = mapped_column(String(32), nullable=True, index=True)
-    #: "report", "assigned", "fixed", "closed", "reopened" or "joined".
+    #: "report", "assigned", "fixed", "closed", "reopened", "sent" or "joined".
     kind: Mapped[str] = mapped_column(String(12))
     actor: Mapped[str] = mapped_column(String(120), default="")
     text: Mapped[str] = mapped_column(Text, default="")
+
+
+class Message(Base):
+    """
+    A word from one person to another about an issue: sent on with a note, asked about, or answered. It
+    waits on the person it is for until they answer, send the issue on, or do the work.
+    """
+
+    __tablename__ = "message"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now, index=True)
+    issue_id: Mapped[str] = mapped_column(ForeignKey(Issue.id, ondelete="CASCADE"), index=True)
+    company_id: Mapped[str | None] = mapped_column(String(32), nullable=True, index=True)
+    #: Who wrote it; nobody's account when it was the administrator.
+    author_id: Mapped[str | None] = mapped_column(String(32), nullable=True, index=True)
+    author: Mapped[str] = mapped_column(String(120), default="")
+    author_role: Mapped[str] = mapped_column(String(16), default="")
+    #: Who it is for: a person, or the administrator.
+    to_id: Mapped[str | None] = mapped_column(String(32), nullable=True, index=True)
+    to_admin: Mapped[bool] = mapped_column(Boolean, default=False)
+    to_name: Mapped[str] = mapped_column(String(120), default="")
+    text: Mapped[str] = mapped_column(Text, default="")
+    #: When the person it was for dealt with it; empty while it still waits on them.
+    done_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class Brief(Base):
+    """
+    What the writing model made of an issue, kept so the model is asked once for each telling of it and
+    the dashboards never wait for it.
+    """
+
+    __tablename__ = "brief"
+
+    issue_id: Mapped[str] = mapped_column(ForeignKey(Issue.id, ondelete="CASCADE"), primary_key=True)
+    #: A mark of what the issue said when the summary was written; when the issue changes, it is written again.
+    mark: Mapped[str] = mapped_column(String(64), default="")
+    #: What is wrong and why it matters, in a sentence or two.
+    summary: Mapped[str] = mapped_column(Text, default="")
+    #: What the messages about it come to so far, and the last message that was read for it.
+    talk: Mapped[str] = mapped_column(Text, default="")
+    talk_upto: Mapped[int] = mapped_column(Integer, default=0)
+    #: The name of the model that wrote it.
+    engine: Mapped[str] = mapped_column(String(80), default="")
+    made_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+    #: How often the model has failed on this telling; after a few it is left to the built-in wording.
+    tries: Mapped[int] = mapped_column(Integer, default=0)

@@ -15,10 +15,11 @@ from pydantic import BaseModel
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from .. import mailer
+from .. import mailer, writer
+from ..assistant import Desk, dealt_with
 from ..config import settings
 from ..db import get_db
-from ..models import APPROVED, ASSIGNED, CLOSED, FIXED, OPEN, ROLE_NAMES, SEVERITIES, STATUSES, Account, Event, Issue, Report, now
+from ..models import APPROVED, ASSIGNED, CLOSED, FIXED, OPEN, ROLE_NAMES, SEVERITIES, STATUSES, Account, Event, Issue, Message, Report, now
 from ..pictures import picture_response, save_photo
 from .admin import companies as every_company, system as server_health
 from ..service import (
@@ -193,9 +194,11 @@ async def send_report(
                 issue.status, issue.closed_at, issue.closed_by = OPEN, None, ""
         changed = changed or before != _as_told(issue)
         kept += 1
-    # An issue the phone no longer lists is dropped, unless work has already been done on it.
+    # An issue the phone no longer lists is dropped, unless work has already been done on it or
+    # people have written to each other about it.
+    spoken_of = set(db.scalars(select(Message.issue_id).where(Message.issue_id.in_([gone.id for gone in known.values()])))) if known else set()
     for gone in known.values():
-        if gone.status == OPEN:
+        if gone.status == OPEN and gone.id not in spoken_of:
             for name in (gone.photo, gone.fix_photo):
                 if name:
                     (settings().issues_dir / name).unlink(missing_ok=True)
@@ -222,6 +225,8 @@ async def send_report(
                 company_id=account.company_id, report_id=report.id, issue_id=issue.id, author_id=account.id,
             )
     db.commit()
+    # The writing model, where one runs, takes up what is new; nothing here waits for it.
+    writer.nudge()
     return {"id": report.id, "issues": kept, "updated": not fresh, "built": bool(report.pdf)}
 
 
@@ -319,10 +324,11 @@ def _issue_row(issue: Issue, names: dict[str, str], day: date) -> dict:
     }
 
 
-def _rows(db: Session, found: list[Issue]) -> list[dict]:
+def _rows(db: Session, found: list[Issue], desk: Desk | None = None) -> list[dict]:
+    """The issues as a page is given them; with a desk, each also says how pressing the assistant finds it."""
     names = names_of(db, [one for issue in found for one in (issue.author_id, issue.assigned_to)])
     day = today()
-    return [_issue_row(issue, names, day) for issue in found]
+    return [_issue_row(issue, names, day) | ({"priority": desk.priority(issue)} if desk else {}) for issue in found]
 
 
 @router.get("/issues")
@@ -333,7 +339,8 @@ def issues(report: str = "", actor: Actor = Depends(current_actor), db: Session 
         query = query.where(Issue.report_id == report).order_by(Issue.number.asc())
     else:
         query = query.order_by(Issue.captured_at.desc()).limit(1000)
-    return _rows(db, list(db.scalars(query)))
+    found = list(db.scalars(query))
+    return _rows(db, found, Desk(db, actor, found))
 
 
 def _issue(db: Session, actor: Actor, issue_id: str) -> Issue:
@@ -345,10 +352,23 @@ def _issue(db: Session, actor: Actor, issue_id: str) -> Issue:
 
 @router.get("/issues/{issue_id}")
 def issue_detail(issue_id: str, actor: Actor = Depends(current_actor), db: Session = Depends(get_db)) -> dict:
-    """One issue with everything that has happened to it, oldest first."""
+    """
+    One issue with everything that has happened to it, oldest first, and what the assistant makes of it
+    for the person asking: a summary, how pressing it is and why, who could take it, the next step with
+    the words to send, the messages about it, and whom it may be sent to.
+    """
     issue = _issue(db, actor, issue_id)
     history = db.scalars(select(Event).where(Event.issue_id == issue.id).order_by(Event.id.asc()))
-    return _rows(db, [issue])[0] | {"history": [{"at": when(event.at), "kind": event.kind, "text": event.text} for event in history]}
+    desk = Desk(db, actor, [issue])
+    brief = desk.brief(issue)
+    # True while a model is on its way to wording this issue: the page then looks again in a moment.
+    brief["writing"] = writer.status()["on"] and not brief["engine"] and issue.status != CLOSED and writer.worth_writing(issue)
+    return _rows(db, [issue], desk)[0] | {
+        "history": [{"at": when(event.at), "kind": event.kind, "text": event.text} for event in history],
+        "brief": brief,
+        "thread": desk.thread(issue),
+        "send_to": desk.may_send_to(issue),
+    }
 
 
 def _picture(name: str, size: str) -> FileResponse:
@@ -396,10 +416,22 @@ def _about(issue: Issue) -> dict:
     return {"company_id": issue.company_id, "report_id": issue.report_id, "issue_id": issue.id, "author_id": issue.author_id, "assignee_id": issue.assigned_to}
 
 
+def _say(db: Session, actor: Actor, issue: Issue, to: Account | None, text: str) -> Message:
+    """Writes down a message about an issue for one person, or for the administrator when `to` is nobody."""
+    message = Message(
+        issue_id=issue.id, company_id=issue.company_id, author_id=None if actor.is_admin else actor.account.id, author=actor.name, author_role=actor.role,
+        to_id=to.id if to else None, to_admin=to is None, to_name=to.name if to else "The administrator", text=text,
+    )
+    db.add(message)
+    return message
+
+
 class Assign(BaseModel):
     to: str
     #: The day it is to be done by, as YYYY-MM-DD; empty keeps the deadline the inspector gave.
     due_on: str = ""
+    #: A word to the technician with it, such as the one the assistant drafted.
+    note: str = ""
 
 
 @router.post("/issues/{issue_id}/assign")
@@ -429,12 +461,91 @@ def assign(
     issue.status = ASSIGNED
     due = issue.due_on.strftime("%d %b %Y").lstrip("0") if issue.due_on else issue.due_text
     note(db, "assigned", lead.name, f"{lead.name} gave it to {technician.name}" + (f", due {due}" if due else ""), **_about(issue))
+    # Giving it out answers whoever sent it to this person; a word with it waits on the technician.
+    dealt_with(db, actor, issue)
+    words = body.note.strip()[:2000]
+    if words:
+        _say(db, actor, issue, technician, words)
     db.commit()
+    writer.nudge()
     try:
-        post.send(technician.email, *mailer.assigned_email(technician.name, issue.title or "Untitled issue", issue.site, due, lead.name))
+        post.send(technician.email, *mailer.assigned_email(technician.name, issue.title or "Untitled issue", issue.site, due, lead.name, words))
     except mailer.MailError:
         pass
     return _rows(db, [issue])[0]
+
+
+class Send(BaseModel):
+    #: Who it is for: a person's id, or "admin" for the administrator.
+    to: str
+    text: str
+
+
+@router.post("/issues/{issue_id}/send")
+def send(
+    issue_id: str,
+    body: Send,
+    actor: Actor = Depends(current_actor),
+    db: Session = Depends(get_db),
+    post: mailer.Mailer = Depends(get_mailer),
+) -> dict:
+    """
+    Passes the issue to someone with a note: up to whoever gives out work, down to whoever does it, or
+    back as an answer. It then waits on that person, and shows on their dashboard, until they answer,
+    send it on, or do the work.
+    """
+    issue = _issue(db, actor, issue_id)
+    words = body.text.strip()[:2000]
+    if not words:
+        raise HTTPException(422, "Write a word to send with it.")
+    desk = Desk(db, actor, [issue])
+    if body.to not in {one["id"] for one in desk.may_send_to(issue)}:
+        raise HTTPException(422, "You cannot send this issue to that person.")
+    to = None if body.to == "admin" else db.get(Account, body.to)
+    dealt_with(db, actor, issue)
+    message = _say(db, actor, issue, to, words)
+    shown = words if len(words) <= 160 else words[:159].rstrip() + "…"
+    note(
+        db, "sent", actor.name, f"{actor.name} sent it to {message.to_name}: “{shown}”",
+        company_id=issue.company_id, report_id=issue.report_id, issue_id=issue.id, author_id=issue.author_id, assignee_id=to.id if to else issue.assigned_to,
+    )
+    db.commit()
+    writer.nudge()
+    try:
+        post.send(to.email if to else settings().admin_email, *mailer.sent_email(message.to_name, actor.name, issue.title or "Untitled issue", issue.site, words))
+    except mailer.MailError:
+        pass
+    return _rows(db, [issue])[0]
+
+
+def _waiting(db: Session, actor: Actor, mine: bool = False) -> list[Message]:
+    """The messages that still wait on this person, newest first; or, with `mine`, those they wait on others for."""
+    query = select(Message).where(Message.done_at.is_(None)).order_by(Message.id.desc()).limit(200)
+    if actor.is_admin:
+        return list(db.scalars(query.where((Message.author_role == "admin") & Message.author_id.is_(None) if mine else Message.to_admin.is_(True))))
+    return list(db.scalars(query.where(Message.author_id == actor.account.id if mine else Message.to_id == actor.account.id)))
+
+
+def _message_row(message: Message, issue: Issue, desk: Desk) -> dict:
+    score = desk.priority(issue)
+    return {
+        "id": message.id, "at": when(message.at), "issue_id": issue.id, "title": issue.title or "Untitled issue", "site": issue.site,
+        "severity": issue.severity, "status": issue.status, "from": message.author,
+        "from_role": "Administrator" if message.author_role == "admin" else ROLE_NAMES.get(message.author_role, message.author_role),
+        "to": message.to_name, "text": message.text, "score": score["score"], "band": score["band"], "band_name": score["band_name"],
+    }
+
+
+@router.get("/inbox")
+def inbox(actor: Actor = Depends(current_actor), db: Session = Depends(get_db)) -> dict:
+    """What has been sent to this person and still waits on them, and what they sent that still waits on others."""
+    for_me, by_me = _waiting(db, actor), _waiting(db, actor, mine=True)
+    ids = {message.issue_id for message in (*for_me, *by_me)}
+    found = list(db.scalars(select(Issue).where(Issue.id.in_(ids), sees_issues(db, actor)))) if ids else []
+    desk = Desk(db, actor, found)
+    by_id = {issue.id: issue for issue in found}
+    rows = lambda messages: [_message_row(message, by_id[message.issue_id], desk) for message in messages if message.issue_id in by_id]  # noqa: E731
+    return {"for_me": sorted(rows(for_me), key=lambda row: -row["score"]), "by_me": rows(by_me)}
 
 
 @router.post("/issues/{issue_id}/fixed")
@@ -462,6 +573,7 @@ async def fixed(
     issue.fixed_at = now()
     issue.status = FIXED
     note(db, "fixed", account.name, f"{account.name} marked it fixed" + (f": {issue.fix_note}" if issue.fix_note else ""), **_about(issue))
+    dealt_with(db, actor, issue)
     db.commit()
     return _rows(db, [issue])[0]
 
@@ -487,6 +599,7 @@ def close(issue_id: str, body: Remark = Remark(), actor: Actor = Depends(current
         (f"{lead.name} checked the repair and closed it" if was_fixed else f"{lead.name} closed it") + (f": {remark}" if remark else ""),
         **_about(issue),
     )
+    dealt_with(db, actor, issue)
     db.commit()
     return _rows(db, [issue])[0]
 
@@ -502,6 +615,12 @@ def reopen(issue_id: str, body: Remark = Remark(), actor: Actor = Depends(curren
     issue.closed_at, issue.closed_by, issue.fixed_at = None, "", None
     remark = " ".join(body.note.split())[:500]
     note(db, "reopened", lead.name, f"{lead.name} sent it back" + (f": {remark}" if remark else ""), **_about(issue))
+    dealt_with(db, actor, issue)
+    if remark and issue.assigned_to:
+        # What is still wrong goes to the technician as a message too, so it waits on them by name.
+        technician = db.get(Account, issue.assigned_to)
+        if technician is not None:
+            _say(db, actor, issue, technician, remark)
     db.commit()
     return _rows(db, [issue])[0]
 
@@ -604,6 +723,15 @@ def dashboard(actor: Actor = Depends(current_actor), db: Session = Depends(get_d
             key=lambda row: (-row["open"], row["lead"]),
         )
 
+    # The assistant's part: what needs this person first, with the next step for each; a line for each
+    # of the most pressing issues in view; what has been sent to them; and how loaded each technician is.
+    desk = Desk(db, actor, found)
+    needs_me, triage = desk.queue(found)
+    by_id = {issue.id: issue for issue in found}
+    sent_to_me = [message for message in _waiting(db, actor) if message.issue_id in by_id]
+    bands = Counter(desk.priority(issue)["band"] for issue in unsettled)
+    tiles |= {"act_now": bands.get("now", 0), "soon": bands.get("soon", 0), "routine": bands.get("routine", 0), "inbox": len(sent_to_me), "needs_me": len(needs_me)}
+
     recent = db.scalars(select(Event).where(sees_events(db, actor)).order_by(Event.id.desc()).limit(25))
     titles = {issue.id: issue.title or "Untitled issue" for issue in found}
     # The administrator's overview also shows every company and the server's own health. They come in
@@ -626,6 +754,11 @@ def dashboard(actor: Actor = Depends(current_actor), db: Session = Depends(get_d
             {"id": person.id, "name": person.name, "role_name": ROLE_NAMES.get(person.role, person.role), "organisation": person.organisation, "seen_at": when(person.last_seen_at)}
             for person in here[:12]
         ],
+        "ai": writer.status(),
+        "queue": needs_me,
+        "triage": triage,
+        "inbox": [_message_row(message, by_id[message.issue_id], desk) for message in sent_to_me[:6]],
+        "load": desk.load() if may_direct(actor) else [],
         "activity": [
             {"id": event.id, "at": when(event.at), "kind": event.kind, "text": event.text, "issue_id": event.issue_id, "about": titles.get(event.issue_id, "")}
             for event in recent

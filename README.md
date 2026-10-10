@@ -9,7 +9,7 @@ Team **techazsure** · iQOO Hackathon 2026 Grand Finale · Productivity track
 | Folder | What it is | Written |
 |---|---|---|
 | `android/` | **The finale build.** A native Android app that does everything on the phone: camera, voice, speech-to-text and a language model on the device, readings from the phone's sensors, PDF report, and reports passed from phone to phone with no network. No server takes part in making a report, and once signed in the app captures and builds reports in airplane mode. | During the finale, 9–11 Oct 2026 |
-| `server/` | **The server.** Accounts for five roles (sign-up with a code sent by email, approval by the level above, sign-in with a unique ID), the reports the phones send, the work on their issues, and a web dashboard for each role. | During the finale, 9–11 Oct 2026 |
+| `server/` | **The server.** Accounts for five roles (sign-up with a code sent by email, approval by the level above, sign-in with a unique ID), the reports the phones send, the work on their issues, a web console for each role, and an assistant that summarises and ranks every issue, names who could take it and drafts the next step. | During the finale, 9–11 Oct 2026 |
 | `docker-compose.server.yml`, `deploy/` | **The server on a real machine.** The server and its database alone, and the scripts that put them under a path of an existing site (`deploy/setup.sh`, once) and update them after a push (`deploy/update.sh`). | During the finale, 9–11 Oct 2026 |
 | `backend/`, `frontend/` | The web prototype sent with the registration. The phone is the capture device and the models run on the computer that runs Docker. | Before the finale, 4 Oct 2026 |
 
@@ -227,13 +227,15 @@ A forgotten password is reset in the app with a code sent to the account's email
 
 An issue the inspector already saw repaired on site arrives closed.
 
+At each of these steps the dashboard's assistant has already read the issue: it says what it is, how pressing it is and why, who is best placed to take it, and what the person looking should do next. See [The assistant](#the-assistant).
+
 ### The dashboards
 
 One page for everybody: http://localhost:8800/dashboard on this computer, `https://www.shaikalthaf.in/competitions/iqoo/dashboard` on our server. What it shows depends on who signs in. In the app, **My dashboard** in the side bar opens it already signed in, with a link that works once.
 
 | Who | What they see and do |
 |---|---|
-| Administrator | A **control room** for the whole platform: companies, who is online, reports and issues across all of them, what is happening as it happens, and the health of the server. Sections for approvals, companies, people, reports, issues and the system itself. Decides sign-ups and can suspend any account; does not hand out work. |
+| Administrator | A **control room** for the whole platform: companies, who is online, reports and issues across all of them, what is happening as it happens, and the health of the server. Sections for approvals, companies, people, reports, issues and the system itself. Decides sign-ups and can suspend any account; does not hand out work, but can send any issue to the people who do, with a note. |
 | Managing Director | The company: reports, issues not closed, high or critical, overdue, fixed and waiting for a check; issues by severity, site and type; the last 14 days; each manager's team side by side; what happened lately. Approves managers, and can give out and close any issue. Their company code. |
 | Manager | Their team: issues to give out, with technicians, to check, overdue; the team's reports with each PDF and the AI review's verdict; the people in the team and what each has in hand. Approves their inspectors and technicians. Their team code. |
 | Inspector | Their own reports, and what has become of each issue they reported. |
@@ -246,15 +248,61 @@ What each may see is decided on the server, not on the page: a manager cannot op
 | On the overview | What it shows |
 |---|---|
 | Tiles | The few numbers the role acts on, each with today against yesterday and the last fortnight as a small line. A tile opens the list behind it. |
+| Needs you first, AI triage, Sent to you, Who has room | The assistant's panels, drawn as console windows: see [The assistant](#the-assistant). |
 | Reported and closed | Two lines over the last 14 days. A hairline follows the pointer (or the arrow keys) and reads out both; **Table** shows the same numbers as a table. |
 | Where every issue stands | One bar divided by stage (to give out, with technicians, fixed and to check, closed), the count of each, and the share closed. A stage opens its issues. |
 | Happening now | Reports arriving, issues given out, fixed, closed or sent back, people joining. An entry opens its issue. |
 | Online now | Who has used the app or a dashboard in the last quarter of an hour. |
 | By severity, by site, by type | What is not closed, and beside it in grey what already is. |
 | Teams, companies | One row each, side by side, with the share of their issues closed. |
-| Server health (administrator) | Uptime, the database, whether a mail server is set, requests in the last hour and how quickly they were answered, the last report received, and how full the disk is. The **System** section adds requests and answer time minute by minute, the files kept and the rows stored. |
+| Server health (administrator) | Uptime, the database, whether a mail server is set, the writing model and how many summaries it has written, requests in the last hour and how quickly they were answered, the last report received, and how full the disk is. The **System** section adds requests and answer time minute by minute, the files kept and the rows stored. |
 
 The lists have a search box and an **Export** button that saves what is on screen as a spreadsheet file. Under **People**, an account can be suspended and let back in by the level above: its sign-ins stop working at once and nothing of its work is removed. The colours of the charts were chosen with a colour-blindness check against the page's dark surface, and no state is shown by colour alone.
+
+### The assistant
+
+Every dashboard has an assistant that reads each issue as it arrives and does four things with it: says what it is in a sentence, ranks it, names who could take it, and proposes the next step for the person looking, with the words to send. A person always decides: a proposed step is carried out on the second press of its button, and the words that would go with it can be read first.
+
+| What it gives | What it looks like | Where it comes from |
+|---|---|---|
+| **A summary** | One or two sentences on what is wrong and where, at the top of the issue | An open-source language model that runs on the server's own machine (Gemma 3, 1B, served by llama.cpp), shown what the phone recorded: title, place, type, severity, the inspector's note and what the phone's model saw in the picture. Without the model, the summary is put together from the same fields. Each brief names which of the two wrote it. |
+| **A rank** | 0 to 100 in three bands, *Act now*, *Soon*, *Routine*, always with its reasons | Fixed rules: the severity the phone's model gave, days past the deadline or days left, how long nobody has taken it, whether it was sent back after a repair, words in the note that mean someone could get hurt, the phone's doubt about the picture, and several alike at one site. The same issue always gets the same rank. |
+| **Who could take it** | Up to three technicians, each with a fit and the reasons | The team's record on the server: named in the inspector's note, repairs of the same type, jobs done at that site, jobs in hand and late ones, the share done on time, online now. |
+| **The next step** | One button, for example *Give it to Kavya Menon, due 12 Oct*, or a line saying whom it waits on | Rules by role, below. The words that go with it are drafted from the issue and can be changed before sending. |
+| **What the messages come to** | A line above the messages, from the second message on | The model, shown the messages only. |
+
+The model is given no say in the rank, the people or the step, and is not asked how to repair anything. In our tests a model of this size summarised an issue well, but its repair advice was sometimes wrong, and shown an issue with no note it made a story up. So it words, and nothing else, and an issue with no note and no reading of its picture is not sent to it at all.
+
+**An issue is passed from one role to the next with a note.** Anyone who can see an issue can send it to someone with a few words, and it then waits on that person, in their **Inbox** and on their console, until they answer, send it on, or do the work.
+
+| Who | The assistant's next step for them | May send to |
+|---|---|---|
+| Administrator | Hands out no work. For a pressing issue nobody has taken: *send it to the manager who gives it out*, with the summary, the reasons and the technician best placed. For a late job or a repair nobody has checked: a reminder to that manager. | Anyone in the issue's company |
+| Managing Director, Manager | For an open issue: *give it to* the best-placed technician, with a day and a drafted word to them. For a late job: *ask the technician when it will be done*. For a repair shown: *check it*. | A managing director: anyone in the company, and the administrator. A manager: their own people and their managing director. |
+| Inspector | Usually nothing. For a high or critical issue nobody has taken for a day: *remind the manager*. | The person they report to, and whoever wrote to them |
+| Technical | *Repair it and mark it fixed with a photo.* Ready answers such as "I need a clearer picture" go to the manager with one tap. | The person they report to, and whoever wrote to them |
+
+An issue sent to someone is theirs to see from then on, whoever raised it; nobody else gains anything by it. Giving an issue out, marking it fixed, closing it or sending it back also settles whatever message was waiting on that person about it.
+
+Each role's first screen is a console built around this:
+
+| Panel | What it shows |
+|---|---|
+| **Needs you first** | The issues that are this person's to move, most pressing first, each with its rank, its reasons and the proposed step as a button. |
+| **AI triage** | The assistant's reading of everything in view, written out line by line as on a terminal: rank, band, issue, the first reason, and what happens next. Its title bar names the model, or says that none is running. |
+| **Sent to you** | What others have sent and still waits for an answer. |
+| **Who has room** (managing director, manager) | Each technician with the jobs in hand, late ones, repairs done, the share on time and the usual time taken. |
+
+The list of issues is in the assistant's order, has an **Act now** filter, and the spreadsheet export carries the rank and its reasons.
+
+**Switching the model on.** It is off unless asked for, because it wants about 1 GB of memory and 800 MB of disk for the model file:
+
+```bash
+docker compose --profile ai up --build db server mail ai     # on this computer
+sudo bash deploy/setup.sh ai                                 # on a real server; it checks the free memory first
+```
+
+The first start downloads the model. From then on the server hands it each new or changed issue in the background, the most severe first; the dashboards never wait for it, and an open issue's brief fills in by itself when the words arrive. On our development computer one summary takes 3 to 5 seconds on two processor threads. `AI_MODEL` picks another model, and `AI_URL` points the server at a llama.cpp or Ollama that already runs elsewhere on the machine.
 
 ### Try it on this computer
 
@@ -329,6 +377,14 @@ sudo sh deploy/update.sh
 
 It pulls, rebuilds, restarts and waits until the server answers. Accounts, reports and pictures are kept: they live in Docker volumes, and a database from an earlier version gains its new columns at start; nothing is dropped.
 
+**The assistant's model, when wanted**, on the server:
+
+```bash
+sudo bash deploy/setup.sh ai
+```
+
+It reads the machine's free memory and stops if there is less than 1.5 GB, since the model takes about 1 GB while it works and other sites may live on the same machine. Otherwise it adds `COMPOSE_PROFILES=ai` to `.env`, starts the `ai` service (two processor threads and at most 2 GB of memory, set by `AI_THREADS` and `AI_MEMORY`), and waits until the model answers. Only the server can reach the model; nothing is published. Without it the assistant works the same, with summaries put together from each issue's own fields.
+
 **The app** has to be built for that address. With Docker: `APP_SERVER_URL=https://www.shaikalthaf.in/competitions/iqoo` in `.env` (or just `PUBLIC_URL`, which it falls back to). With Gradle: `./gradlew assembleDebug -PphoneOnly -PserverUrl=https://www.shaikalthaf.in/competitions/iqoo`. On GitHub, set the repository variable `APP_SERVER_URL` (Settings, Secrets and variables, Actions, Variables) and the APK that every push builds signs in there. The address can also be typed on the app's first screen.
 
 ### API
@@ -348,14 +404,15 @@ It pulls, rebuilds, restarts and waits until the server answers. Accounts, repor
 | `GET /api/admin/companies`, `/api/admin/system` | Every company, and the server's own health, for the administrator |
 | `POST /api/reports` | A phone sends a walk: its issues and the pictures the server lacks, while it is going on, and the PDF once the report is built (multipart) |
 | `GET /api/reports`, `/api/reports/{id}/pdf` | The reports in view, and a report's PDF |
-| `GET /api/issues`, `/api/issues/{id}`, `/photo`, `/fix-photo` | The issues in view, one issue with its history, and its pictures |
-| `GET /api/technicians`, `POST /api/issues/{id}/assign` | Who an issue can be given to; give it out with a deadline |
+| `GET /api/issues`, `/api/issues/{id}`, `/photo`, `/fix-photo` | The issues in view, each with the assistant's rank; one issue with its history, the assistant's brief, the messages about it and whom it may be sent to; its pictures |
+| `GET /api/technicians`, `POST /api/issues/{id}/assign` | Who an issue can be given to; give it out with a deadline and a word to the technician |
+| `POST /api/issues/{id}/send`, `GET /api/inbox` | Pass an issue to someone with a note; what waits on the person asking, and what they wait on others for |
 | `POST /api/issues/{id}/fixed` | The technician marks it fixed, with a photo of the repair (multipart) |
 | `POST /api/issues/{id}/close`, `/reopen` | Accept a repair and close the issue; send it back |
-| `GET /api/dashboard` | Everything the signed-in person's overview shows: numbers, the fortnight, who is online, what happened lately |
+| `GET /api/dashboard` | Everything the signed-in person's console shows: numbers, the fortnight, who is online, what happened lately, what needs them first with the proposed step, the triage lines, and what was sent to them |
 | `GET /api/health` | Status |
 
-FastAPI and SQLAlchemy on PostgreSQL, in `server/`; the dashboard is one page of plain HTML, CSS and JavaScript in `server/app/static/`, with no build step. The tests run the account flow, the roles, the work on an issue and each refusal:
+FastAPI and SQLAlchemy on PostgreSQL, in `server/`; the dashboard is one page of plain HTML, CSS and JavaScript in `server/app/static/`, with no build step. The assistant's rules are in `server/app/assistant.py` and the part that speaks to the model in `server/app/writer.py`. The tests run the account flow, the roles, the work on an issue, the assistant's ranks and proposals, an issue passed from the administrator down to the technician and answered, and each refusal:
 
 ```bash
 docker build --target test -t deskless-server-test server
@@ -501,6 +558,10 @@ Everything works without configuration. To change a setting, copy `.env.example`
 | `ADMIN_PASSWORD`, `SECRET_KEY`, `AADHAAR_KEY` | made on first start | The administrator's password, the key that signs sign-ins, and the key that encrypts Aadhaar numbers. Set all three on a real server. |
 | `SMTP_HOST`, `SMTP_PORT`, `SMTP_SECURITY`, `SMTP_USER`, `SMTP_PASSWORD`, `MAIL_FROM` | the test mailbox | A real mail server, to send real email |
 | `UTC_OFFSET_MINUTES` | `330` | The company's clock against UTC (330 is India). A deadline is overdue by that clock. |
+| `COMPOSE_PROFILES` | empty | `ai` also starts the open-source model that words the assistant's summaries |
+| `AI_MODEL`, `AI_MODEL_NAME` | `ggml-org/gemma-3-1b-it-GGUF`, `gemma-3-1b-it` | The model, as a Hugging Face GGUF repository, and the name the dashboards show for it |
+| `AI_THREADS`, `AI_MEMORY` | `2`, `2g` | How much of the machine the model may take |
+| `AI_URL` | `http://ai:8080` | Where the server finds the model. Set it to use a llama.cpp or Ollama that already runs on the machine. |
 | `WEB_PORT` | `8600` | HTTP port of the web prototype |
 | `WEB_TLS_PORT` | `8643` | HTTPS port of the web prototype (for phones) |
 | `WHISPER_MODEL` | `small` | Speech model baked into the prototype's backend image: `tiny`, `base`, `small`, `medium`. Larger is more accurate with mixed Hindi-English but slower. Rebuild after changing it. |

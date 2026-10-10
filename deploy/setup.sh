@@ -11,6 +11,7 @@
 #
 # Safe to run again: an existing .env is kept, and nginx is not given the line twice.
 #   sudo bash deploy/setup.sh nginx     only the nginx part
+#   sudo bash deploy/setup.sh ai        adds the open-source model that words the assistant's summaries
 # To update after a push to GitHub:  sh deploy/update.sh
 set -euo pipefail
 
@@ -284,8 +285,45 @@ check_from_outside() {
     echo "Check that the path is passed on by the web server that answers for that address."
 }
 
+# Switches on the writing model: an open-source language model that runs in Docker on this machine
+# and words the assistant's summaries. It takes memory the websites here may need, so it is only
+# started when asked for by name, and not at all when the machine is short.
+start_model() {
+    step "The writing model"
+    [ -f .env ] || stop "There is no .env here yet. Run  sudo bash deploy/setup.sh  first."
+    local free tries=0
+    free=$(awk '/MemAvailable/ { print int($2 / 1024) }' /proc/meminfo 2>/dev/null || true)
+    free=${free:-0}
+    echo "Free memory on this machine: ${free} MB. The model takes about 1000 MB while it works."
+    if [ "$free" -lt 1500 ] && [ "${FORCE:-}" != "1" ]; then
+        stop "That is too little to run it beside everything else here. Nothing was changed. (FORCE=1 starts it anyway.)"
+    fi
+    if grep -qE '^COMPOSE_PROFILES=' .env; then
+        grep -qE '^COMPOSE_PROFILES=(.*,)?ai(,.*)?$' .env || sed -i -E 's/^(COMPOSE_PROFILES=.+)$/\1,ai/; s/^COMPOSE_PROFILES=$/COMPOSE_PROFILES=ai/' .env
+    else
+        printf '\n# The open-source model that words the assistant (docker-compose.server.yml). Remove the line to do without it.\nCOMPOSE_PROFILES=ai\n' >> .env
+    fi
+    $compose up -d --build
+    echo "On its first start the model is downloaded (about 800 MB) and loaded. Waiting for it to answer..."
+    until $compose exec -T ai curl -fsS http://127.0.0.1:8080/health >/dev/null 2>&1; do
+        tries=$((tries + 1))
+        if [ "$tries" -ge 180 ]; then
+            $compose logs --tail 20 ai >&2
+            stop "The model has not answered after 15 minutes; its last lines are above. The dashboards work without it."
+        fi
+        sleep 5
+    done
+    echo "The model answers. Within a minute the server starts on the open issues, a few seconds each;"
+    echo "each issue's brief then names the model that wrote its summary."
+    echo "To do without it again: remove COMPOSE_PROFILES=ai from .env, then"
+    echo "  sudo $compose --profile ai rm -sf ai"
+}
+
 NEW_SETTINGS=0
 case "${1:-all}" in
+    ai)
+        start_model
+        ;;
     nginx)
         [ -f .env ] || stop "There is no .env here yet. Run  sudo bash deploy/setup.sh  first."
         join_nginx
@@ -308,6 +346,6 @@ case "${1:-all}" in
         echo "To update:      sudo sh deploy/update.sh    (after each push to GitHub)"
         ;;
     *)
-        stop "Use:  sudo bash deploy/setup.sh   or   sudo bash deploy/setup.sh nginx"
+        stop "Use:  sudo bash deploy/setup.sh   or   sudo bash deploy/setup.sh nginx   or   sudo bash deploy/setup.sh ai"
         ;;
 esac

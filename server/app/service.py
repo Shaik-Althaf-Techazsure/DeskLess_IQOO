@@ -13,7 +13,7 @@ from sqlalchemy.orm import Session
 from . import mailer, security
 from .config import settings
 from .db import get_db
-from .models import APPROVED, LEADS, PENDING_APPROVAL, REJECTED, ROLE_NAMES, ROLES, Account, Company, Counter, Event, Issue, Otp, Report, now
+from .models import APPROVED, LEADS, PENDING_APPROVAL, REJECTED, ROLE_NAMES, ROLES, Account, Company, Counter, Event, Issue, Message, Otp, Report, now
 
 #: Wrong codes allowed before a new one has to be asked for, and the wait between two emails.
 MAX_CODE_TRIES = 5
@@ -122,7 +122,7 @@ def current_actor(authorization: str | None = Header(None), db: Session = Depend
 #
 # The administrator sees everything. A managing director sees their company. A manager sees the people who
 # answer to them and those people's work. Everyone else sees their own: an inspector the reports they made,
-# a technician the issues they were given.
+# a technician the issues they were given. Whoever is sent an issue with a note sees that issue too.
 
 
 def team_of(db: Session, account: Account) -> list[str]:
@@ -163,7 +163,9 @@ def sees_issues(db: Session, actor: Actor) -> ColumnElement[bool]:
     if _whole_company(actor):
         return Issue.company_id == me.company_id
     mine = team_of(db, me) if me.role == "manager" else [me.id]
-    return or_(Issue.author_id.in_(mine), Issue.assigned_to.in_(mine))
+    # Also an issue somebody sent to this person by name, whoever raised it.
+    sent_to_me = select(Message.issue_id).where(Message.to_id == me.id)
+    return or_(Issue.author_id.in_(mine), Issue.assigned_to.in_(mine), Issue.id.in_(sent_to_me))
 
 
 def sees_events(db: Session, actor: Actor) -> ColumnElement[bool]:

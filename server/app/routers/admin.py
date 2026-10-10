@@ -10,7 +10,7 @@ from pydantic import BaseModel
 from sqlalchemy import func, select, text
 from sqlalchemy.orm import Session
 
-from .. import mailer, metrics, security
+from .. import mailer, metrics, security, writer
 from ..config import settings
 from ..db import get_db
 from ..models import APPROVED, CLOSED, PENDING_APPROVAL, REJECTED, Account, Company, Event, Issue, Report
@@ -192,6 +192,7 @@ def system(_: str = Depends(current_admin), db: Session = Depends(get_db)) -> di
         "database": database,
         "mail": bool(config.smtp_host),
         "public_url": config.public_url,
+        "ai": writer.status(),
         "storage": {
             "reports": _folder_bytes(config.reports_dir),
             "pictures": _folder_bytes(config.issues_dir),

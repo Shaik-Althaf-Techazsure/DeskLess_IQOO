@@ -25,11 +25,11 @@ let peopleRole = "";
 let reportSearch = "";
 
 const NAV = {
-  admin: [["overview", "Control room", "grid"], ["approvals", "Approvals", "check"], ["companies", "Companies", "building"], ["people", "People", "users"], ["reports", "Reports", "file"], ["issues", "Issues", "alert"], ["system", "System", "pulse"]],
-  md: [["overview", "Overview", "grid"], ["approvals", "Approvals", "check"], ["issues", "Issues", "alert"], ["reports", "Reports", "file"], ["people", "People", "users"]],
-  manager: [["overview", "Overview", "grid"], ["approvals", "Approvals", "check"], ["issues", "Issues", "alert"], ["reports", "Reports", "file"], ["people", "My team", "users"]],
-  inspector: [["overview", "Overview", "grid"], ["reports", "My reports", "file"], ["issues", "My issues", "alert"]],
-  technical: [["issues", "My jobs", "wrench"], ["overview", "Overview", "grid"]],
+  admin: [["overview", "Control room", "grid"], ["inbox", "Inbox", "inbox"], ["approvals", "Approvals", "check"], ["companies", "Companies", "building"], ["people", "People", "users"], ["reports", "Reports", "file"], ["issues", "Issues", "alert"], ["system", "System", "pulse"]],
+  md: [["overview", "Console", "grid"], ["inbox", "Inbox", "inbox"], ["approvals", "Approvals", "check"], ["issues", "Issues", "alert"], ["reports", "Reports", "file"], ["people", "People", "users"]],
+  manager: [["overview", "Console", "grid"], ["inbox", "Inbox", "inbox"], ["approvals", "Approvals", "check"], ["issues", "Issues", "alert"], ["reports", "Reports", "file"], ["people", "My team", "users"]],
+  inspector: [["overview", "Console", "grid"], ["inbox", "Inbox", "inbox"], ["reports", "My reports", "file"], ["issues", "My issues", "alert"]],
+  technical: [["overview", "Console", "grid"], ["issues", "My jobs", "wrench"], ["inbox", "Inbox", "inbox"]],
 };
 const ICONS = {
   grid: "M4 4h7v7H4zM13 4h7v7h-7zM4 13h7v7H4zM13 13h7v7h-7z",
@@ -40,6 +40,7 @@ const ICONS = {
   alert: "M12 9v4M12 17h.01M10.3 3.9L1.8 18a2 2 0 001.7 3h17a2 2 0 001.7-3L13.7 3.9a2 2 0 00-3.4 0z",
   pulse: "M22 12h-4l-3 9L9 3l-3 9H2",
   wrench: "M14.7 6.3a4 4 0 00-5.4 5.4L3 18l3 3 6.3-6.3a4 4 0 005.4-5.4l-2.5 2.5-2.5-2.5z",
+  inbox: "M22 12h-6l-2 3h-4l-2-3H2M5.5 5.1L2 12v6a2 2 0 002 2h16a2 2 0 002-2v-6l-3.5-6.9A2 2 0 0016.8 4H7.2a2 2 0 00-1.7 1.1z",
 };
 const STATUS = { open: "To give out", assigned: "With technician", fixed: "Fixed, to check", closed: "Closed" };
 const STAGES = [["open", "To give out", "var(--stage-open)"], ["assigned", "With technicians", "var(--stage-assigned)"], ["fixed", "Fixed, to check", "var(--stage-fixed)"], ["closed", "Closed", "var(--stage-closed)"]];
@@ -53,6 +54,10 @@ const CHECK = {
   MISMATCH: "The AI thinks the picture may not match the note",
 };
 const VERDICT = { GENUINE: ["good", "AI review: genuine"], DOUBTFUL: ["warn", "AI review: doubtful"], FAKE: ["bad", "AI review: fake"] };
+// How pressing the assistant finds an issue. The colour never stands alone: the word is always beside it.
+const BAND_COLOUR = { now: "var(--critical)", soon: "var(--warning)", routine: "var(--stage-open)", done: "var(--series-2)" };
+// The same for a number written in the band's colour, where it has to be read against the dark.
+const BAND_TEXT = { now: "var(--bad-text)", soon: "var(--warning)", routine: "var(--fog)", done: "var(--good-text)" };
 
 // ---------------------------------------------------------------- small helpers
 
@@ -545,7 +550,7 @@ function healthList() {
   return {
     node: list,
     update(sys) {
-      const mark = JSON.stringify([sys.database, sys.mail, sys.storage, sys.last_report_at, Math.round(sys.uptime_seconds / 30), sys.requests.total, sys.requests.errors]);
+      const mark = JSON.stringify([sys.database, sys.mail, sys.ai, sys.storage, sys.last_report_at, Math.round(sys.uptime_seconds / 30), sys.requests.total, sys.requests.errors]);
       if (mark === drawn) return;
       drawn = mark;
       const files = sys.storage.reports + sys.storage.pictures + sys.storage.photos;
@@ -555,6 +560,8 @@ function healthList() {
         entry("Server", state("Up for " + lasting(sys.uptime_seconds))),
         entry("Database", sys.database.ok ? state(`Answers in ${sys.database.ms} ms`) : state("Not answering", "bad")),
         entry("Mail server", sys.mail ? state("Set: codes are emailed") : state("Not set: codes are not emailed", "warn")),
+        entry("Writing model", sys.ai.on ? state(`${sys.ai.model} · ${count(sys.ai.written, "summary", "summaries")} written${sys.ai.last_ms ? ", the last in " + (sys.ai.last_ms / 1000).toFixed(1) + " s" : ""}`)
+          : el("span", { class: "state", text: sys.ai.set ? "Not answering: summaries come from the built-in rules" : "None: summaries come from the built-in rules" })),
         entry("Requests, last hour", state(`${sys.requests.total.toLocaleString()} · typically ${sys.requests.typical_ms} ms`)),
         sys.requests.errors ? entry("Errors, last hour", state(String(sys.requests.errors), "bad")) : null,
         entry("Last report received", el("span", { class: "state", text: sys.last_report_at ? ago(sys.last_report_at) : "none yet" })),
@@ -589,6 +596,215 @@ function liveTable(columns) {
 function closedMeter(row) {
   const share = row.issues ? Math.round((100 * (row.issues - row.open_issues)) / row.issues) : 0;
   return el("div", { title: `${share}% of ${row.issues} closed` }, el("div", { class: "meter done" }, el("i", { style: `width:${share}%` })));
+}
+
+// ---------------------------------------------------------------- the assistant's parts
+
+// A panel drawn as a console window: a bar with its name and a word on what feeds it, then the content.
+function consoleWindow(title, body, width = "") {
+  const state = el("em");
+  const node = el("div", { class: "card win " + width }, el("div", { class: "winbar" }, el("i"), el("i"), el("i"), el("span", { text: title }), state), body);
+  return { node, state };
+}
+
+// Words that write themselves out, as on a console. A newer text for the same place takes over.
+function typeOut(node, text, done) {
+  cancelAnimationFrame(node.typing);
+  if (calm || !text) { node.textContent = text; if (done) done(); return; }
+  let shown = 0;
+  const each = Math.max(1, Math.ceil(text.length / 55));      // never much longer than a second
+  const step = () => {
+    shown = Math.min(text.length, shown + each);
+    node.textContent = text.slice(0, shown);
+    if (shown < text.length) node.typing = requestAnimationFrame(step); else if (done) done();
+  };
+  step();
+}
+
+// How pressing, from 0 to 100, as a small ring that fills, with the number in it.
+function scoreRing(score, band) {
+  const round = 2 * Math.PI * 16;
+  const arc = svg("circle", { class: "fill", cx: 20, cy: 20, r: 16, stroke: BAND_COLOUR[band] || "var(--rest)", "stroke-dasharray": round, "stroke-dashoffset": round });
+  requestAnimationFrame(() => requestAnimationFrame(() => arc.setAttribute("stroke-dashoffset", round * (1 - score / 100))));
+  return el("div", { class: "ringlet", title: `${score} out of 100` },
+    svg("svg", { viewBox: "0 0 40 40", "aria-hidden": "true" }, svg("circle", { class: "track", cx: 20, cy: 20, r: 16 }), arc), el("b", { text: score }));
+}
+const bandChip = (priority) => chip(priority.band_name, priority.band);
+
+// Whose model wrote the words, said plainly beside them.
+function engineWords(ai) {
+  return ai.on ? `${ai.model} · runs on this server` : "built-in rules · no model on the server";
+}
+const ENGINE_NOTE = "The rank, the people named and the next step follow fixed rules over what the phone’s own AI wrote into each issue and the team’s record. Only the wording comes from a language model, when one runs on this server.";
+
+// Something that changes the work is done on the second press: the first press says so.
+function twice(button, label, work) {
+  let armed = 0;
+  button.textContent = label;
+  button.onclick = async (event) => {
+    event.stopPropagation();
+    if (Date.now() - armed > 5000) {
+      armed = Date.now();
+      button.classList.add("sure");
+      button.textContent = "Press again to do it";
+      setTimeout(() => { if (button.classList.contains("sure") && !button.disabled) { button.classList.remove("sure"); button.textContent = label; armed = 0; } }, 5000);
+      return;
+    }
+    button.disabled = true;
+    try {
+      await work();
+    } catch (error) {
+      note(error.message, true);
+      button.disabled = false;
+      button.classList.remove("sure");
+      button.textContent = label;
+      armed = 0;
+    }
+  };
+  return button;
+}
+
+// Does what the assistant proposed, with the words it drafted. Returns what to tell the person.
+async function doStep(id, step, words = step.text) {
+  if (step.kind === "assign") {
+    const now = await post(`/issues/${id}/assign`, { to: step.to, due_on: step.due_on, note: words });
+    return `Given to ${now.assigned_to_name}. They have been told.`;
+  }
+  await post(`/issues/${id}/send`, { to: step.to, text: words });
+  return `Sent to ${step.to_name}. It now waits on them.`;
+}
+
+// The triage console: the assistant's reading of everything in view, most pressing first, written out
+// line by line. A line that has not changed is left alone; a new or changed one is typed again.
+function triageConsole() {
+  const head = el("div", { class: "say" });
+  const lines = el("div", { class: "lines" });
+  const tail = el("div", { class: "say tail" }, el("span"), el("i", { class: "caret" }));
+  const win = consoleWindow("AI TRIAGE", el("div", { class: "term" }, head, lines, tail), "w6");
+  win.state.title = ENGINE_NOTE;
+  const known = new Map();
+  let said = "";
+  return {
+    node: win.node,
+    update(d) {
+      const t = d.tiles;
+      win.state.textContent = engineWords(d.ai);
+      const first = `> read ${count(t.unsettled, "open issue")} in view: ${t.act_now} act now · ${t.soon} soon · ${t.routine} routine`;
+      if (first !== said) { said = first; typeOut(head, first); }
+      const seen = new Set();
+      d.triage.forEach((line, at) => {
+        const mark = [line.score, line.band, line.title, line.why, line.then].join("|");
+        seen.add(line.issue_id);
+        let item = known.get(line.issue_id);
+        if (!item) {
+          item = { score: el("b"), band: el("i"), what: el("span"), then: el("span", { class: "then" }), mark: "" };
+          item.node = el("button", { class: "entry", onclick: () => openIssue(line.issue_id) }, item.score, el("div", {}, el("div", { class: "what" }, item.band, item.what), item.then));
+          known.set(line.issue_id, item);
+        }
+        if (lines.children[at] !== item.node) lines.insertBefore(item.node, lines.children[at] || null);
+        if (item.mark === mark) return;
+        item.mark = mark;
+        item.score.textContent = String(line.score).padStart(2, "0");
+        item.score.style.color = BAND_TEXT[line.band];
+        item.score.title = `${line.score} out of 100`;
+        item.band.textContent = line.band === "now" ? "ACT NOW" : line.band === "soon" ? "SOON" : "ROUTINE";
+        item.band.style.color = BAND_TEXT[line.band];
+        typeOut(item.what, `${line.title}${line.site ? " · " + line.site : ""}`);
+        typeOut(item.then, `↳ ${line.why[0].toLowerCase() + line.why.slice(1)} → ${line.then}`);
+      });
+      for (const [id, item] of known) if (!seen.has(id)) { item.node.remove(); known.delete(id); }
+      tail.firstChild.textContent = !d.triage.length ? "> nothing open in view"
+        : d.ai.busy ? `> ${d.ai.model} is writing a summary…` : d.ai.on ? `> ${d.ai.written} written by ${d.ai.model} since the server started · watching` : "> watching";
+    },
+  };
+}
+
+// What needs this person first, with the step the assistant proposes for each. A step that changes the
+// work is done on the second press; the words that go with it can be read first.
+function needsYou() {
+  const list = el("div", { class: "queue" });
+  const win = consoleWindow("NEEDS YOU FIRST", list, "w6");
+  let drawn = null;
+  return {
+    node: win.node,
+    update(d) {
+      win.state.textContent = d.queue.length ? count(d.tiles.needs_me, "issue") : "all clear";
+      const now = JSON.stringify(d.queue);
+      if (now === drawn) return;
+      drawn = now;
+      if (!d.queue.length) {
+        list.replaceChildren(el("div", { class: "hint", text: d.me.role === "technical" ? "Nothing is waiting for you. A job appears here the moment it is given to you."
+          : d.me.role === "inspector" ? "Nothing needs you. Your issues are with the people who give them out and repair them."
+          : "Nothing needs you right now. An issue appears here when it is yours to move on." }));
+        return;
+      }
+      list.replaceChildren(...d.queue.map((entry, at) => {
+        const step = entry.next;
+        const acts = step.kind === "assign" || step.kind === "send";
+        const go = acts
+          ? twice(el("button", { class: "primary small" }), step.label, async () => { note(await doStep(entry.id, step)); refresh(); })
+          : el("button", { class: "primary small", text: step.kind === "fix" ? "Open the job" : "Open to check", onclick: (event) => { event.stopPropagation(); openIssue(entry.id); } });
+        const node = el("div", { class: "need", style: `--i:${at}` },
+          scoreRing(entry.score, entry.band),
+          el("div", { class: "grow" },
+            el("button", { class: "name", onclick: () => openIssue(entry.id) }, entry.title),
+            el("div", { class: "meta" }, bandChip(entry), el("span", { text: [entry.site, ...entry.why].filter(Boolean).join(" · ") })),
+            acts ? el("details", {}, el("summary", { text: "The words that go with it" }), el("p", { text: step.text })) : el("div", { class: "meta", text: step.label }),
+            el("div", { class: "does" }, go, acts ? el("button", { class: "small quiet", text: "Open", onclick: () => openIssue(entry.id) }) : null)));
+        return node;
+      }));
+    },
+  };
+}
+
+// One message about an issue, as a line that opens the issue.
+function messageLine(row, mine = false) {
+  return el("button", { class: "mail", onclick: () => openIssue(row.issue_id) },
+    scoreRing(row.score, row.band),
+    el("div", { class: "grow" },
+      el("div", { class: "from" }, el("strong", { text: mine ? "To " + row.to : row.from }), mine ? null : el("span", { text: row.from_role }), el("time", { text: ago(row.at) })),
+      el("div", { class: "about", text: [row.title, row.site].filter(Boolean).join(" · ") }),
+      el("p", { text: row.text })));
+}
+
+// What has been sent to this person and still waits on them.
+function inboxPanel() {
+  const list = el("div", { class: "mails" });
+  const win = consoleWindow("SENT TO YOU", list);
+  let drawn = null;
+  return {
+    node: win.node,
+    update(d) {
+      win.node.hidden = !d.inbox.length;
+      win.state.textContent = count(d.tiles.inbox, "message") + " waiting";
+      const now = JSON.stringify(d.inbox);
+      if (now === drawn) return;
+      drawn = now;
+      list.replaceChildren(...d.inbox.map((row) => messageLine(row)),
+        d.tiles.inbox > d.inbox.length ? el("button", { class: "small quiet", text: "All of them", onclick: () => go("inbox") }) : null);
+    },
+  };
+}
+
+// Who has room: each technician with what they have in hand and how they have done so far.
+function loadBoard() {
+  const table = liveTable([
+    { title: "Technician", value: (row) => el("span", { class: "tech" }, el("i", { class: row.online ? "on" : "", title: row.online ? "Online now" : "Not online" }), row.name) },
+    { title: "In hand", value: (row) => el("div", { class: "hand", title: count(row.open, "job") + " in hand" }, el("div", { class: "meter" }, el("i", { style: `width:${Math.min(100, row.open * 20)}%` })), el("b", { text: row.open })) },
+    { title: "Late", num: true, value: (row) => row.late, late: (row) => row.late > 0 },
+    { title: "Repaired", num: true, value: (row) => row.done },
+    { title: "On time", num: true, value: (row) => (row.on_time == null ? "–" : row.on_time + "%") },
+    { title: "Typically", num: true, value: (row) => (row.typical_hours == null ? "–" : row.typical_hours < 1 ? "under 1 h" : row.typical_hours < 48 ? Math.round(row.typical_hours) + " h" : Math.round(row.typical_hours / 24) + " days") },
+  ]);
+  const win = consoleWindow("WHO HAS ROOM", table.node);
+  return {
+    node: win.node,
+    update(d) {
+      win.node.hidden = !d.load.length;
+      win.state.textContent = count(d.load.filter((row) => !row.open).length, "technician") + " free";
+      table.update(d.load);
+    },
+  };
 }
 
 // ---------------------------------------------------------------- signing in and out
@@ -668,6 +884,7 @@ function drawNav() {
   // The number beside a section is what waits there for this person to act on.
   const waiting = {
     approvals: tiles.waiting_people,
+    inbox: tiles.inbox,
     issues: role === "technical" ? tiles.my_jobs : dash.may_direct ? tiles.open + tiles.fixed : 0,
   };
   const now = JSON.stringify([role, view, waiting]);
@@ -706,6 +923,7 @@ const LISTS = {
   companies: () => "/admin/companies",
   reports: () => "/reports",
   issues: () => "/issues" + (ofReport ? "?report=" + encodeURIComponent(ofReport.id) : ""),
+  inbox: () => "/inbox",
 };
 
 let loading = 0;
@@ -730,7 +948,7 @@ async function load(ready = null) {
       get("/dashboard").then((fresh) => { dash = fresh; drawNav(); }, () => {});
       if (mine !== loading) return;
       if (view === "issues") issues = rows;
-      content = { approvals, people, companies, reports, issues: issuesView }[view](rows);
+      content = { approvals, people, companies, reports, issues: issuesView, inbox: inboxView }[view](rows);
     }
     if (mine !== loading) return;     // a newer request has overtaken this one
     board = !live ? null : view === "overview" ? overviewBoard() : systemBoard();
@@ -804,13 +1022,15 @@ function tilesFor(role) {
     late: make({ label: "Overdue", go: () => go("issues", "todo") }, (tile, t) => tile.set(t.my_overdue, { tone: t.my_overdue ? "alert" : "", note: "past their day" })),
     waitingCheck: make({ label: "Fixed, waiting for the check", go: () => go("issues", "fixed") }, (tile, t) => tile.set(t.my_fixed, { note: "with your manager" })),
     done: make({ label: "Done", go: () => go("issues", "closed") }, (tile, t) => tile.set(t.my_closed, { tone: "good", note: "checked and closed" })),
+    actNow: make({ label: "Act now", go: () => go("issues", "now") }, (tile, t) => tile.set(t.act_now, { tone: t.act_now ? "alert" : "", note: `${t.soon} more soon` })),
+    forYou: make({ label: "Sent to you", go: () => go("inbox") }, (tile, t) => tile.set(t.inbox, { tone: t.inbox ? "act" : "", note: "waiting for your answer" })),
   };
   const pick = {
-    admin: ["companies", "online", "reports", "unsettled", "overdue", "closed"],
-    md: ["reports", "unsettled", "serious", "overdue", "toCheck", "closed"],
-    manager: ["toGive", "withTech", "toCheck", "overdue", "reports", "closed"],
-    inspector: ["reports", "reported", "unsettled", "closed"],
-    technical: ["todo", "late", "waitingCheck", "done"],
+    admin: ["companies", "reports", "unsettled", "actNow", "overdue", "closed"],
+    md: ["actNow", "unsettled", "overdue", "toCheck", "reports", "closed"],
+    manager: ["actNow", "toGive", "withTech", "toCheck", "overdue", "closed"],
+    inspector: ["reports", "reported", "unsettled", "forYou", "closed"],
+    technical: ["todo", "late", "forYou", "waitingCheck", "done"],
   };
   return pick[role].map((name) => all[name]);
 }
@@ -838,6 +1058,11 @@ function overviewBoard() {
   const kinds = barList({ stacked: true });
   const lately = feed();
   const online = onlineList();
+  const triage = triageConsole();
+  const needs = needsYou();
+  const inboxed = inboxPanel();
+  const loads = role === "md" || role === "manager" ? loadBoard() : null;
+  const pair = el("div", { class: "pair" }, inboxed.node, loads ? loads.node : null);
   const health = role === "admin" ? healthList() : null;
   const firms = role === "admin" ? liveTable([
     { title: "Company", value: (row) => row.name },
@@ -873,6 +1098,8 @@ function overviewBoard() {
   const parts = [
     code, waiting, quiet,
     el("div", { class: "tiles" }, ...tiles.map((tile) => tile.node)),
+    el("div", { class: "cols" }, needs.node, triage.node),
+    pair,
     el("div", { class: "cols" },
       chartCard("Reported and closed, last 14 days", trend, el("div", { class: "legend" }, key("line", "var(--series-1)", "Reported"), key("line", "var(--series-2)", "Closed")), "w8"),
       stages.node),
@@ -901,6 +1128,11 @@ function overviewBoard() {
       kinds.update(d.by_type);
       lately.update(d.activity);
       online.update(d.online);
+      triage.update(d);
+      needs.update(d);
+      inboxed.update(d);
+      if (loads) loads.update(d);
+      pair.hidden = inboxed.node.hidden && (!loads || loads.node.hidden);
       if (health) health.update(more.system);
       if (firms) firms.update(more.companies);
       teams.update(d.teams);
@@ -1164,6 +1396,7 @@ function filters() {
   ];
   return [
     ["unsettled", "Not closed", (issue) => issue.status !== "closed"],
+    ["now", "Act now", (issue) => issue.priority.band === "now"],
     ["open", dash.may_direct ? "To give out" : "Not given out yet", (issue) => issue.status === "open"],
     ["assigned", "With technicians", (issue) => issue.status === "assigned"],
     ["fixed", "Fixed, to check", (issue) => issue.status === "fixed"],
@@ -1183,8 +1416,10 @@ function issueCard(issue) {
       el("div", { class: "meta", text: [issue.site, issue.location].filter(Boolean).join(" · ") }),
       el("div", { class: "tags" },
         chip(SEVERITY[issue.severity] || issue.severity, issue.severity), statusChip(issue),
-        issue.category ? chip(issue.category) : null, issue.overdue ? chip("Overdue", "overdue") : null)),
+        issue.category ? chip(issue.category) : null, issue.overdue ? chip("Overdue", "overdue") : null),
+      issue.status === "closed" ? null : el("div", { class: "meta why", text: "AI: " + issue.priority.why.slice(0, 2).join(" · ") })),
     el("div", { class: "side" },
+      issue.status === "closed" ? null : el("div", { class: "rank" }, bandChip(issue.priority), scoreRing(issue.priority.score, issue.priority.band)),
       due ? el("span", { text: "Due " + due }) : null,
       el("span", { text: issue.assigned_to_name ? "With " + issue.assigned_to_name : "From " + issue.reported_by })));
 }
@@ -1195,8 +1430,9 @@ function shownIssues() {
   const words = issueSearch.trim().toLowerCase();
   const shown = issues.filter(chosen[2])
     .filter((issue) => !words || [issue.title, issue.site, issue.location, issue.category, issue.note, issue.assigned_to_name, issue.reported_by].join(" ").toLowerCase().includes(words));
-  // In one report the order of the walk is kept; otherwise the most pressing come first.
-  if (!ofReport) shown.sort((a, b) => (b.overdue - a.overdue) || (SEVERITY_ORDER.indexOf(a.severity) - SEVERITY_ORDER.indexOf(b.severity)) || (b.captured_at > a.captured_at ? 1 : -1));
+  // In one report the order of the walk is kept; otherwise the most pressing come first, as the
+  // assistant ranks them, and among equals the more severe and then the newer.
+  if (!ofReport) shown.sort((a, b) => (b.priority.score - a.priority.score) || (SEVERITY_ORDER.indexOf(a.severity) - SEVERITY_ORDER.indexOf(b.severity)) || (b.captured_at > a.captured_at ? 1 : -1));
   return shown;
 }
 
@@ -1212,7 +1448,7 @@ function issuesView() {
   heading(
     ofReport ? (ofReport.place || ofReport.title) : dash.me.role === "technical" ? "My jobs" : dash.me.role === "inspector" ? "My issues" : "Issues",
     ofReport ? `${ofReport.title} · ${when(ofReport.built_at)}` : dash.me.role === "technical" ? "Open a job to see the picture. When it is done, mark it fixed with a photo of the repair."
-      : dash.may_direct ? "Give each issue to a technician, then check the repair and close it." : "");
+      : dash.may_direct ? "Most pressing first, as the assistant ranks them. Give each to a technician, then check the repair and close it." : "Most pressing first, as the assistant ranks them.");
   const search = el("input", { class: "search", type: "search", placeholder: "Search issues", value: issueSearch });
   search.oninput = () => { issueSearch = search.value; $("issue-list").replaceWith(issueList()); };
   return [
@@ -1223,6 +1459,7 @@ function issuesView() {
       el("button", { text: "Export", onclick: () => download("deskless-issues.csv", [
         ["Issue", "title"], ["Site", "site"], ["Where", "location"], ["Type", "category"], ["Severity", (row) => SEVERITY[row.severity] || row.severity],
         ["Stands", (row) => STATUS[row.status] || row.status], ["Overdue", (row) => (row.overdue ? "yes" : "")], ["Due", (row) => row.due_on || row.due_text],
+        ["AI rank", (row) => row.priority.score], ["AI band", (row) => row.priority.band_name], ["Why", (row) => row.priority.why.join("; ")],
         ["Reported by", "reported_by"], ["Reported", (row) => when(row.captured_at)], ["With", "assigned_to_name"], ["Fixed", (row) => when(row.fixed_at)],
         ["Closed", (row) => when(row.closed_at)], ["Note", "note"],
       ], shownIssues()) })),
@@ -1265,11 +1502,24 @@ async function giveOutBox(issue) {
   const soon = new Date(Date.now() + 3 * 86400000);
   const local = (date) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
   const due = el("input", { type: "date", value: issue.due_on || local(soon) });
+  const step = issue.brief.next;
+  const drafted = step.kind === "assign";
+  if (drafted && !issue.assigned_to) { who.value = step.to; due.value = step.due_on; }
+  const words = el("textarea", { rows: 3, placeholder: "A word to the technician (optional)" });
+  if (drafted) words.value = step.text;
+  // The draft greets the person the assistant named; picking someone else changes the greeting with it.
+  let greeted = drafted ? step.to_name.split(" ")[0] : "";
+  who.onchange = () => {
+    const first = technicians.find((one) => one.id === who.value).name.split(" ")[0];
+    if (greeted && words.value.startsWith(greeted + ",")) { words.value = first + words.value.slice(greeted.length); greeted = first; }
+  };
   const give = el("button", { class: "primary", text: issue.assigned_to ? "Give to this person instead" : "Give out" });
-  give.onclick = () => act(give, () => post(`/issues/${issue.id}/assign`, { to: who.value, due_on: due.value }), (now) => `Given to ${now.assigned_to_name}. They have been told.`);
+  give.onclick = () => act(give, () => post(`/issues/${issue.id}/assign`, { to: who.value, due_on: due.value, note: words.value }), (now) => `Given to ${now.assigned_to_name}. They have been told.`);
   return el("div", { class: "box" }, el("h4", { text: issue.assigned_to ? "Give it to someone else" : "Give it to a technician" }),
     issue.owner ? el("p", { class: "hint", text: `The inspector's note names ${issue.owner}.` }) : null,
-    el("div", { class: "row" }, el("div", {}, el("label", { text: "Technician" }), who), el("div", {}, el("label", { text: "Due" }), due), give));
+    el("div", { class: "row" }, el("div", {}, el("label", { text: "Technician" }), who), el("div", {}, el("label", { text: "Due" }), due)),
+    el("label", { text: drafted ? "A word with it, drafted by the assistant" : "A word with it" }), words,
+    el("div", { class: "row end" }, give));
 }
 
 function fixedBox(issue) {
@@ -1304,6 +1554,89 @@ function checkBox(issue) {
     el("div", { class: "row" }, words, issue.status === "closed" ? null : accept, fixed || issue.status === "closed" ? back : null));
 }
 
+// What the assistant makes of the issue for the person looking at it: a summary, how pressing and why,
+// who could take it, and the next step with the words to send. The second press does the step.
+function briefBox(issue, typed = false) {
+  const brief = issue.brief;
+  const step = brief.next;
+  const summary = el("p", { class: "sum" });
+  if (typed) typeOut(summary, brief.summary); else summary.textContent = brief.summary;
+  const acts = step.kind === "assign" || step.kind === "send";
+  const run = async () => {
+    note(await doStep(issue.id, step));
+    await openIssue(issue.id);
+    if (board) refresh(); else load();
+  };
+  const people = brief.suggested.length ? el("div", { class: "could" },
+    el("h5", { text: dash.may_direct ? "Who could take it" : "Who is best placed to take it" }),
+    ...brief.suggested.map((one) => {
+      const give = dash.may_direct && !one.has_it
+        ? twice(el("button", { class: "small" }), "Give", () => act(give, () => post(`/issues/${issue.id}/assign`, { to: one.id, due_on: step.due_on || issue.due_on || "" }), (now) => `Given to ${now.assigned_to_name}. They have been told.`))
+        : null;
+      return el("div", { class: "fit" },
+        el("div", { class: "who" }, el("strong", { text: one.name }), one.has_it ? chip("Has it now", "assigned") : null, el("span", { text: one.why.join(" · ") })),
+        el("div", { class: "meter", title: `Fit ${one.fit} out of 100` }, el("i", { style: `width:${one.fit}%` })), give);
+    })) : null;
+  const win = consoleWindow("AI BRIEF", el("div", { class: "brief" },
+    el("div", { class: "lead" },
+      el("div", { class: "rank" }, scoreRing(brief.priority.score, brief.priority.band), bandChip(brief.priority)),
+      el("div", { class: "grow" }, summary, el("p", { class: "stand", text: brief.standing }))),
+    el("div", { class: "whys" }, el("span", { text: "Why this rank" }), ...brief.priority.why.map((why) => chip(why))),
+    people,
+    el("div", { class: "nextstep" },
+      el("span", { text: acts ? "Suggested next step" : "Next" }),
+      acts ? twice(el("button", { class: "primary" }), step.label, run) : el("strong", { text: step.label }),
+      acts ? el("details", {}, el("summary", { text: "The words that go with it" }), el("p", { text: step.text })) : null)));
+  win.state.textContent = brief.engine ? `${brief.engine} · runs on this server` : brief.writing ? "the model is writing…" : "built-in rules";
+  win.state.title = ENGINE_NOTE;
+  win.node.id = "brief";
+  return win.node;
+}
+
+// The messages about the issue, and a place to send it on or answer.
+function talkBox(issue) {
+  const brief = issue.brief;
+  const step = brief.next;
+  const lines = issue.thread.map((line) => el("div", { class: "said" + (line.mine ? " mine" : "") },
+    el("div", { class: "from" }, el("strong", { text: line.mine ? "You" : line.from }), el("span", { text: `to ${line.for_me ? "you" : line.to}` }), el("time", { text: when(line.at) }),
+      line.waiting ? chip(line.for_me ? "Waits on you" : "Waits on " + line.to, line.for_me ? "warn" : "") : null),
+    el("p", { text: line.text })));
+  if (!issue.send_to.length) {
+    return lines.length ? el("div", { class: "box talk" }, el("h4", { text: "Messages" }), ...lines) : null;
+  }
+  const to = el("select", {}, ...issue.send_to.map((one) => el("option", { value: one.id, selected: step.kind === "send" && one.id === step.to, text: `${one.name} · ${one.role_name}` })));
+  const words = el("textarea", { rows: 4, placeholder: "A word to send with it" });
+  if (step.kind === "send") words.value = step.text;
+  const sendIt = el("button", { class: "primary", text: "Send" });
+  sendIt.onclick = () => {
+    if (!words.value.trim()) return note("Write a word to send with it.", true);
+    const name = to.selectedOptions[0].textContent.split(" · ")[0];
+    act(sendIt, () => post(`/issues/${issue.id}/send`, { to: to.value, text: words.value }), () => `Sent to ${name}. It now waits on them.`);
+  };
+  return el("div", { class: "box talk" },
+    el("h4", { text: lines.length ? "Messages" : "Send it on, or ask" }),
+    brief.talk ? el("p", { class: "first" }, el("b", { text: "So far: " }), brief.talk) : null,
+    ...lines,
+    el("label", { text: "To" }), to,
+    el("div", { class: "ready" }, ...brief.replies.map((ready) => el("button", { class: "small quiet", text: ready.length > 46 ? ready.slice(0, 45) + "…" : ready, title: ready, onclick: () => { words.value = ready; words.focus(); } }))),
+    words,
+    el("div", { class: "row end" }, sendIt));
+}
+
+// ---------------------------------------------------------------- the inbox
+
+function inboxView(boxes) {
+  heading("Inbox", "Issues sent to you with a note. One leaves this list when you answer, send it on, or do the work.");
+  const part = (title, rows, mine, nothing) => [
+    el("h3", { class: "section", text: `${title} · ${rows.length}` }),
+    rows.length ? el("div", { class: "mails card" }, ...rows.map((row) => messageLine(row, mine))) : el("div", { class: "card hint", text: nothing }),
+  ];
+  return [el("div", { class: "board" },
+    ...part("Waiting for you", boxes.for_me, false, "Nothing is waiting for you."),
+    ...part("You are waiting for", boxes.by_me, true, "You are not waiting for anyone."))];
+}
+
+let openedIssue = "";
 async function openIssue(id) {
   let issue;
   try {
@@ -1311,6 +1644,8 @@ async function openIssue(id) {
   } catch (error) {
     return note(error.message, true);
   }
+  openedIssue = id;
+  if (issue.brief.writing) awaitWriting(id);
   const due = issue.due_on ? day(issue.due_on) : issue.due_text;
   const place = issue.lat != null && issue.lon != null
     ? el("a", { href: `https://www.google.com/maps?q=${issue.lat},${issue.lon}`, target: "_blank", rel: "noopener", style: "color:#8fbcf5", text: `${issue.lat.toFixed(5)}, ${issue.lon.toFixed(5)}` })
@@ -1336,14 +1671,32 @@ async function openIssue(id) {
     el("div", { class: "top" }, el("h3", { text: issue.title }), el("button", { class: "x quiet", text: "✕", "aria-label": "Close", onclick: () => $("sheet").close() })),
     el("div", { class: "tags", style: "display:flex;gap:6px;flex-wrap:wrap" },
       chip(SEVERITY[issue.severity] || issue.severity, issue.severity), statusChip(issue), issue.overdue ? chip("Overdue", "overdue") : null),
+    briefBox(issue),
     el("div", { class: "pictures" },
       issue.has_photo ? el("figure", {}, picture(`/issues/${issue.id}/photo`, issue.title, true), el("figcaption", { text: "As found" })) : null,
       issue.has_fix_photo ? el("figure", {}, picture(`/issues/${issue.id}/fix-photo`, "The repair", true), el("figcaption", { text: "The repair" })) : null),
     details,
     ...boxes,
+    talkBox(issue),
     issue.history.length ? el("div", { class: "history" }, el("h3", { class: "section", text: "What has happened" }),
       ...issue.history.map((event) => el("div", { class: "row-h" }, el("time", { text: when(event.at) }), el("span", { text: event.text })))) : null,
   );
+}
+
+// Where a model runs on the server it words a new issue within moments. While the issue is open the
+// page looks again a few times, and when the words have come they write themselves into the brief.
+let writingWatch = 0;
+function awaitWriting(id, tries = 0) {
+  clearTimeout(writingWatch);
+  writingWatch = setTimeout(async () => {
+    if (!$("sheet").open || openedIssue !== id || !$("brief")) return;
+    try {
+      const issue = await get("/issues/" + id);
+      if (!$("sheet").open || openedIssue !== id || !$("brief")) return;
+      if (issue.brief.engine) $("brief").replaceWith(briefBox(issue, true));
+      else if (issue.brief.writing && tries < 12) awaitWriting(id, tries + 1);
+    } catch { /* the next opening of the issue shows it */ }
+  }, 5000);
 }
 
 // ---------------------------------------------------------------- start

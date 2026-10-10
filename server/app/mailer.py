@@ -118,7 +118,7 @@ def new_signup_email(name: str, role: str, email: str) -> tuple[str, str]:
     )
 
 
-def assigned_email(name: str, title: str, site: str, due: str, by: str) -> tuple[str, str]:
+def assigned_email(name: str, title: str, site: str, due: str, by: str, words: str = "") -> tuple[str, str]:
     return (
         f"DeskLess: an issue for you{' at ' + site if site else ''}",
         f"Hello {name},\n\n"
@@ -126,6 +126,20 @@ def assigned_email(name: str, title: str, site: str, due: str, by: str) -> tuple
         f"Issue: {title}\n"
         + (f"Site: {site}\n" if site else "")
         + (f"Due: {due}\n" if due else "")
+        + (f"\n{by} writes:\n{words}\n" if words else "")
         + "\nOpen your DeskLess dashboard to see the picture, and mark it fixed there with a photo of the repair.\n"
+        + _dashboard(),
+    )
+
+
+def sent_email(name: str, by: str, title: str, site: str, words: str) -> tuple[str, str]:
+    return (
+        f"DeskLess: {by} sent you an issue{' at ' + site if site else ''}",
+        f"Hello {name},\n\n"
+        f"{by} has sent you an issue to look at.\n\n"
+        f"Issue: {title}\n"
+        + (f"Site: {site}\n" if site else "")
+        + f"\n{by} writes:\n{words}\n"
+        + "\nOpen your DeskLess dashboard to see it with its picture, and to answer or send it on.\n"
         + _dashboard(),
     )
