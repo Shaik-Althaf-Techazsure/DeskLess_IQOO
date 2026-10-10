@@ -22,6 +22,8 @@ os.environ.update(
     SMTP_HOST="",
     # As on a real server: the site's own web server puts this one under a path on its domain.
     PUBLIC_URL="https://site.example.test/competitions/IQOO",
+    # The assistant's own rounds are made by hand in the tests, not by a clock beside them.
+    AUTOPILOT_EVERY_SECONDS="0",
 )
 
 from fastapi.testclient import TestClient  # noqa: E402

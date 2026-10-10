@@ -13,7 +13,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
 from sqlalchemy import text
 
-from . import metrics, writer
+from . import autopilot, metrics, writer
 from .config import settings
 from .db import SessionLocal, init_db
 from .mailer import Mailer
@@ -122,6 +122,8 @@ async def lifespan(app: FastAPI):
     init_db()
     # Where a writing model is named in the settings, it works beside the server from here on.
     writer.start()
+    # The assistant's own rounds: reminders, and stuck issues taken one level up.
+    autopilot.start(app.state.mailer)
     yield
 
 

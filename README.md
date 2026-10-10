@@ -67,6 +67,12 @@ Fields the note did not mention are left empty and printed as "Not stated". The 
 
 The same flow serves three kinds of report, chosen on the first screen: site inspection, medication audit and community issue. The choice sets the wording on screen, the issue types and the severity guide given to the model. Issues can be filtered and sorted, and every PDF built on the phone is kept in a reports list.
 
+### Ask DeskLess
+
+After a walk, the report can be asked. **Ask about this walk** on the first screen opens a microphone: ask aloud, in Hindi, English or both, "What should be fixed first?" or "Which issues are still open, and who has them?", and the phone answers in a sentence or two and reads the answer out. Whisper turns the question into English text and Gemma answers it, both on the phone, from the issues of this walk alone: no network takes part, and nothing of the question or the answer leaves the phone. A question can also be typed.
+
+The model is told to use only the issues it is given and to say so when they do not hold the answer; asked for the budget of the repairs, it answered that the walk does not show it. A recording with no voice in it is not handed to the speech model at all, because a speech model given silence makes a sentence up. Each answer says how long the phone took and that the model can be wrong.
+
 ### The phone as an instrument
 
 Each issue also carries what the phone itself measured. None of it needs a network.
@@ -235,6 +241,8 @@ A forgotten password is reset in the app with a code sent to the account's email
 
 An issue the inspector already saw repaired on site arrives closed.
 
+On the phone, a built report also offers **Copy action items**: what each owner has to do, as plain text on the clipboard. With iQOO Office Kit the laptop shares the phone's clipboard, so the list is pasted straight into an email or a sheet there.
+
 At each of these steps the dashboard's assistant has already read the issue: it says what it is, how pressing it is and why, who is best placed to take it, and what the person looking should do next. See [The assistant](#the-assistant).
 
 ### The dashboards
@@ -292,6 +300,19 @@ The model is given no say in the rank, the people or the step, and is not asked 
 
 An issue sent to someone is theirs to see from then on, whoever raised it; nobody else gains anything by it. Giving an issue out, marking it fixed, closing it or sending it back also settles whatever message was waiting on that person about it.
 
+**The assistant also makes rounds by itself.** Left alone, an urgent issue can sit untaken and a repair can wait unchecked because everyone thought someone else had seen it. Once a minute the assistant looks over every open issue and, by fixed rules, sends an ordinary message about it, marked as its own:
+
+| When | Who is told |
+|---|---|
+| An issue ranked *Act now* that nobody has taken for 30 minutes | The manager who gives it out, with the summary and the technician best placed |
+| The same issue, still untaken after 2 hours | The managing director |
+| A job past its day | The technician who has it; from 3 days past, the manager too |
+| A repair shown and not checked for 24 hours | The manager |
+
+Each rule speaks once about an issue, and a later deadline lets it speak again when that one passes too. The message waits on the person like any other and is settled when they do the work; it is emailed as well. Nobody is then told to ask the same thing a second time: where the assistant has asked, the next step for the others reads that it has, and that the answer is awaited. The assistant never gives out, fixes or closes anything. The managing director can switch the rounds off for their company on the console, and the times are settings of the server (`AUTOPILOT_*`).
+
+**The numbers are put into sentences.** A window on each console says what stands out, each finding plain arithmetic that the sentence itself states, so it can be checked against the lists: whether the backlog is growing or shrinking and when it would be cleared at this week's pace, a day far above the usual, the site that carries the most risk, a kind of issue on the rise, which step of the work is the slow one, what keeps coming back at the same place on different days, and how many open issues have a picture the phone's AI doubted. No language model takes part in these.
+
 Each role's first screen is a console built around this:
 
 | Panel | What it shows |
@@ -300,6 +321,8 @@ Each role's first screen is a console built around this:
 | **AI triage** | The assistant's reading of everything in view, written out line by line as on a terminal: rank, band, issue, the first reason, and what happens next. Its title bar names the model, or says that none is running. |
 | **Sent to you** | What others have sent and still waits for an answer. |
 | **Who has room** (managing director, manager) | Each technician with the jobs in hand, late ones, repairs done, the share on time and the usual time taken. |
+| **What the numbers say** | The findings above; one about a site or a kind of issue opens the issues searched by it. |
+| **The assistant's own rounds** (administrator, managing director, manager) | Its rules with the times set on the server, how many messages it sent by itself in the last day, and for the managing director the switch. |
 
 The list of issues is in the assistant's order, has an **Act now** filter, and the spreadsheet export carries the rank and its reasons.
 
@@ -415,6 +438,7 @@ It reads the machine's free memory and stops if there is less than 1.5 GB, since
 | `GET /api/issues`, `/api/issues/{id}`, `/photo`, `/fix-photo` | The issues in view, each with the assistant's rank; one issue with its history, the assistant's brief, the messages about it and whom it may be sent to; its pictures |
 | `GET /api/technicians`, `POST /api/issues/{id}/assign` | Who an issue can be given to; give it out with a deadline and a word to the technician |
 | `POST /api/issues/{id}/send`, `GET /api/inbox` | Pass an issue to someone with a note; what waits on the person asking, and what they wait on others for |
+| `POST /api/company/autopilot` | The managing director switches the assistant's own rounds on or off for their company |
 | `POST /api/issues/{id}/fixed` | The technician marks it fixed, with a photo of the repair (multipart) |
 | `POST /api/issues/{id}/close`, `/reopen` | Accept a repair and close the issue; send it back |
 | `GET /api/dashboard` | Everything the signed-in person's console shows: numbers, the fortnight, who is online, what happened lately, what needs them first with the proposed step, the triage lines, and what was sent to them |
@@ -570,6 +594,8 @@ Everything works without configuration. To change a setting, copy `.env.example`
 | `AI_MODEL`, `AI_MODEL_NAME` | `ggml-org/gemma-3-1b-it-GGUF`, `gemma-3-1b-it` | The model, as a Hugging Face GGUF repository, and the name the dashboards show for it |
 | `AI_THREADS`, `AI_MEMORY` | `2`, `2g` | How much of the machine the model may take |
 | `AI_URL` | `http://ai:8080` | Where the server finds the model. Set it to use a llama.cpp or Ollama that already runs on the machine. |
+| `AUTOPILOT_EVERY_SECONDS` | `60` | How often the assistant makes its own rounds; `0` leaves them out |
+| `AUTOPILOT_UNTAKEN_MINUTES`, `AUTOPILOT_ESCALATE_MINUTES`, `AUTOPILOT_UNCHECKED_HOURS` | `30`, `120`, `24` | How long an urgent issue may sit untaken before its manager, then the managing director, is told; and how long a repair may wait for its check |
 | `WEB_PORT` | `8600` | HTTP port of the web prototype |
 | `WEB_TLS_PORT` | `8643` | HTTPS port of the web prototype (for phones) |
 | `WHISPER_MODEL` | `small` | Speech model baked into the prototype's backend image: `tiny`, `base`, `small`, `medium`. Larger is more accurate with mixed Hindi-English but slower. Rebuild after changing it. |

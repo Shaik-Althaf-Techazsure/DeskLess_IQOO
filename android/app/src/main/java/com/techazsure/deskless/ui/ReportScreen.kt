@@ -45,6 +45,7 @@ import androidx.compose.material.icons.rounded.SendToMobile
 import androidx.compose.material.icons.rounded.Verified
 import androidx.compose.material.icons.rounded.OpenInNew
 import androidx.compose.material.icons.rounded.SaveAlt
+import androidx.compose.material.icons.rounded.ContentCopy
 import androidx.compose.material.icons.rounded.Share
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Checkbox
@@ -460,6 +461,20 @@ fun ReportScreen(state: AppState, file: File, fromLibrary: Boolean = false) {
                         context.startActivity(Handoff.shareText(owners.readText(), "Send the task lists"))
                     },
                     icon = Icons.Rounded.Groups,
+                    kind = ButtonKind.Secondary,
+                    modifier = Modifier.fillMaxWidth(),
+                    height = 50.dp,
+                )
+                // The same list on the clipboard. With Office Kit the laptop shares the phone's clipboard,
+                // so it can be pasted straight into an email or a sheet there.
+                BrandButton(
+                    text = "Copy action items",
+                    onClick = {
+                        val clipboard = context.getSystemService(android.content.ClipboardManager::class.java)
+                        clipboard?.setPrimaryClip(android.content.ClipData.newPlainText("DeskLess action items", owners.readText()))
+                        Toast.makeText(context, "Copied. With Office Kit, paste it on the laptop.", Toast.LENGTH_LONG).show()
+                    },
+                    icon = Icons.Rounded.ContentCopy,
                     kind = ButtonKind.Secondary,
                     modifier = Modifier.fillMaxWidth(),
                     height = 50.dp,

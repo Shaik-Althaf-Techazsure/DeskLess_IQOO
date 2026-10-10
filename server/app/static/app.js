@@ -807,6 +807,63 @@ function loadBoard() {
   };
 }
 
+// What the numbers say, in sentences. Each is plain arithmetic over the lists, stated in the sentence
+// itself; one that is about a site or a kind of issue opens the issues searched by it.
+function insightsPanel() {
+  const list = el("div", { class: "finds" });
+  const win = consoleWindow("WHAT THE NUMBERS SAY", list);
+  win.state.textContent = "counted from the lists · no model";
+  let drawn = null;
+  return {
+    node: win.node,
+    update(d) {
+      win.node.hidden = !d.insights.length;
+      const now = JSON.stringify(d.insights);
+      if (now === drawn) return;
+      drawn = now;
+      list.replaceChildren(...d.insights.map((one, at) =>
+        el(one.search ? "button" : "div", { class: "find " + one.tone, style: `--i:${at}`, onclick: one.search ? () => { issueSearch = one.search; go("issues", "unsettled"); } : null },
+          el("i"), el("span", { text: one.text }))));
+    },
+  };
+}
+
+// The assistant's own rounds: what it does by itself, how much it has done, and for the managing
+// director the switch.
+function roundsPanel() {
+  const words = el("p");
+  const rules = el("ul");
+  const flip = el("button", { class: "small" });
+  const win = consoleWindow("THE ASSISTANT'S OWN ROUNDS", el("div", { class: "rounds" }, words, rules, flip));
+  let listed = "";
+  return {
+    node: win.node,
+    update(d) {
+      const rounds = d.autopilot;
+      win.node.hidden = !rounds.runs || !["admin", "md", "manager"].includes(d.me.role);
+      win.state.textContent = rounds.on ? "on · every issue, around the clock" : "switched off";
+      words.textContent = rounds.on
+        ? `${count(rounds.sent, "message")} sent by itself in the last 24 hours. It reminds, and takes a stuck issue one level up. It never gives out, fixes or closes anything.`
+        : "Switched off for this company: nothing is sent unless a person sends it.";
+      if (listed !== rounds.rules.join("|")) {
+        listed = rounds.rules.join("|");
+        rules.replaceChildren(...rounds.rules.map((rule) => el("li", { text: rule })));
+      }
+      flip.hidden = !rounds.may_switch;
+      flip.textContent = rounds.on ? "Switch it off" : "Switch it on";
+      flip.onclick = async () => {
+        try {
+          await post("/company/autopilot", { on: !rounds.on });
+          note(rounds.on ? "The assistant sends nothing by itself now." : "The assistant makes its rounds again.");
+          refresh();
+        } catch (error) {
+          note(error.message, true);
+        }
+      };
+    },
+  };
+}
+
 // ---------------------------------------------------------------- signing in and out
 
 function signOut() {
@@ -1063,6 +1120,9 @@ function overviewBoard() {
   const inboxed = inboxPanel();
   const loads = role === "md" || role === "manager" ? loadBoard() : null;
   const pair = el("div", { class: "pair" }, inboxed.node, loads ? loads.node : null);
+  const finds = insightsPanel();
+  const rounds = roundsPanel();
+  const second = el("div", { class: "pair" }, finds.node, rounds.node);
   const health = role === "admin" ? healthList() : null;
   const firms = role === "admin" ? liveTable([
     { title: "Company", value: (row) => row.name },
@@ -1100,6 +1160,7 @@ function overviewBoard() {
     el("div", { class: "tiles" }, ...tiles.map((tile) => tile.node)),
     el("div", { class: "cols" }, needs.node, triage.node),
     pair,
+    second,
     el("div", { class: "cols" },
       chartCard("Reported and closed, last 14 days", trend, el("div", { class: "legend" }, key("line", "var(--series-1)", "Reported"), key("line", "var(--series-2)", "Closed")), "w8"),
       stages.node),
@@ -1133,6 +1194,9 @@ function overviewBoard() {
       inboxed.update(d);
       if (loads) loads.update(d);
       pair.hidden = inboxed.node.hidden && (!loads || loads.node.hidden);
+      finds.update(d);
+      rounds.update(d);
+      second.hidden = finds.node.hidden && rounds.node.hidden;
       if (health) health.update(more.system);
       if (firms) firms.update(more.companies);
       teams.update(d.teams);

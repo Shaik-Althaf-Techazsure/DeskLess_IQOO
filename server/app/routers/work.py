@@ -15,11 +15,12 @@ from pydantic import BaseModel
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from .. import mailer, writer
-from ..assistant import Desk, dealt_with
+from .. import autopilot, mailer, writer
+from ..assistant import Desk, dealt_with, role_word
 from ..config import settings
 from ..db import get_db
-from ..models import APPROVED, ASSIGNED, CLOSED, FIXED, OPEN, ROLE_NAMES, SEVERITIES, STATUSES, Account, Event, Issue, Message, Report, now
+from ..insights import insights
+from ..models import APPROVED, ASSIGNED, CLOSED, FIXED, OPEN, ROLE_NAMES, SEVERITIES, STATUSES, Account, Company, Event, Issue, Message, Report, now
 from ..pictures import picture_response, save_photo
 from .admin import companies as every_company, system as server_health
 from ..service import (
@@ -531,7 +532,7 @@ def _message_row(message: Message, issue: Issue, desk: Desk) -> dict:
     return {
         "id": message.id, "at": when(message.at), "issue_id": issue.id, "title": issue.title or "Untitled issue", "site": issue.site,
         "severity": issue.severity, "status": issue.status, "from": message.author,
-        "from_role": "Administrator" if message.author_role == "admin" else ROLE_NAMES.get(message.author_role, message.author_role),
+        "from_role": role_word(message.author_role),
         "to": message.to_name, "text": message.text, "score": score["score"], "band": score["band"], "band_name": score["band_name"],
     }
 
@@ -623,6 +624,22 @@ def reopen(issue_id: str, body: Remark = Remark(), actor: Actor = Depends(curren
             _say(db, actor, issue, technician, remark)
     db.commit()
     return _rows(db, [issue])[0]
+
+
+class Switch(BaseModel):
+    on: bool
+
+
+@router.post("/company/autopilot")
+def set_autopilot(body: Switch, actor: Actor = Depends(current_actor), db: Session = Depends(get_db)) -> dict:
+    """The managing director lets the assistant chase work by itself in their company, or stops it."""
+    firm = db.get(Company, actor.account.company_id) if actor.role == "md" and actor.account.company_id else None
+    if firm is None:
+        raise HTTPException(403, "Only the company's managing director switches this.")
+    firm.autopilot = body.on
+    note(db, "auto", actor.name, f"{actor.name} switched the assistant's own rounds {'on' if body.on else 'off'}", company_id=firm.id, author_id=actor.account.id)
+    db.commit()
+    return {"on": body.on}
 
 
 # ---------------------------------------------------------------- the numbers for a dashboard
@@ -729,7 +746,17 @@ def dashboard(actor: Actor = Depends(current_actor), db: Session = Depends(get_d
     needs_me, triage = desk.queue(found)
     by_id = {issue.id: issue for issue in found}
     sent_to_me = [message for message in _waiting(db, actor) if message.issue_id in by_id]
-    bands = Counter(desk.priority(issue)["band"] for issue in unsettled)
+    band_of = {issue.id: desk.priority(issue)["band"] for issue in unsettled}
+    bands = Counter(band_of.values())
+    # The assistant's own rounds: whether they are on for this person's company, and what they have done.
+    firm = db.get(Company, actor.account.company_id) if not actor.is_admin and actor.account.company_id else None
+    rounds = {
+        "runs": settings().autopilot_seconds > 0,
+        "on": actor.is_admin or (firm is not None and firm.autopilot is not False),
+        "may_switch": actor.role == "md" and firm is not None,
+        "sent": autopilot.today(db, firm.id if firm is not None else None) if actor.is_admin or firm is not None else 0,
+        "rules": autopilot.rules(),
+    }
     tiles |= {"act_now": bands.get("now", 0), "soon": bands.get("soon", 0), "routine": bands.get("routine", 0), "inbox": len(sent_to_me), "needs_me": len(needs_me)}
 
     recent = db.scalars(select(Event).where(sees_events(db, actor)).order_by(Event.id.desc()).limit(25))
@@ -755,6 +782,8 @@ def dashboard(actor: Actor = Depends(current_actor), db: Session = Depends(get_d
             for person in here[:12]
         ],
         "ai": writer.status(),
+        "insights": insights(found, band_of, day),
+        "autopilot": rounds,
         "queue": needs_me,
         "triage": triage,
         "inbox": [_message_row(message, by_id[message.issue_id], desk) for message in sent_to_me[:6]],

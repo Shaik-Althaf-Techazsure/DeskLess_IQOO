@@ -51,6 +51,9 @@ class Company(Base):
     id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_id)
     name: Mapped[str] = mapped_column(String(160))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+    #: Whether the assistant may chase work by itself in this company: remind, and take a stuck issue
+    #: one level up. On unless the managing director switches it off.
+    autopilot: Mapped[bool | None] = mapped_column(Boolean, nullable=True, default=True)
 
 
 class Account(Base):
@@ -238,8 +241,10 @@ class Message(Base):
     at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now, index=True)
     issue_id: Mapped[str] = mapped_column(ForeignKey(Issue.id, ondelete="CASCADE"), index=True)
     company_id: Mapped[str | None] = mapped_column(String(32), nullable=True, index=True)
-    #: Who wrote it; nobody's account when it was the administrator.
+    #: Who wrote it; nobody's account when it was the administrator or the assistant acting by itself.
     author_id: Mapped[str | None] = mapped_column(String(32), nullable=True, index=True)
+    #: For a message the assistant sent by itself, the rule that made it send: each rule speaks once.
+    rule: Mapped[str | None] = mapped_column(String(40), nullable=True, default="")
     author: Mapped[str] = mapped_column(String(120), default="")
     author_role: Mapped[str] = mapped_column(String(16), default="")
     #: Who it is for: a person, or the administrator.

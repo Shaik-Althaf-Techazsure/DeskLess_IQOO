@@ -301,6 +301,19 @@ fun HomeScreen(state: AppState) {
         ) {
             item(key = "brand") { BrandBar(state, onSideBar = { scope.launch { sideBar.open() } }) }
             item(key = "hero") { Hero(state, onNew = { confirmNew = true }, onChangeType = { pickTemplate = true }) }
+            // A question about the walk, asked aloud and answered on the phone.
+            if (state.issues.isNotEmpty()) {
+                item(key = "ask") {
+                    BrandButton(
+                        text = "Ask about this walk",
+                        onClick = { state.screen = Screen.Ask },
+                        icon = Icons.Rounded.Mic,
+                        kind = ButtonKind.Secondary,
+                        height = 50.dp,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
+            }
             // On a newly installed app the models are on their way: the card says how far, and opens the AI screen.
             if (!(state.speechReady && state.gemmaReady)) {
                 item(key = "models") { FetchCard(state.modelFetch, onClick = { state.screen = Screen.Models }) }

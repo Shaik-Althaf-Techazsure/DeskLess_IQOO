@@ -144,6 +144,25 @@ class Structurer(private val models: ModelStore, private val cacheRoot: File) {
         verdict to json.optString("reason").trim().replaceFirstChar { it.uppercase(Locale.ENGLISH) }
     }
 
+    /**
+     * Answers a question about the walk from its issues alone, briefly enough to be said aloud. [issues]
+     * is one line per issue. What the issues do not hold, the model is told to say it cannot see.
+     */
+    @Synchronized
+    fun answer(question: String, issues: String, template: Template): String = withFallback {
+        val system = listOf(
+            "You answer a question about the walk-round of ${template.reporter}. You are given the site and one line per issue found on it.",
+            "Reply with a single JSON object and nothing else, with exactly this key:",
+            "\"answer\": the answer in one to three short sentences, as you would say it aloud. Name the issue numbers you mean.",
+            "Use only the issues given. If they do not hold the answer, say that this walk does not show it. Do not invent names, places or dates.",
+            template.caution,
+        ).filter { it.isNotBlank() }.joinToString("\n")
+        val json = jsonIn(converse(system, emptyList(), "$issues\n\nQuestion: $question", maxTokens = 170))
+        val said = json.optString("answer").trim()
+        require(said.length > 3) { "The answer came back empty." }
+        said
+    }
+
     private fun <T> withFallback(work: () -> T): T =
         try {
             work()

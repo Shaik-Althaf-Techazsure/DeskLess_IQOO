@@ -324,6 +324,17 @@ button.sure, button.primary.sure { background: var(--chalk); border-color: var(-
 .hand .meter { flex: 1; margin: 0; }
 .hand b { min-width: 14px; text-align: right; font-variant-numeric: tabular-nums; }
 .feed .dot.sent { background: var(--yellow); }
+.feed .dot.auto { background: var(--series-2); }
+.finds { display: grid; }
+.find { display: grid; grid-template-columns: 10px minmax(0, 1fr); gap: 12px; align-items: baseline; width: 100%; padding: 10px 6px; border: 0; border-top: 1px solid var(--line); border-radius: 0; background: none; color: var(--chalk); font-size: 14px; text-align: left; animation: rise .3s both; animation-delay: calc(var(--i, 0) * 50ms); }
+.find:first-child { border-top: 0; }
+button.find:hover { background: var(--steel); }
+.find i { align-self: center; width: 8px; height: 8px; border-radius: 50%; background: var(--series-1); }
+.find.warn i { background: var(--warning); }
+.find.good i { background: var(--good); }
+.rounds { display: grid; gap: 10px; font-size: 14px; }
+.rounds ul { display: grid; gap: 4px; margin: 0; padding-left: 18px; color: var(--fog); font-size: 13px; }
+.rounds button { justify-self: start; }
 .item .rank { display: flex; align-items: center; gap: 8px; }
 .item .why { margin-top: 6px; color: var(--mute); }
 

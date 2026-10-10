@@ -42,6 +42,13 @@ class Settings:
     ai_url: str = ""
     #: The model's name where the runner serves several (Ollama); llama.cpp serves one and ignores it.
     ai_model: str = ""
+    #: The assistant chasing work by itself. How often it looks (0 switches it off), after how many
+    #: minutes an urgent issue nobody has taken is brought to its manager and then to the managing
+    #: director, and after how many hours a repair nobody has checked is brought up.
+    autopilot_seconds: int = 60
+    untaken_minutes: int = 30
+    escalate_minutes: int = 120
+    unchecked_hours: int = 24
 
     @property
     def base_path(self) -> str:
@@ -132,4 +139,8 @@ def settings() -> Settings:
         public_url=env.get("PUBLIC_URL", "").strip().rstrip("/"),
         ai_url=env.get("AI_URL", "").strip().rstrip("/"),
         ai_model=env.get("AI_MODEL_NAME", "").strip(),
+        autopilot_seconds=int(env.get("AUTOPILOT_EVERY_SECONDS", "60")),
+        untaken_minutes=int(env.get("AUTOPILOT_UNTAKEN_MINUTES", "30")),
+        escalate_minutes=int(env.get("AUTOPILOT_ESCALATE_MINUTES", "120")),
+        unchecked_hours=int(env.get("AUTOPILOT_UNCHECKED_HOURS", "24")),
     )

@@ -45,6 +45,11 @@ SUGGESTED = 3
 REASONS = 4
 
 
+def role_word(role: str) -> str:
+    """Who wrote a message, as a role: a person's, the administrator, or the assistant acting by itself."""
+    return {"admin": "Administrator", "assistant": "Acting by itself"}.get(role) or ROLE_NAMES.get(role, role)
+
+
 def band_of(score: int, closed: bool = False) -> tuple[str, str]:
     if closed:
         return "done", "Done"
@@ -311,6 +316,10 @@ class Desk:
     def waiting_on_others(self, issue: Issue) -> Message | None:
         return next((message for message in reversed(self.messages[issue.id]) if message.done_at is None and self._mine(message)), None)
 
+    def already_with(self, issue: Issue, person_id: str) -> Message | None:
+        """A message about the issue that still waits on this person, whoever sent it: a person, or the assistant on its rounds."""
+        return next((message for message in reversed(self.messages[issue.id]) if message.done_at is None and message.to_id == person_id), None)
+
     def wording(self, issue: Issue) -> Brief | None:
         """What the writing model made of the issue, if it has written about it as it now stands."""
         brief = self.briefs.get(issue.id)
@@ -371,7 +380,7 @@ class Desk:
 
         def answer() -> dict | None:
             """An answer to whoever is waiting on this person."""
-            if waits_on_me is None:
+            if waits_on_me is None or waits_on_me.author_role == "assistant":
                 return None
             text = self.standing(issue) if role in ("admin", *LEADS) else "I have seen it and will start on it today." if role == "technical" else "Here is more on it: "
             return {"kind": "send", "label": f"Answer {waits_on_me.author}", "to": waits_on_me.author_id or "admin", "to_name": waits_on_me.author, "text": text}
@@ -400,6 +409,10 @@ class Desk:
                 if lead is not None and lead.id != me.id and self.waiting_on_others(issue) is None:
                     return send(lead, f"Send it to {lead.name} to give out", f"{_first(lead.name)}, please give this one out: {self.summary(issue)}")
                 return answer() or wait("You have no technician to give it to yet.")
+            asked = self.already_with(issue, holder.id) if holder is not None else None
+            if late > 0 and asked is not None:
+                # Nobody is told to ask twice: what was asked, by a person or by the assistant, is waited for.
+                return answer() or wait(f"{'You' if self._mine(asked) else asked.author} asked {holder.name} {_ago(asked.at, self.moment)}; waiting for the answer.")
             if late > 0 and holder is not None and self.waiting_on_others(issue) is None:
                 return send(holder, f"Ask {holder.name} when it will be done", f"{_first(holder.name)}, this is {_days(late)} past its day: {_title(issue).rstrip('.')}{' at ' + _place(issue) if _place(issue) else ''}. What is holding it, and when will it be done?")
             return answer() or wait(f"With {holder.name if holder else 'a technician'}{', due ' + _date(issue.due_on) if issue.due_on else ''}.")
@@ -416,6 +429,9 @@ class Desk:
             # The administrator does not hand out work: they bring it to whoever does, with the case made.
             if lead is None:
                 return wait("Nobody in a company answers for this issue.")
+            told = self.already_with(issue, lead.id)
+            if told is not None:
+                return wait(f"{told.author} told {lead.name} {_ago(told.at, self.moment)}; it waits on them.")
             score = self.priority(issue)
             if issue.status == FIXED:
                 waited = (self.moment - aware(issue.fixed_at)).total_seconds() / 3600 if issue.fixed_at else 0
@@ -464,7 +480,7 @@ class Desk:
         me = self.me
         company = [person for person in self.people.values() if person.company_id == issue.company_id and issue.company_id]
         thread = self.messages[issue.id]
-        wrote_to_me = {message.author_id or "admin" for message in thread if self._for_me(message)}
+        wrote_to_me = {message.author_id or "admin" for message in thread if self._for_me(message) and message.author_role != "assistant"}
         in_it = {issue.author_id, issue.assigned_to}
         allowed: dict[str, Account | None] = {}
         if me is None:
@@ -500,7 +516,7 @@ class Desk:
     def thread(self, issue: Issue) -> list[dict]:
         return [
             {
-                "id": message.id, "at": aware(message.at).isoformat(), "from": message.author, "from_role": "Administrator" if message.author_role == "admin" else ROLE_NAMES.get(message.author_role, message.author_role),
+                "id": message.id, "at": aware(message.at).isoformat(), "from": message.author, "from_role": role_word(message.author_role),
                 "to": message.to_name, "text": message.text, "mine": self._mine(message), "for_me": self._for_me(message), "waiting": message.done_at is None,
             }
             for message in self.messages[issue.id]

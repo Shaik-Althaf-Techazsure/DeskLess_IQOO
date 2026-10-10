@@ -76,6 +76,9 @@ sealed interface Screen {
 
     /** The camera, looking for another phone's QR code to link with. */
     data object Scan : Screen
+
+    /** A question about the walk, asked aloud or typed, answered on the phone. */
+    data object Ask : Screen
     data class Edit(val id: String) : Screen
 
     /** One built report. [fromLibrary] is where Back goes: the library, or the current walk. */
@@ -777,6 +780,116 @@ class AppState(
         return result.getOrNull()
     }
 
+    // ---------------------------------------------------------------- asking about the walk
+    //
+    // A question, spoken or typed, is answered by the model on the phone from the issues of this walk
+    // alone, and the answer is read out. Nothing of it touches the network.
+
+    /** What is being done about a question right now, in words; null when nothing is. */
+    var askBusy by mutableStateOf<String?>(null)
+        private set
+    var askQuestion by mutableStateOf("")
+        private set
+    var askAnswer by mutableStateOf("")
+        private set
+
+    /** How long the model took over the last answer. */
+    var askSeconds by mutableStateOf(0f)
+        private set
+
+    /** Where a spoken question is recorded to. */
+    fun askFile(): File = File(cacheDir, "question.wav")
+
+    /** A question has been recorded to [askFile]: it is turned into text, then answered. */
+    fun askAloud() {
+        if (askBusy != null) return
+        if (!speechReady) {
+            askAnswer = "Speech is not on this phone yet. Type the question instead."
+            return
+        }
+        askBusy = "Turning your question into text…"
+        scope.launch {
+            // A speech model handed silence makes a sentence up. A recording with no voice in it is not
+            // given to it at all.
+            val heard = if (withContext(Dispatchers.IO) { loudness(askFile()) } < QUIET) "" else
+                withContext(modelWork) { runCatching { transcriber.toEnglish(askFile()) } }.getOrNull().orEmpty().trim()
+            if (heard.isBlank()) {
+                askQuestion = "(nothing was heard)"
+                askAnswer = "No question was heard. Try again, a little closer to the phone."
+                askBusy = null
+            } else {
+                answer(heard)
+            }
+        }
+    }
+
+    fun ask(question: String) {
+        if (askBusy != null || question.isBlank()) return
+        scope.launch { answer(question.trim()) }
+    }
+
+    private suspend fun answer(question: String) {
+        askQuestion = question
+        askAnswer = ""
+        askSeconds = 0f
+        if (issues.isEmpty()) {
+            askAnswer = "There are no issues on this walk yet, so there is nothing to answer from."
+            askBusy = null
+            return
+        }
+        if (!gemmaReady) {
+            askAnswer = "The large model is not on this phone yet, so questions cannot be answered."
+            askBusy = null
+            return
+        }
+        askBusy = "Thinking, on this phone…"
+        val lines = walkLines()
+        val said = withContext(modelWork) { runCatching { structurer.answer(question, lines, inspection.template) }.getOrNull() }
+        gemmaBackend = structurer.backend
+        askSeconds = if (said != null) structurer.lastSeconds else 0f
+        askAnswer = said ?: "The model could not answer that. Try asking it another way."
+        askBusy = null
+        if (said != null) voice.say(said)
+    }
+
+    /** How loud a recording is at its loudest half second, as the root mean square of its samples (0 to 32768). */
+    private fun loudness(wav: File): Double {
+        val bytes = runCatching { wav.readBytes() }.getOrNull() ?: return 0.0
+        val window = 8000 * 2                      // half a second of 16 kHz, 16-bit, one channel
+        var loudest = 0.0
+        var at = 44                                // past the WAV header
+        while (at + window <= bytes.size) {
+            var sum = 0.0
+            for (i in at until at + window step 2) {
+                val sample = (bytes[i].toInt() and 0xff) or (bytes[i + 1].toInt() shl 8)
+                sum += sample.toDouble() * sample
+            }
+            loudest = maxOf(loudest, kotlin.math.sqrt(sum / (window / 2)))
+            at += window
+        }
+        return loudest
+    }
+
+    /** The whole walk as the model is shown it for a question: the site, then one line per issue, fixed ones included. */
+    private fun walkLines(): String {
+        val open = issues.count { !it.resolved }
+        val head = listOfNotNull(
+            inspection.site.takeIf { it.isNotBlank() }?.let { "Site: $it." },
+            "${issues.size} issues found, $open still open, ${issues.size - open} fixed.",
+        ).joinToString(" ")
+        return head + "\n" + issues.withIndex().joinToString("\n") { (i, issue) ->
+            listOfNotNull(
+                "Issue ${i + 1}: ${issue.title.ifBlank { issue.note.take(60).ifBlank { "not described yet" } }}",
+                "severity ${issue.severity.label}",
+                issue.category.takeIf { it.isNotBlank() }?.let { "type $it" },
+                issue.location.takeIf { it.isNotBlank() && !locationIsPhones(issue) }?.let { "at $it" },
+                issue.owner.takeIf { it.isNotBlank() }?.let { "${inspection.template.ownerLabel.lowercase()} $it" },
+                issue.dueDate.takeIf { it.isNotBlank() }?.let { "due $it" },
+                if (issue.resolved) "status fixed" else "status open",
+            ).joinToString("; ")
+        }
+    }
+
     /** The average time the model took per issue in this walk, or null when it has not run. */
     fun averageAiSeconds(): Float? =
         issues.map { it.aiSeconds }.filter { it > 0f }.takeIf { it.isNotEmpty() }?.average()?.toFloat()
@@ -1102,6 +1215,9 @@ class AppState(
     companion object {
         /** How long the walk is left to settle after a change before it is sent to the office. */
         private const val WALK_SETTLES_MS = 5_000L
+
+        /** Below this loudness (of 32768) a recording holds no voice. A silent microphone read 5; speech at arm's length reads some hundreds. */
+        private const val QUIET = 80.0
 
         /** How issues with no type yet are named in filters and group headings. */
         const val UNSORTED = "Not sorted yet"

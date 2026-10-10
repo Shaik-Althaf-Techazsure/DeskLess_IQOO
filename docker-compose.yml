@@ -66,6 +66,11 @@ services:
       # summaries itself from each issue's own fields.
       AI_URL: ${AI_URL:-http://ai:8080}
       AI_MODEL_NAME: ${AI_MODEL_NAME:-}
+      # The assistant's own rounds: how often it looks (0 leaves them out) and how long it lets things wait.
+      AUTOPILOT_EVERY_SECONDS: ${AUTOPILOT_EVERY_SECONDS:-60}
+      AUTOPILOT_UNTAKEN_MINUTES: ${AUTOPILOT_UNTAKEN_MINUTES:-30}
+      AUTOPILOT_ESCALATE_MINUTES: ${AUTOPILOT_ESCALATE_MINUTES:-120}
+      AUTOPILOT_UNCHECKED_HOURS: ${AUTOPILOT_UNCHECKED_HOURS:-24}
     ports:
       - "${SERVER_PORT:-8800}:8000"  # http://localhost:8800, or http://<this machine's IP>:8800 from a phone
     extra_hosts:
