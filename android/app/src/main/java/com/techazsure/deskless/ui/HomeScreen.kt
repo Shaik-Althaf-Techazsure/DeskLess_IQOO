@@ -1,6 +1,9 @@
 package com.techazsure.deskless.ui
 
+import android.content.Context
+import android.os.Build
 import android.widget.Toast
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.MutableTransitionState
@@ -46,9 +49,12 @@ import androidx.compose.material.icons.rounded.Description
 import androidx.compose.material.icons.rounded.FolderCopy
 import androidx.compose.material.icons.rounded.GraphicEq
 import androidx.compose.material.icons.rounded.Mic
+import androidx.compose.material.icons.rounded.Nfc
 import androidx.compose.material.icons.rounded.Person
+import androidx.compose.material.icons.rounded.QrCode2
 import androidx.compose.material.icons.rounded.Place
 import androidx.compose.material.icons.rounded.RestartAlt
+import androidx.compose.material.icons.rounded.Sensors
 import androidx.compose.material.icons.rounded.SwapHoriz
 import androidx.compose.material.icons.rounded.Videocam
 import androidx.compose.material3.AlertDialog
@@ -57,6 +63,11 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalDrawerSheet
+import androidx.compose.material3.ModalNavigationDrawer
+import androidx.compose.material3.DrawerValue
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.rememberDrawerState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -93,6 +104,7 @@ import com.techazsure.deskless.data.Severity
 import com.techazsure.deskless.data.Template
 import com.techazsure.deskless.report.PdfReport
 import com.techazsure.deskless.report.ReportPack
+import com.techazsure.deskless.report.SignOff
 import com.techazsure.deskless.ui.theme.Chalk
 import com.techazsure.deskless.ui.theme.Coal
 import com.techazsure.deskless.ui.theme.Fog
@@ -104,7 +116,11 @@ import com.techazsure.deskless.ui.theme.SeverityMedium
 import com.techazsure.deskless.ui.theme.Steel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
+import java.security.Signature
+import java.util.Date
+import kotlin.coroutines.resume
 
 @Composable
 fun HomeScreen(state: AppState) {
@@ -124,22 +140,40 @@ fun HomeScreen(state: AppState) {
             // The model writes the opening briefing first; without it the report is built all the same.
             stage = "Writing the briefing…"
             val briefing = state.writeBriefing(inspection, issues)
+            // Before it goes out, the report's own evidence is checked: is it what it says it is?
+            stage = "AI is reviewing…"
+            val review = state.reviewReport(inspection, issues)
+            // The fingerprint is asked for last, when everything else is ready, and signs the finished PDF.
+            val signature = if (SignOff.available(context)) {
+                stage = "Your fingerprint…"
+                askToSign(context, inspection.inspector, inspection.site.ifBlank { inspection.template.title })
+            } else {
+                null
+            }
             stage = "Building…"
             val speed = state.averageAiSeconds()?.let { seconds ->
                 "Gemma 4 on this phone" + (state.gemmaBackend?.let { " ($it)" } ?: "") + ", about %.1f s per issue".format(seconds)
             }
             val result = withContext(Dispatchers.IO) {
                 runCatching {
-                    PdfReport.newFile(context, inspection).also {
-                        PdfReport.build(inspection, issues, state::photoOf, it, briefing, speed, state::fileOf)
-                        ReportPack.write(it, inspection, issues)
+                    PdfReport.newFile(context, inspection).also { file ->
+                        val now = Date()
+                        val mark = signature?.let { SignOff.keyId() }?.let { SignOff.Mark(inspection.inspector, now, it, SignOff.fileFor(file).name) }
+                        SignOff.fileFor(file).delete()
+                        PdfReport.build(inspection, issues, state::photoOf, file, briefing, speed, state::fileOf, mark, review)
+                        // If the signature cannot be made after all, the report must not claim to be signed.
+                        if (mark != null && signature != null && runCatching { SignOff.seal(file, signature, inspection.inspector, now) }.isFailure) {
+                            SignOff.fileFor(file).delete()
+                            PdfReport.build(inspection, issues, state::photoOf, file, briefing, speed, state::fileOf, review = review)
+                        }
+                        ReportPack.write(file, inspection, issues)
                     }
                 }
             }
             building = false
             result
                 .onSuccess {
-                    state.recordReport(it, inspection, issues)
+                    state.recordReport(it, inspection, issues, review)
                     state.screen = Screen.Report(it.absolutePath)
                 }
                 .onFailure {
@@ -197,6 +231,36 @@ fun HomeScreen(state: AppState) {
         )
     }
 
+    var editPlace by remember { mutableStateOf(false) }
+    if (editPlace) {
+        var name by remember { mutableStateOf(state.place) }
+        AlertDialog(
+            onDismissRequest = { editPlace = false },
+            title = { Text("Tagged place") },
+            text = {
+                OutlinedTextField(
+                    value = name,
+                    onValueChange = { name = it },
+                    label = { Text("Name of this tag") },
+                    singleLine = true,
+                    supportingText = { Text("New issues are filed here until you tap another tag or leave.") },
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    if (name.isNotBlank() && name.trim() != state.place) state.renamePlace(name)
+                    editPlace = false
+                }) { Text("Save") }
+            },
+            dismissButton = {
+                TextButton(onClick = {
+                    state.leavePlace()
+                    editPlace = false
+                }) { Text("Leave this place") }
+            },
+        )
+    }
+
     if (pickTemplate) {
         TemplatePicker(
             current = state.inspection.template,
@@ -208,6 +272,19 @@ fun HomeScreen(state: AppState) {
         )
     }
 
+    // The side bar: this phone's QR code and the phones it is linked with. It opens from the yellow
+    // button at the top left, or with a swipe from the left edge.
+    val sideBar = rememberDrawerState(DrawerValue.Closed)
+    // Back closes the side bar first, rather than leaving the app with it open.
+    BackHandler(enabled = sideBar.isOpen) { scope.launch { sideBar.close() } }
+    ModalNavigationDrawer(
+        drawerState = sideBar,
+        drawerContent = {
+            ModalDrawerSheet(drawerContainerColor = Coal) {
+                LinkPanel(state, onScan = { state.screen = Screen.Scan })
+            }
+        },
+    ) {
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -221,8 +298,11 @@ fun HomeScreen(state: AppState) {
             contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 20.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            item(key = "brand") { BrandBar(state) }
+            item(key = "brand") { BrandBar(state, onSideBar = { scope.launch { sideBar.open() } }) }
             item(key = "hero") { Hero(state, onNew = { confirmNew = true }, onChangeType = { pickTemplate = true }) }
+            if (state.place.isNotBlank()) {
+                item(key = "place") { PlaceBar(state.place, onClick = { editPlace = true }) }
+            }
             if (state.issues.isEmpty()) {
                 item(key = "empty") { EmptyState(state.inspection.template) }
             } else {
@@ -305,6 +385,44 @@ fun HomeScreen(state: AppState) {
             }
         }
     }
+    }
+}
+
+/** Shows the fingerprint prompt and waits for it. Null when the user builds unsigned or the phone cannot sign. */
+private suspend fun askToSign(context: Context, who: String, what: String): Signature? {
+    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.P) return null
+    return suspendCancellableCoroutine { waiting ->
+        SignOff.ask(context, who, what) { if (waiting.isActive) waiting.resume(it) }
+    }
+}
+
+/** Where the phone was last tapped on a tag: new issues are filed there. A tap renames it or leaves. */
+@Composable
+private fun PlaceBar(place: String, onClick: () -> Unit) {
+    val interaction = remember { MutableInteractionSource() }
+    Surface(
+        onClick = onClick,
+        interactionSource = interaction,
+        shape = RoundedCornerShape(18.dp),
+        color = Steel,
+        border = BorderStroke(1.dp, SafetyYellow.copy(alpha = 0.45f)),
+        modifier = Modifier
+            .fillMaxWidth()
+            .bouncy(interaction, pressedScale = 0.98f),
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 11.dp),
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(Icons.Rounded.Nfc, contentDescription = null, tint = SafetyYellow, modifier = Modifier.size(20.dp))
+            Column(Modifier.weight(1f)) {
+                Text("TAGGED PLACE", style = MaterialTheme.typography.labelSmall, color = Fog)
+                Text(place, style = MaterialTheme.typography.titleMedium, color = Chalk, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
+            Text("New issues go here", style = MaterialTheme.typography.bodySmall, color = Fog)
+        }
+    }
 }
 
 /** What should be looked at before these issues go into a report: each issue with the reason. */
@@ -321,13 +439,42 @@ private fun concernsBeforeReport(state: AppState): List<Pair<Issue, String>> =
     }
 
 @Composable
-private fun BrandBar(state: AppState) {
+private fun BrandBar(state: AppState, onSideBar: () -> Unit) {
     Row(verticalAlignment = Alignment.CenterVertically) {
-        LogoMark(Modifier.size(36.dp))
+        // Opens the side bar. A green dot says a linked phone is in range right now.
+        Box {
+            RoundIconButton(
+                icon = Icons.Rounded.QrCode2,
+                label = "Link phones: this phone's code",
+                onClick = onSideBar,
+                container = SafetyYellow,
+                content = Ink,
+                size = 38.dp,
+            )
+            if (state.link.connected.isNotEmpty()) {
+                Box(
+                    Modifier
+                        .align(Alignment.TopEnd)
+                        .size(11.dp)
+                        .background(Ink, CircleShape)
+                        .padding(2.dp)
+                        .background(GoGreen, CircleShape)
+                )
+            }
+        }
         Spacer(Modifier.width(10.dp))
         Text("DeskLess", style = MaterialTheme.typography.headlineSmall, color = Chalk)
         Spacer(Modifier.weight(1f))
 
+        RoundIconButton(
+            icon = Icons.Rounded.Sensors,
+            label = "The phone's sensors",
+            onClick = { state.screen = Screen.Sensors },
+            container = Steel,
+            content = SafetyYellow,
+            size = 38.dp,
+        )
+        Spacer(Modifier.width(8.dp))
         RoundIconButton(
             icon = Icons.Rounded.FolderCopy,
             label = "Reports built on this phone",

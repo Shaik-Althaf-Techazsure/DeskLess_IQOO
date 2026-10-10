@@ -69,6 +69,9 @@ dependencies {
     implementation(libs.androidx.camera.video)
     implementation(libs.sherpa.onnx)
     implementation(libs.litertlm.android)
+    // Phone-to-phone hand-off with no network (Bluetooth and Wi-Fi direct), and the QR code that pairs two phones.
+    implementation(libs.play.services.nearby)
+    implementation(libs.zxing.core)
     implementation(libs.androidx.compose.material3)
     implementation(libs.androidx.compose.material.icons.extended)
     implementation(libs.androidx.compose.ui)

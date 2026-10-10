@@ -18,6 +18,7 @@ import com.techazsure.deskless.structure.Expiry
 import com.techazsure.deskless.data.Check
 import com.techazsure.deskless.data.Inspection
 import com.techazsure.deskless.data.Issue
+import com.techazsure.deskless.data.Readings
 import com.techazsure.deskless.data.Severity
 import com.techazsure.deskless.data.Template
 import java.io.File
@@ -62,7 +63,8 @@ object PdfReport {
 
     /**
      * [briefing] is the model's opening summary and [speed] one line on how it ran; both are left out when
-     * null. [fileOf] finds a stored picture by name, for the picture taken after a repair.
+     * null. [fileOf] finds a stored picture by name, for the picture taken after a repair. [signed] is set
+     * when the inspector is signing the report off with a fingerprint; the report then closes with it.
      */
     fun build(
         inspection: Inspection,
@@ -72,16 +74,20 @@ object PdfReport {
         briefing: String? = null,
         speed: String? = null,
         fileOf: (String) -> File = { File(it) },
+        signed: SignOff.Mark? = null,
+        review: Review? = null,
     ) {
         val doc = PdfDocument()
         try {
             val writer = Writer(doc, inspection.template)
             writer.header(inspection, issues)
             if (briefing != null) writer.briefing(briefing, speed)
+            if (review != null) writer.review(review)
             writer.map(issues)
             issues.forEachIndexed { i, issue ->
                 writer.issue(i + 1, issue, photoOf(issue), issue.fixPhoto?.let(fileOf))
             }
+            if (signed != null) writer.signOff(signed)
             writer.finish()
             FileOutputStream(out).use { doc.writeTo(it) }
         } finally {
@@ -175,6 +181,12 @@ object PdfReport {
                 canvas.drawText(types, MARGIN + 84f, y + 9f, metaPaint)
                 y += 18f
             }
+            // A reader should know where the numbers in the entries come from, and how far to trust them.
+            if (issues.any { it.readings.isNotEmpty() || it.stamp?.let(Readings::describe).orEmpty().isNotEmpty() }) {
+                canvas.drawText("Readings", MARGIN, y + 9f, labelPaint)
+                canvas.drawText("Taken on the spot by the phone's own sensors: a guide, not calibrated measurements.", MARGIN + 84f, y + 9f, labelPaint)
+                y += 16f
+            }
             y += 2f
             canvas.drawLine(MARGIN, y, PAGE_W - MARGIN, y, rule)
             y += 16f
@@ -193,6 +205,57 @@ object PdfReport {
             canvas.drawText("AI BRIEFING", MARGIN + 14f, y + 18f, tagPaint)
             draw(body, MARGIN + 14f, y + 26f)
             credit?.let { draw(it, MARGIN + 14f, y + 26f + body.height + 6f) }
+            y += height + 14f
+        }
+
+        /**
+         * What the review made of the report's own evidence: the verdict, the reason, and each thing that
+         * was checked with a green, red or grey dot for passed, failed or simply noted.
+         */
+        fun review(review: Review) {
+            val tone = when (review.verdict) {
+                Verdict.GENUINE -> FIXED_GREEN
+                Verdict.DOUBTFUL -> 0xFFB7791F.toInt()
+                Verdict.FAKE -> 0xFFC62828.toInt()
+            }
+            val wash = when (review.verdict) {
+                Verdict.GENUINE -> 0xFFEAF4EC.toInt()
+                Verdict.DOUBTFUL -> 0xFFFBF3DF.toInt()
+                Verdict.FAKE -> 0xFFFBE9E7.toInt()
+            }
+            val width = CONTENT_W - 28f
+            val headline = TextPaint(titlePaint).apply { color = tone }
+            val reason = layout(review.reason, valuePaint, width)
+            val checks = review.findings.map { it to layout(it.text, metaPaint, width - 14f) }
+            val small = layout(
+                (if (review.byModel) "Checked by Gemma 4 on this phone and by fixed checks." else "Checked by fixed checks; the AI model was not on the phone.") +
+                    " This is a check of the report's own evidence, to help a reviewer. It is not proof.",
+                labelPaint, width,
+            )
+            val height = 14f + 12f + 18f + reason.height + 8f + checks.sumOf { it.second.height + 3 } + 6f + small.height + 12f
+            ensure(height + 14f)
+            fill.color = wash
+            canvas.drawRect(MARGIN, y, PAGE_W - MARGIN, y + height, fill)
+            fill.color = tone
+            canvas.drawRect(MARGIN, y, MARGIN + 4f, y + height, fill)
+            canvas.drawText("AI REVIEW", MARGIN + 14f, y + 18f, tagPaint)
+            var ty = y + 26f
+            canvas.drawText("${review.verdict.label.uppercase(Locale.ENGLISH)}  ·  ${review.verdict.decision.uppercase(Locale.ENGLISH)}", MARGIN + 14f, ty + 12f, headline)
+            ty += 18f
+            draw(reason, MARGIN + 14f, ty)
+            ty += reason.height + 8f
+            val ring = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; strokeWidth = 1f; color = grey }
+            for ((finding, text) in checks) {
+                val dotY = ty + 7.5f
+                when (finding.mark) {
+                    Mark.PASS -> { fill.color = FIXED_GREEN; canvas.drawCircle(MARGIN + 18f, dotY, 3f, fill) }
+                    Mark.FAIL -> { fill.color = 0xFFC62828.toInt(); canvas.drawCircle(MARGIN + 18f, dotY, 3f, fill) }
+                    Mark.NOTE -> canvas.drawCircle(MARGIN + 18f, dotY, 2.6f, ring)
+                }
+                draw(text, MARGIN + 28f, ty)
+                ty += text.height + 3f
+            }
+            draw(small, MARGIN + 14f, ty + 6f)
             y += height + 14f
         }
 
@@ -294,18 +357,25 @@ object PdfReport {
             val expiry = Expiry.parse(issue.expiry)?.let { read ->
                 "${issue.expiry} read by AI: " + if (Expiry.isExpired(read)) "EXPIRED" else "in date"
             }
+            // What the phone's sensors read when the picture was taken, and what the inspector measured with it.
+            val stamped = issue.stamp?.let(Readings::describe).orEmpty().joinToString(" · ")
+                .replaceFirstChar { it.uppercase(Locale.ENGLISH) }
+            val measured = issue.readings.joinToString(" · ", transform = Readings::describe)
             val fields = listOfNotNull(
                 "Location" to issue.location,
                 template.ownerLabel to issue.owner,
                 "Due" to issue.dueDate,
                 "Captured" to dateFormat.format(Date(issue.createdAt)) + if (issue.videoFile != null) " (video)" else "",
                 position?.let { "Position" to it },
+                issue.place.takeIf { it.isNotBlank() }?.let { "Tagged" to "$it (NFC tag on site)" },
+                stamped.takeIf { it.isNotEmpty() }?.let { "Sensors" to it },
+                measured.takeIf { it.isNotEmpty() }?.let { "Measured" to it },
                 expiry?.let { "Expiry" to it },
                 verdict?.let { "AI check" to it },
             ).map { (label, value) ->
                 // An empty field is spelt out in grey, so a reader sees it was not said rather than lost.
                 label to if (value.isBlank()) layout("Not stated", missingPaint, textW - LABEL_W, 2)
-                else layout(value, valuePaint, textW - LABEL_W, 2)
+                else layout(value, valuePaint, textW - LABEL_W, 4)
             }
             val note = issue.note.trim().takeIf { it.isNotEmpty() }?.let { layout(it, valuePaint, CONTENT_W) }
 
@@ -382,6 +452,30 @@ object PdfReport {
             y += 10f
             canvas.drawLine(MARGIN, y, PAGE_W - MARGIN, y, rule)
             y += 12f
+        }
+
+        /** The closing block of a signed report: who signed, how, and where the signature is. */
+        fun signOff(mark: SignOff.Mark) {
+            val body = layout(
+                "Signed by ${mark.by.ifBlank { "the ${template.personLabel.lowercase(Locale.ENGLISH)}" }} on ${dateFormat.format(mark.at)}, " +
+                    "confirmed with the fingerprint sensor of the phone that built this report. Signing key ${mark.keyId}.",
+                valuePaint, CONTENT_W - 28f,
+            )
+            val small = layout(
+                "The signature is in ${mark.file}, which travels with this PDF. It was made over the finished PDF by a key " +
+                    "kept in the phone's secure hardware; if the PDF is changed afterwards, the signature no longer matches.",
+                labelPaint, CONTENT_W - 28f,
+            )
+            val height = 14f + 12f + body.height + 6f + small.height + 12f
+            ensure(height + 14f)
+            fill.color = 0xFFEAF4EC.toInt()
+            canvas.drawRect(MARGIN, y, PAGE_W - MARGIN, y + height, fill)
+            fill.color = FIXED_GREEN
+            canvas.drawRect(MARGIN, y, MARGIN + 4f, y + height, fill)
+            canvas.drawText("SIGNED OFF", MARGIN + 14f, y + 18f, tagPaint)
+            draw(body, MARGIN + 14f, y + 26f)
+            draw(small, MARGIN + 14f, y + 26f + body.height + 6f)
+            y += height + 14f
         }
 
         fun finish() = finishPage()

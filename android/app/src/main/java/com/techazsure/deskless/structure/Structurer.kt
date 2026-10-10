@@ -13,6 +13,7 @@ import com.techazsure.deskless.data.Check
 import com.techazsure.deskless.data.Severity
 import com.techazsure.deskless.data.Template
 import com.techazsure.deskless.models.ModelStore
+import com.techazsure.deskless.report.Verdict
 import org.json.JSONObject
 import java.io.File
 import java.util.Locale
@@ -54,15 +55,19 @@ class Structurer(private val models: ModelStore, private val cacheRoot: File) {
     private var cpuOnly = false
 
     /**
-     * [pictures] is one photo, or a few stills from one video. Blocking and slow; call it off the main
-     * thread. One call at a time.
+     * [pictures] is one photo, or a few stills from one video. [readings] is what the phone's sensors
+     * measured at the spot, one per line, or blank. Blocking and slow; call it off the main thread. One
+     * call at a time.
      */
     @Synchronized
-    fun structure(note: String, pictures: List<File>, template: Template): Fields {
+    fun structure(note: String, pictures: List<File>, template: Template, readings: String = ""): Fields {
         val shown = pictures.filter { it.isFile }.take(MAX_PICTURES)
+        val measured = readings.isNotBlank()
+        // The note comes last: it is what the fields are filled from, and the readings only back it up.
+        val said = (if (measured) "Phone readings at the spot:\n$readings\n" else "") + "Spoken note: $note"
         // Parsing is inside the retry: a reply that is not the asked-for JSON is how a bad GPU shows itself.
         return withFallback {
-            val reply = converse(instructions(shown.size, template), shown, "Spoken note: $note", maxTokens = 280)
+            val reply = converse(instructions(shown.size, template, measured), shown, said, maxTokens = 280)
             parse(reply, checked = shown.isNotEmpty(), categories = template.categories)
         }
     }
@@ -114,6 +119,29 @@ class Structurer(private val models: ModelStore, private val cacheRoot: File) {
             json.optString("issue_$number").trim().takeIf { it.isNotEmpty() }?.let { "Issue $number: $it" }
         }
         (listOf(overall) + if (lines.isEmpty()) emptyList() else listOf("Do first:") + lines).joinToString("\n")
+    }
+
+    /**
+     * Reads the evidence of a whole report and says whether it hangs together, with one sentence of reason.
+     * The caller holds the answer against its own fixed checks; the model does not decide alone.
+     */
+    @Synchronized
+    fun review(evidence: String, template: Template): Pair<Verdict, String> = withFallback {
+        val system = listOf(
+            "You audit the walk-round report of ${template.reporter} before it is sent on. You are given what the app checked and one line per issue.",
+            "Reply with a single JSON object and nothing else, with exactly these keys:",
+            "\"verdict\": \"genuine\" if the evidence hangs together, \"doubtful\" if something does not fit and a person should look, \"fake\" if pictures or readings plainly contradict the notes.",
+            "\"reason\": one sentence, at most 25 words, naming the issue numbers that decided it.",
+            "Use only the facts given. A line marked PROBLEM means the verdict cannot be \"genuine\".",
+        ).joinToString("\n")
+        val json = jsonIn(converse(system, emptyList(), evidence, maxTokens = 120))
+        val said = json.optString("verdict").trim().lowercase(Locale.ENGLISH)
+        val verdict = when {
+            said.startsWith("genuine") -> Verdict.GENUINE
+            said.startsWith("fake") -> Verdict.FAKE
+            else -> Verdict.DOUBTFUL
+        }
+        verdict to json.optString("reason").trim().replaceFirstChar { it.uppercase(Locale.ENGLISH) }
     }
 
     private fun <T> withFallback(work: () -> T): T =
@@ -187,7 +215,7 @@ class Structurer(private val models: ModelStore, private val cacheRoot: File) {
         throw IllegalStateException("The model could not be loaded: ${failure?.message}", failure)
     }
 
-    private fun instructions(pictures: Int, template: Template): String {
+    private fun instructions(pictures: Int, template: Template, measured: Boolean): String {
         val picture = when (pictures) {
             0 -> "There is no photo; answer the two photo keys with \"\" and \"unsure\"."
             1 -> "One photo of the spot is attached."
@@ -212,6 +240,11 @@ class Structurer(private val models: ModelStore, private val cacheRoot: File) {
                 ""
             },
             "Use only what the note says and what the photo shows. Never invent a name, place or date.",
+            if (measured) {
+                "The phone readings were measured at the spot by the phone's own sensors. Let them support the title and the severity: a dark or dim light reading supports a lighting problem, a slope reading an uneven surface, a loud noise reading a noise hazard. Never invent a reading or change its number. A reading cannot be seen in a photo: answer \"photo_shows\" and \"photo_matches\" from the photo alone."
+            } else {
+                ""
+            },
             "Severity guide: ${template.severityGuide}",
             template.caution,
         ).filter { it.isNotBlank() }.joinToString("\n")

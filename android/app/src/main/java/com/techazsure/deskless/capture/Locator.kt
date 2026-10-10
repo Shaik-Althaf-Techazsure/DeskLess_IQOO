@@ -5,8 +5,10 @@ import android.annotation.SuppressLint
 import android.content.Context
 import android.content.pm.PackageManager
 import android.location.Location
+import android.location.LocationListener
 import android.location.LocationManager
 import android.os.Build
+import android.os.Bundle
 import android.os.CancellationSignal
 import android.os.Handler
 import android.os.Looper
@@ -71,6 +73,36 @@ class Locator(private val context: Context) {
                 answer(location?.let(::fixOf) ?: fallback)
             }
         }.onFailure { answer(fallback) }
+    }
+
+    private val keepWarm = object : LocationListener {
+        override fun onLocationChanged(location: Location) = Unit
+
+        // Empty on purpose: older Android versions call these and have no default for them.
+        @Deprecated("Deprecated in Java")
+        override fun onStatusChanged(provider: String?, status: Int, extras: Bundle?) = Unit
+        override fun onProviderEnabled(provider: String) = Unit
+        override fun onProviderDisabled(provider: String) = Unit
+    }
+
+    /**
+     * Keeps the phone finding its position while the camera is open, so that a picture is stamped at once
+     * with a fresh position and does not have to wait for the first fix. Satellites take longest indoors.
+     */
+    @SuppressLint("MissingPermission")
+    fun warm() {
+        if (!allowed) return
+        val providers = runCatching { manager.getProviders(true) }.getOrDefault(emptyList())
+        listOfNotNull(
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) LocationManager.FUSED_PROVIDER else null,
+            LocationManager.GPS_PROVIDER,
+        ).filter { it in providers }.forEach { provider ->
+            runCatching { manager.requestLocationUpdates(provider, 2_000L, 0f, keepWarm, Looper.getMainLooper()) }
+        }
+    }
+
+    fun cool() {
+        runCatching { manager.removeUpdates(keepWarm) }
     }
 
     private fun fixOf(location: Location) = GeoFix(location.latitude, location.longitude, location.accuracy)

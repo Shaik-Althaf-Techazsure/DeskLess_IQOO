@@ -49,7 +49,9 @@ import com.techazsure.deskless.data.Template
 import com.techazsure.deskless.report.ReportEntry
 import com.techazsure.deskless.ui.theme.Chalk
 import com.techazsure.deskless.ui.theme.Coal
+import com.techazsure.deskless.report.Verdict
 import com.techazsure.deskless.ui.theme.Fog
+import com.techazsure.deskless.ui.theme.GoGreen
 import com.techazsure.deskless.ui.theme.Ink
 import com.techazsure.deskless.ui.theme.Line
 import com.techazsure.deskless.ui.theme.SafetyYellow
@@ -244,6 +246,23 @@ private fun ReportCard(state: AppState, entry: ReportEntry) {
                             Text("${entry.flagged} flagged", style = MaterialTheme.typography.bodySmall, color = SeverityMedium)
                         }
                     }
+                }
+                // What the AI review decided, and where the report came from if not from this phone.
+                val reviewed = Verdict.entries.firstOrNull { it.name == entry.review }
+                if (reviewed != null || entry.from.isNotBlank()) {
+                    Text(
+                        text = listOfNotNull(
+                            reviewed?.let { "AI review: ${it.decision.lowercase()}" },
+                            entry.from.takeIf { it.isNotBlank() }?.let { "from $it" },
+                        ).joinToString(" · ").replaceFirstChar(Char::uppercase),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = when (reviewed) {
+                            Verdict.GENUINE -> GoGreen
+                            Verdict.FAKE -> SeverityHigh
+                            Verdict.DOUBTFUL -> SeverityMedium
+                            null -> Fog
+                        },
+                    )
                 }
             }
             Icon(Icons.Rounded.ChevronRight, contentDescription = null, tint = Fog, modifier = Modifier.size(22.dp))

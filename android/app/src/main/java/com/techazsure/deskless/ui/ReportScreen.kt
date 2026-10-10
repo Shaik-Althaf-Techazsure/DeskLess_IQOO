@@ -38,6 +38,11 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.AirplanemodeActive
 import androidx.compose.material.icons.rounded.Check
+import androidx.compose.material.icons.rounded.ErrorOutline
+import androidx.compose.material.icons.rounded.Fingerprint
+import androidx.compose.material.icons.rounded.Help
+import androidx.compose.material.icons.rounded.SendToMobile
+import androidx.compose.material.icons.rounded.Verified
 import androidx.compose.material.icons.rounded.OpenInNew
 import androidx.compose.material.icons.rounded.SaveAlt
 import androidx.compose.material.icons.rounded.Share
@@ -45,6 +50,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -73,11 +79,15 @@ import com.techazsure.deskless.Screen
 import androidx.compose.material.icons.rounded.Groups
 import com.techazsure.deskless.report.Handoff
 import com.techazsure.deskless.report.ReportPack
+import com.techazsure.deskless.report.SignOff
+import com.techazsure.deskless.report.Verdict
+import com.techazsure.deskless.ui.theme.SeverityMedium
 import com.techazsure.deskless.ui.theme.Chalk
 import com.techazsure.deskless.ui.theme.Fog
 import com.techazsure.deskless.ui.theme.GoGreen
 import com.techazsure.deskless.ui.theme.Ink
 import com.techazsure.deskless.ui.theme.SafetyYellow
+import com.techazsure.deskless.ui.theme.SignalRed
 import com.techazsure.deskless.ui.theme.Steel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -87,6 +97,7 @@ import java.io.File
 fun ReportScreen(state: AppState, file: File, fromLibrary: Boolean = false) {
     val context = LocalContext.current
     var savedTo by remember(file) { mutableStateOf<String?>(null) }
+    var sendNote by remember(file) { mutableStateOf<String?>(null) }
     val back = { state.screen = if (fromLibrary) Screen.Reports else Screen.Home }
     val entry = state.reports.firstOrNull { it.fileName == file.name }
     BackHandler { back() }
@@ -100,6 +111,11 @@ fun ReportScreen(state: AppState, file: File, fromLibrary: Boolean = false) {
     }
     val preview by produceState<ImageBitmap?>(initialValue = null, file.absolutePath) {
         value = withContext(Dispatchers.IO) { runCatching { firstPage(file) }.getOrNull() }
+    }
+
+    // A signed report is checked against its signature every time it is opened.
+    val seal by produceState<SignOff.Seal?>(initialValue = null, file.absolutePath) {
+        value = withContext(Dispatchers.IO) { SignOff.check(file) }
     }
 
     fun open() {
@@ -160,7 +176,11 @@ fun ReportScreen(state: AppState, file: File, fromLibrary: Boolean = false) {
                 }
                 Spacer(Modifier.width(14.dp))
                 Column {
-                    Text("REPORT DONE.", style = MaterialTheme.typography.headlineMedium, color = SafetyYellow)
+                    Text(
+                        text = if (entry?.from.isNullOrBlank()) "REPORT DONE." else "REPORT RECEIVED.",
+                        style = MaterialTheme.typography.headlineMedium,
+                        color = SafetyYellow,
+                    )
                     Text(
                         // What the library recorded about this report; an older one has only its size.
                         text = listOfNotNull(
@@ -170,6 +190,62 @@ fun ReportScreen(state: AppState, file: File, fromLibrary: Boolean = false) {
                         ).joinToString(" · "),
                         style = MaterialTheme.typography.bodyMedium,
                         color = Fog,
+                    )
+                }
+            }
+            // What the review made of the report's own evidence.
+            Verdict.entries.firstOrNull { it.name == entry?.review }?.let { verdict ->
+                val (tone, icon) = when (verdict) {
+                    Verdict.GENUINE -> GoGreen to Icons.Rounded.Verified
+                    Verdict.DOUBTFUL -> SeverityMedium to Icons.Rounded.Help
+                    Verdict.FAKE -> SignalRed to Icons.Rounded.ErrorOutline
+                }
+                Spacer(Modifier.height(12.dp))
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(tone.copy(alpha = 0.14f), RoundedCornerShape(16.dp))
+                        .padding(horizontal = 14.dp, vertical = 10.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Icon(icon, contentDescription = null, tint = tone, modifier = Modifier.size(20.dp))
+                        Text(
+                            text = "AI REVIEW · ${verdict.label.uppercase()} · ${verdict.decision.uppercase()}",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = tone,
+                        )
+                    }
+                    entry?.reviewReason?.takeIf { it.isNotBlank() }?.let {
+                        Text(it, style = MaterialTheme.typography.bodySmall, color = Chalk)
+                    }
+                }
+            }
+            entry?.from?.takeIf { it.isNotBlank() }?.let { sender ->
+                Spacer(Modifier.height(8.dp))
+                Text("Received from $sender over the phone link", style = MaterialTheme.typography.bodySmall, color = Fog)
+            }
+            // Whether the report is signed, and whether it is still the report that was signed.
+            seal?.let { signed ->
+                val valid = signed.verdict == SignOff.Verdict.VALID
+                val tone = if (valid) GoGreen else SignalRed
+                Spacer(Modifier.height(12.dp))
+                Row(
+                    modifier = Modifier
+                        .background(tone.copy(alpha = 0.14f), RoundedCornerShape(50))
+                        .padding(horizontal = 12.dp, vertical = 7.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Icon(Icons.Rounded.Fingerprint, contentDescription = null, tint = tone, modifier = Modifier.size(16.dp))
+                    Text(
+                        text = if (valid) {
+                            "Signed" + (if (signed.by.isNotBlank()) " by ${signed.by}" else "") + " · key ${signed.keyId} · unchanged"
+                        } else {
+                            "The signature does not match: changed after signing"
+                        },
+                        style = MaterialTheme.typography.labelMedium,
+                        color = Chalk,
                     )
                 }
             }
@@ -245,6 +321,7 @@ fun ReportScreen(state: AppState, file: File, fromLibrary: Boolean = false) {
                             "pdf" -> "report (PDF)"
                             "csv" -> "spreadsheet of issues"
                             "ics" -> "calendar of deadlines"
+                            "json" -> "fingerprint signature"
                             else -> "task list per owner"
                         }
                     },
@@ -272,13 +349,40 @@ fun ReportScreen(state: AppState, file: File, fromLibrary: Boolean = false) {
                     kind = ButtonKind.Secondary,
                     modifier = Modifier.weight(1f),
                 )
+                // With a phone linked, Share sends straight to it: nobody is asked to accept on either
+                // side, and the phone says when it has gone. With none linked it is the usual share sheet.
+                val linked = state.link.peers.isNotEmpty()
                 BrandButton(
                     text = "Share",
-                    onClick = { context.startActivity(Handoff.shareIntent(context, file)) },
-                    icon = Icons.Rounded.Share,
+                    onClick = {
+                        if (linked) sendNote = state.sendReport(file) else context.startActivity(Handoff.shareIntent(context, file))
+                    },
+                    icon = if (linked) Icons.Rounded.SendToMobile else Icons.Rounded.Share,
                     kind = ButtonKind.Secondary,
                     modifier = Modifier.weight(1f),
                 )
+            }
+            if (state.link.peers.isNotEmpty()) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    // The line follows the report across: sending, waiting for the other phone, or gone.
+                    val queued = state.link.waiting.any { it.pack.name == "send-${file.nameWithoutExtension}.zip" }
+                    Text(
+                        text = when {
+                            sendNote == null -> "Share sends to ${state.link.peers.joinToString(", ") { it.name }} with no prompt."
+                            state.link.inFlight > 0 -> "Sending…"
+                            queued -> "Waiting. It goes by itself when a linked phone is in range with DeskLess open."
+                            else -> "Sent. The other phone has it."
+                        },
+                        style = MaterialTheme.typography.bodySmall,
+                        color = when {
+                            sendNote == null -> Fog
+                            state.link.inFlight == 0 && !queued -> GoGreen
+                            else -> SafetyYellow
+                        },
+                        modifier = Modifier.weight(1f),
+                    )
+                    TextButton(onClick = { context.startActivity(Handoff.shareIntent(context, file)) }) { Text("Another app") }
+                }
             }
             if (owners != null) {
                 BrandButton(

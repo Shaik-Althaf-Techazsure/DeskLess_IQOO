@@ -21,12 +21,20 @@ data class ReportEntry(
     /** Issues rated High or Critical. */
     val serious: Int,
     val flagged: Int,
+    /** The AI review's verdict, as the name of a [Verdict]; blank for a report built before there was one. */
+    val review: String = "",
+    val reviewReason: String = "",
+    /** The name of the phone this report came from over the link; blank for a report built on this phone. */
+    val from: String = "",
 )
 
 /** The PDFs built on this phone, with a small index beside them. */
 class ReportLibrary(context: Context) {
     private val dir = File(context.filesDir, "reports").apply { mkdirs() }
     private val index = File(dir, "index.json")
+
+    /** Where the reports are kept; a report received from another phone is unpacked here. */
+    val folder: File get() = dir
 
     fun file(entry: ReportEntry) = File(dir, entry.fileName)
 
@@ -56,17 +64,31 @@ class ReportLibrary(context: Context) {
             .sortedByDescending { it.builtAt }
     }
 
-    fun record(file: File, inspection: Inspection, issues: List<Issue>, flagged: Int): ReportEntry {
-        val entry = ReportEntry(
-            fileName = file.name,
-            template = inspection.template,
-            place = inspection.site,
-            person = inspection.inspector,
-            builtAt = System.currentTimeMillis(),
-            issues = issues.size,
-            serious = issues.count { it.severity == Severity.HIGH || it.severity == Severity.CRITICAL },
-            flagged = flagged,
+    fun record(file: File, inspection: Inspection, issues: List<Issue>, flagged: Int, review: Review? = null): ReportEntry =
+        add(
+            ReportEntry(
+                fileName = file.name,
+                template = inspection.template,
+                place = inspection.site,
+                person = inspection.inspector,
+                builtAt = System.currentTimeMillis(),
+                issues = issues.size,
+                serious = issues.count { it.severity == Severity.HIGH || it.severity == Severity.CRITICAL },
+                flagged = flagged,
+                review = review?.verdict?.name.orEmpty(),
+                reviewReason = review?.reason.orEmpty(),
+            )
         )
+
+    /** Lists a report that arrived from another phone, from what that phone said about it. */
+    fun receive(file: File, about: JSONObject, from: String): ReportEntry =
+        add(entryFrom(about).copy(fileName = file.name, from = from))
+
+    /** What the phone at the other end needs to list this report as this phone does. */
+    fun describe(entry: ReportEntry): JSONObject = toJson(entry)
+
+    @Synchronized
+    private fun add(entry: ReportEntry): ReportEntry {
         val all = load().filter { it.template != null && it.fileName != entry.fileName } + entry
         val tmp = File(dir, index.name + ".tmp")
         tmp.writeText(JSONArray().apply { all.forEach { put(toJson(it)) } }.toString())
@@ -83,6 +105,9 @@ class ReportLibrary(context: Context) {
         .put("issues", entry.issues)
         .put("serious", entry.serious)
         .put("flagged", entry.flagged)
+        .put("review", entry.review)
+        .put("reviewReason", entry.reviewReason)
+        .put("from", entry.from)
 
     private fun entryFrom(json: JSONObject) = ReportEntry(
         fileName = json.getString("fileName"),
@@ -93,6 +118,9 @@ class ReportLibrary(context: Context) {
         issues = json.optInt("issues"),
         serious = json.optInt("serious"),
         flagged = json.optInt("flagged"),
+        review = json.optString("review"),
+        reviewReason = json.optString("reviewReason"),
+        from = json.optString("from"),
     )
 
     private companion object {

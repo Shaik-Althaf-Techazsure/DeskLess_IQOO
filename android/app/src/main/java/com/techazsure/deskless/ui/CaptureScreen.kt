@@ -6,6 +6,7 @@ import android.os.SystemClock
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.camera.core.Camera
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.ImageCapture
 import androidx.camera.core.ImageCaptureException
@@ -46,7 +47,14 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.CameraAlt
 import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.Explore
+import androidx.compose.material.icons.rounded.FlashAuto
+import androidx.compose.material.icons.rounded.FlashOff
+import androidx.compose.material.icons.rounded.FlashOn
+import androidx.compose.material.icons.rounded.Nfc
+import androidx.compose.material.icons.rounded.SwapVert
 import androidx.compose.material.icons.rounded.Videocam
+import androidx.compose.material.icons.rounded.WbSunny
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -55,11 +63,13 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -83,6 +93,8 @@ import com.techazsure.deskless.capture.Locator
 import com.techazsure.deskless.capture.WavRecorder
 import com.techazsure.deskless.capture.extractFrames
 import com.techazsure.deskless.capture.normalizeJpeg
+import com.techazsure.deskless.data.Readings
+import com.techazsure.deskless.data.Stamp
 import com.techazsure.deskless.structure.Structurer
 import com.techazsure.deskless.ui.theme.Chalk
 import com.techazsure.deskless.ui.theme.Fog
@@ -97,8 +109,11 @@ import kotlinx.coroutines.withContext
 /** A clip is evidence, not a film: long enough to pan across a problem and say what it is. */
 private const val MAX_CLIP_SECONDS = 20
 
-/** The position prompt is shown once per run of the app, not at every capture. */
-private var locationAsked = false
+/** The position and step-count prompts are shown once per run of the app, not at every capture. */
+private var extrasAsked = false
+
+/** How the torch is run: by the light sensor, or by hand. */
+private enum class Torch { Auto, On, Off }
 
 @Composable
 fun CaptureScreen(state: AppState, lifecycleOwner: LifecycleOwner, retakeId: String? = null, fix: Boolean = false) {
@@ -112,14 +127,27 @@ fun CaptureScreen(state: AppState, lifecycleOwner: LifecycleOwner, retakeId: Str
     val askCamera = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {
         granted = it
     }
-    // Position is a bonus, not a condition: the answer is not waited for, and a refusal changes nothing.
-    val askLocation = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) {}
+    // Position and step count are a bonus, not a condition: the answer is not waited for, and a refusal
+    // changes nothing.
+    val askExtras = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) {
+        state.sensors.countSteps()
+        state.watchPosition(true)
+    }
+    // The phone starts finding its position as the camera opens, so the picture is stamped without a wait.
+    DisposableEffect(Unit) {
+        state.watchPosition(true)
+        onDispose { state.watchPosition(false) }
+    }
     val leave = { state.screen = if (retakeId != null) Screen.Edit(retakeId) else Screen.Home }
     LaunchedEffect(Unit) { if (!granted) askCamera.launch(Manifest.permission.CAMERA) }
     LaunchedEffect(granted) {
-        if (granted && !state.locationAllowed && !locationAsked) {
-            locationAsked = true
-            askLocation.launch(Locator.PERMISSIONS)
+        val wanted = buildList {
+            if (!state.locationAllowed) addAll(Locator.PERMISSIONS)
+            if (state.sensors.hasStepCounter && !state.sensors.stepsAllowed) add(Manifest.permission.ACTIVITY_RECOGNITION)
+        }
+        if (granted && wanted.isNotEmpty() && !extrasAsked) {
+            extrasAsked = true
+            askExtras.launch(wanted.toTypedArray())
         }
     }
     BackHandler { leave() }
@@ -168,6 +196,19 @@ private fun Viewfinder(state: AppState, lifecycleOwner: LifecycleOwner, retakeId
         )
     }
     var provider by remember { mutableStateOf<ProcessCameraProvider?>(null) }
+    var camera by remember { mutableStateOf<Camera?>(null) }
+
+    // The phone's sensors run while the camera is open, to stamp the picture with what they read.
+    val sensors = state.sensors
+    DisposableEffect(Unit) {
+        sensors.watch()
+        onDispose { sensors.unwatch() }
+    }
+    var torch by remember { mutableStateOf(Torch.Auto) }
+    var lit by remember { mutableStateOf(false) }
+    var zoom by remember { mutableFloatStateOf(1f) }
+    var widest by remember { mutableFloatStateOf(1f) }
+    var longest by remember { mutableFloatStateOf(1f) }
 
     var video by remember { mutableStateOf(false) }
     var saving by remember { mutableStateOf(false) }
@@ -195,16 +236,43 @@ private fun Viewfinder(state: AppState, lifecycleOwner: LifecycleOwner, retakeId
             val preview = Preview.Builder().build()
             preview.setSurfaceProvider(previewView.surfaceProvider)
             ready.unbindAll()
-            ready.bindToLifecycle(
+            val bound = ready.bindToLifecycle(
                 lifecycleOwner,
                 CameraSelector.DEFAULT_BACK_CAMERA,
                 preview,
                 if (video) videoCapture else imageCapture,
             )
+            // A fresh binding starts at the main camera with the torch off.
+            zoom = 1f
+            lit = false
+            bound.cameraInfo.zoomState.value?.let {
+                widest = it.minZoomRatio
+                longest = it.maxZoomRatio
+            }
+            camera = bound
         } catch (e: Exception) {
             error = "Could not start the camera: ${e.message}"
         }
     }
+    // On Auto the light sensor runs the torch: on in the dark, and off again only once it is clearly
+    // bright, so the torch's own light bouncing back does not make it flicker.
+    LaunchedEffect(torch, camera) {
+        when (torch) {
+            Torch.On -> lit = true
+            Torch.Off -> lit = false
+            Torch.Auto -> snapshotFlow { sensors.lux }.collect { lux ->
+                if (lux != null) lit = if (lit) lux < 40f else lux < 8f
+            }
+        }
+    }
+    LaunchedEffect(lit, camera) {
+        camera?.takeIf { it.cameraInfo.hasFlashUnit() }?.cameraControl?.enableTorch(lit)
+    }
+    LaunchedEffect(zoom, camera) { camera?.cameraControl?.setZoomRatio(zoom) }
+
+    /** What the sensors read at this moment, for the picture being taken. A repair picture carries none. */
+    fun stampNow(): Stamp? =
+        if (fix) null else sensors.stamp(zoom, torch = lit && camera?.cameraInfo?.hasFlashUnit() == true)
     DisposableEffect(Unit) {
         onDispose {
             recording?.stop()
@@ -221,11 +289,12 @@ private fun Viewfinder(state: AppState, lifecycleOwner: LifecycleOwner, retakeId
         if (saving) return
         saving = true
         error = null
-        haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+        state.haptics.click()
         scope.launch {
             flash.snapTo(0.85f)
             flash.animateTo(0f, tween(320))
         }
+        val stamp = stampNow()
         val id = retakeId ?: state.newIssueId()
         // A retake or a repair picture gets a new file name so an old picture cannot be shown from a cache.
         val file = state.fileOf(
@@ -243,9 +312,9 @@ private fun Viewfinder(state: AppState, lifecycleOwner: LifecycleOwner, retakeId
                     scope.launch {
                         withContext(Dispatchers.IO) { normalizeJpeg(file) }
                         when {
-                            retakeId == null -> state.addIssue(id, file.name)
+                            retakeId == null -> state.addIssue(id, file.name, stamp)
                             fix -> state.addFixPhoto(id, file.name)
-                            else -> state.replacePhoto(id, file.name)
+                            else -> state.replacePhoto(id, file.name, stamp)
                         }
                         state.screen = Screen.Edit(id)
                     }
@@ -258,6 +327,8 @@ private fun Viewfinder(state: AppState, lifecycleOwner: LifecycleOwner, retakeId
             },
         )
     }
+
+    var clipStamp by remember { mutableStateOf<Stamp?>(null) }
 
     fun finishClip(id: String, failed: Boolean) {
         val clip = state.fileOf("video_$id.mp4")
@@ -280,7 +351,7 @@ private fun Viewfinder(state: AppState, lifecycleOwner: LifecycleOwner, retakeId
                 saving = false
                 error = "That clip was too short to use. Hold it a little longer."
             } else {
-                state.addVideoIssue(id, clip.name, frames.take(written), sound.name, WavRecorder.seconds(sound))
+                state.addVideoIssue(id, clip.name, frames.take(written), sound.name, WavRecorder.seconds(sound), clipStamp)
                 state.screen = Screen.Edit(id)
             }
         }
@@ -291,6 +362,7 @@ private fun Viewfinder(state: AppState, lifecycleOwner: LifecycleOwner, retakeId
         haptics.performHapticFeedback(HapticFeedbackType.LongPress)
         val id = state.newIssueId()
         clipId = id
+        clipStamp = stampNow()
         seconds = 0
         // The voice is recorded beside the silent clip, straight into the format the speech model reads.
         voice.start(state.fileOf("voice_$id.wav"))
@@ -341,7 +413,7 @@ private fun Viewfinder(state: AppState, lifecycleOwner: LifecycleOwner, retakeId
             Modifier
                 .align(Alignment.BottomCenter)
                 .fillMaxWidth()
-                .height(290.dp)
+                .height(350.dp)
                 .background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = 0.85f))))
         )
 
@@ -349,7 +421,7 @@ private fun Viewfinder(state: AppState, lifecycleOwner: LifecycleOwner, retakeId
         Canvas(
             Modifier
                 .fillMaxSize()
-                .padding(start = 36.dp, end = 36.dp, top = 170.dp, bottom = 280.dp)
+                .padding(start = 36.dp, end = 36.dp, top = 170.dp, bottom = 340.dp)
                 .graphicsLayer {
                     scaleX = brackets.value
                     scaleY = brackets.value
@@ -394,6 +466,20 @@ private fun Viewfinder(state: AppState, lifecycleOwner: LifecycleOwner, retakeId
                     color = Color.White.copy(alpha = 0.8f),
                 )
             }
+            if (recording == null && camera?.cameraInfo?.hasFlashUnit() == true) {
+                RoundIconButton(
+                    icon = when (torch) {
+                        Torch.Auto -> Icons.Rounded.FlashAuto
+                        Torch.On -> Icons.Rounded.FlashOn
+                        Torch.Off -> Icons.Rounded.FlashOff
+                    },
+                    label = "Torch: ${torch.name}",
+                    container = if (lit) SafetyYellow else Ink.copy(alpha = 0.55f),
+                    content = if (lit) Ink else Chalk,
+                    // A tap overrules the light sensor either way: off if it is on, on if it is off.
+                    onClick = { torch = if (lit) Torch.Off else Torch.On },
+                )
+            }
             if (recording != null) {
                 val blink = pulse(0.35f, 1f, 500)
                 Row(
@@ -416,6 +502,15 @@ private fun Viewfinder(state: AppState, lifecycleOwner: LifecycleOwner, retakeId
                     )
                 }
             }
+        }
+
+        if (!fix) {
+            SensorReadout(
+                state,
+                modifier = Modifier
+                    .systemBarsPadding()
+                    .padding(start = 16.dp, top = 78.dp, end = 16.dp),
+            )
         }
 
         Column(
@@ -442,6 +537,17 @@ private fun Viewfinder(state: AppState, lifecycleOwner: LifecycleOwner, retakeId
                 modifier = Modifier.padding(horizontal = 24.dp),
             )
             Spacer(Modifier.height(14.dp))
+
+            // The phone's other lenses: wide for the whole room, long for what is out of reach.
+            val stops = listOfNotNull(widest.takeIf { it < 0.95f }, 1f, 3f.takeIf { longest >= 3f })
+            if (stops.size > 1 && recording == null && !saving) {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    stops.forEach { stop ->
+                        ZoomStop(stop, selected = kotlin.math.abs(zoom - stop) < 0.05f) { zoom = stop }
+                    }
+                }
+                Spacer(Modifier.height(12.dp))
+            }
 
             // A retake replaces a photo, so it offers no choice of mode.
             if (retakeId == null && recording == null && !saving) {
@@ -498,6 +604,55 @@ private fun Viewfinder(state: AppState, lifecycleOwner: LifecycleOwner, retakeId
                 .graphicsLayer { alpha = flash.value }
                 .background(Color.White)
         )
+    }
+}
+
+/** What the sensors read right now, shown over the picture: it is what will be stamped on the issue. */
+@Composable
+private fun SensorReadout(state: AppState, modifier: Modifier = Modifier) {
+    val sensors = state.sensors
+    val chips = listOfNotNull(
+        state.place.takeIf { it.isNotBlank() }?.let { Icons.Rounded.Nfc to it },
+        sensors.heading?.let { Icons.Rounded.Explore to "${Readings.compassShort(it)} ${it.toInt()}°" },
+        Readings.aim(sensors.pitch)?.let { Icons.Rounded.SwapVert to it.replaceFirstChar(Char::uppercase) },
+        sensors.lux?.let { Icons.Rounded.WbSunny to "${it.toInt()} lux · ${Readings.light(it)}" },
+    )
+    Row(modifier = modifier, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        chips.forEach { (icon, text) ->
+            Row(
+                modifier = Modifier
+                    .background(Color.Black.copy(alpha = 0.5f), RoundedCornerShape(50))
+                    .padding(horizontal = 9.dp, vertical = 5.dp),
+                horizontalArrangement = Arrangement.spacedBy(5.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Icon(icon, contentDescription = null, tint = SafetyYellow, modifier = Modifier.size(13.dp))
+                Text(text, style = MaterialTheme.typography.labelSmall, color = Color.White, maxLines = 1)
+            }
+        }
+    }
+}
+
+@Composable
+private fun ZoomStop(ratio: Float, selected: Boolean, onClick: () -> Unit) {
+    val interaction = remember { MutableInteractionSource() }
+    val fill by animateColorAsState(if (selected) SafetyYellow else Color.Black.copy(alpha = 0.5f), label = "zoom")
+    Surface(
+        onClick = onClick,
+        interactionSource = interaction,
+        shape = CircleShape,
+        color = fill,
+        contentColor = if (selected) Ink else Color.White,
+        modifier = Modifier
+            .size(42.dp)
+            .bouncy(interaction, pressedScale = 0.88f),
+    ) {
+        Box(contentAlignment = Alignment.Center) {
+            Text(
+                text = (if (ratio < 1f) "%.1f".format(ratio) else "%.0f".format(ratio)) + "×",
+                style = MaterialTheme.typography.labelMedium,
+            )
+        }
     }
 }
 

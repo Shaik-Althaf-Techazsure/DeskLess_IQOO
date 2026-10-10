@@ -67,6 +67,7 @@ import androidx.compose.material.icons.rounded.EditNote
 import androidx.compose.material.icons.rounded.Event
 import androidx.compose.material.icons.rounded.Mic
 import androidx.compose.material.icons.rounded.Person
+import androidx.compose.material.icons.rounded.PhoneInTalk
 import androidx.compose.material.icons.rounded.Place
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.Refresh
@@ -212,6 +213,7 @@ fun EditScreen(state: AppState, issue: Issue) {
             ) {
                 VoiceCard(state, issue)
                 CheckCard(state, issue)
+                ReadingsCard(state, issue)
                 EntryCard(state, issue)
                 FixCard(state, issue)
                 Spacer(Modifier.height(8.dp))
@@ -344,10 +346,48 @@ private fun VoiceCard(state: AppState, issue: Issue) {
             delay(70)
         }
     }
+
+    // Lift to talk: until the issue has a note, holding the phone to an ear starts the recording and
+    // lowering it stops, with a buzz each time. The screen goes dark at the ear, as in a call, so a cheek
+    // cannot press anything. Once there is a note it takes a tap to replace it, so a pocket cannot.
+    val sensors = state.sensors
+    var lifted by remember(issue.id) { mutableStateOf(false) }
+    val liftable = sensors.hasProximity && (issue.voiceFile == null || lifted)
+    LaunchedEffect(liftable) { sensors.holdScreenOffAtEar(liftable) }
+    LaunchedEffect(liftable, sensors.near, sensors.upright, recording) {
+        if (!liftable) return@LaunchedEffect
+        if (sensors.near && sensors.upright && !recording) {
+            val allowed = ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) ==
+                PackageManager.PERMISSION_GRANTED
+            if (!allowed) return@LaunchedEffect
+            delay(450)
+            startRecording()
+            if (recording) {
+                lifted = true
+                state.haptics.listening()
+            }
+        } else if (!sensors.near && recording && lifted) {
+            delay(350)
+            state.haptics.heard()
+            stopRecording()
+            lifted = false
+        }
+    }
+    // A note spoken at the ear ends by itself after a minute, should the phone never notice being lowered.
+    LaunchedEffect(lifted) {
+        if (!lifted) return@LaunchedEffect
+        delay(60_000)
+        state.haptics.heard()
+        stopRecording()
+        lifted = false
+    }
     DisposableEffect(issue.id) {
+        sensors.watch()
         onDispose {
             stopRecording()
             stopPlayback()
+            sensors.holdScreenOffAtEar(false)
+            sensors.unwatch()
         }
     }
 
@@ -430,6 +470,19 @@ private fun VoiceCard(state: AppState, issue: Issue) {
                                 color = Fog,
                                 textAlign = TextAlign.Center,
                             )
+                            if (sensors.hasProximity) {
+                                Spacer(Modifier.height(10.dp))
+                                Row(
+                                    modifier = Modifier
+                                        .background(Steel, RoundedCornerShape(50))
+                                        .padding(horizontal = 12.dp, vertical = 7.dp),
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                ) {
+                                    Icon(Icons.Rounded.PhoneInTalk, contentDescription = null, tint = SafetyYellow, modifier = Modifier.size(16.dp))
+                                    Text("Or lift the phone to your ear and speak", style = MaterialTheme.typography.labelMedium, color = Chalk)
+                                }
+                            }
                         }
                     }
                 }

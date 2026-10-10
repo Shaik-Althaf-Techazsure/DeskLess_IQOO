@@ -61,6 +61,12 @@ data class Issue(
     val fixSeen: String = "",
     /** An expiry date the model read off the pack in a medication audit, as printed; blank when none. */
     val expiry: String = "",
+    /** What the phone's sensors read when the picture was taken; null for an issue captured without them. */
+    val stamp: Stamp? = null,
+    /** Readings the inspector took with the phone's instruments, oldest first. */
+    val readings: List<Reading> = emptyList(),
+    /** The place or asset whose NFC tag the phone was tapped on; blank when none. */
+    val place: String = "",
 ) {
     /** True once a follow-up picture exists and the model or the inspector says the problem is gone. */
     val resolved: Boolean
@@ -140,6 +146,42 @@ class IssueStore(context: Context) {
         .put("fixCheck", issue.fixCheck.name)
         .put("fixSeen", issue.fixSeen)
         .put("expiry", issue.expiry)
+        .put("stamp", issue.stamp?.let { toJson(it) } ?: JSONObject.NULL)
+        .put("readings", JSONArray().apply { issue.readings.forEach { put(toJson(it)) } })
+        .put("place", issue.place)
+
+    private fun toJson(stamp: Stamp) = JSONObject()
+        .put("heading", stamp.heading?.toDouble() ?: JSONObject.NULL)
+        .put("pitch", stamp.pitch?.toDouble() ?: JSONObject.NULL)
+        .put("lux", stamp.lux?.toDouble() ?: JSONObject.NULL)
+        .put("steps", stamp.steps ?: JSONObject.NULL)
+        .put("zoom", stamp.zoom.toDouble())
+        .put("torch", stamp.torch)
+
+    private fun toJson(reading: Reading) = JSONObject()
+        .put("kind", reading.kind.name)
+        .put("value", reading.value.toDouble())
+        .put("extra", reading.extra.toDouble())
+        .put("takenAt", reading.takenAt)
+
+    private fun stampFrom(json: JSONObject): Stamp {
+        fun number(key: String): Float? = if (json.isNull(key)) null else json.optDouble(key).takeUnless { it.isNaN() }?.toFloat()
+        return Stamp(
+            heading = number("heading"),
+            pitch = number("pitch"),
+            lux = number("lux"),
+            steps = if (json.isNull("steps")) null else json.optInt("steps"),
+            zoom = json.optDouble("zoom", 1.0).toFloat(),
+            torch = json.optBoolean("torch"),
+        )
+    }
+
+    private fun readingsFrom(array: JSONArray?): List<Reading> =
+        (0 until (array?.length() ?: 0)).mapNotNull { at ->
+            val json = array!!.getJSONObject(at)
+            val kind = Instrument.entries.firstOrNull { it.name == json.optString("kind") } ?: return@mapNotNull null
+            Reading(kind, json.optDouble("value", 0.0).toFloat(), json.optDouble("extra", 0.0).toFloat(), json.optLong("takenAt"))
+        }
 
     private fun issueFrom(json: JSONObject) = Issue(
         id = json.getString("id"),
@@ -168,5 +210,8 @@ class IssueStore(context: Context) {
         fixCheck = Check.entries.firstOrNull { it.name == json.optString("fixCheck") } ?: Check.NONE,
         fixSeen = json.optString("fixSeen"),
         expiry = json.optString("expiry"),
+        stamp = json.optJSONObject("stamp")?.let(::stampFrom),
+        readings = readingsFrom(json.optJSONArray("readings")),
+        place = json.optString("place"),
     )
 }

@@ -70,6 +70,7 @@ object Handoff {
         "pdf" -> PDF
         "csv" -> "text/csv"
         "ics" -> "text/calendar"
+        "json" -> "application/json"
         else -> "text/plain"
     }
 
