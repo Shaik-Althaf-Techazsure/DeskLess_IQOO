@@ -185,7 +185,7 @@ android/
     ├── models/               model import and checks
     ├── report/               PDF report, report pack, saved reports, hand-off, fingerprint sign-off, AI review
     ├── link/                 QR pairing, phone-to-phone link, relay and sealed reports, spoken confirmation
-    ├── account/              sign-up and sign-in, fingerprint unlock, the outbox that sends reports to the server
+    ├── account/              sign-up and sign-in, fingerprint unlock, sending the walk and its report to the server
     ├── data/                 issues and their readings, their storage, report types
     └── ui/                   screens and theme
 ```
@@ -219,7 +219,7 @@ A forgotten password is reset in the app with a code sent to the account's email
 
 ### From a report to a closed issue
 
-1. **The inspector builds a report in the app.** The app sends it to the server by itself: at once when the phone has a network, otherwise it waits on the phone and goes when the network is back. The reports list shows which have been sent. A report built again for the same walk replaces the earlier one, and work already done on its issues is kept.
+1. **The inspector raises issues in the app, and the app sends them by itself.** Each issue goes to the server a few seconds after it is raised and its fields are filled, so it is on the dashboards while the walk is still going on. When the report is built, its PDF follows for the same walk. With no network everything waits on the phone and goes when the network is back; a picture is sent once, after that only the words travel. The app's reports list shows which reports have been sent. A walk told again replaces what was sent before, and work already done on its issues is kept.
 2. **The manager gives each issue to a technician**, with a day to have it done by. The technician is emailed.
 3. **The technician fixes it and marks it fixed with a photo of the repair**, from the dashboard on their phone.
 4. **The manager compares the two pictures** and accepts the repair, which closes the issue, or sends it back with what is still wrong.
@@ -241,7 +241,7 @@ One page for everybody: http://localhost:8800/dashboard on this computer, `https
 
 What each may see is decided on the server, not on the page: a manager cannot open another team's issue, and one company sees nothing of another.
 
-**The overview is live.** It asks the server again every five seconds and changes in place, with no reload: numbers count up to their new value and the tile that changed lights up for a moment, bars and the ring slide, a new event drops in at the top of *Happening now*, and people appear under *Online now* as their phone or browser talks to the server. A pill in the corner says when the page last heard from the server, and turns red while it cannot reach it.
+**The overview is live.** It asks the server again every ten seconds and changes in place, with no reload: numbers count up to their new value and the tile that changed lights up for a moment, bars and the ring slide, a new event drops in at the top of *Happening now*, and people appear under *Online now* as their phone or browser talks to the server. A pill in the corner says when the page last heard from the server, and turns red while it cannot reach it. Only the overview (and the administrator's System section) refreshes by itself. The lists of issues, approvals, people and reports are drawn when they are opened and when **Refresh** is pressed, so nothing moves under somebody's hands, and while an issue, an approval or a picture is open the overview waits too.
 
 | On the overview | What it shows |
 |---|---|
@@ -346,7 +346,7 @@ It pulls, rebuilds, restarts and waits until the server answers. Accounts, repor
 | `GET /api/people`, `POST /api/people/{id}/approve`, `/reject` | The people below the one asking, the sign-ups waiting for them, and the deciding of those |
 | `POST /api/people/{id}/suspend`, `/reactivate` | Shut an approved account out, and let it back in |
 | `GET /api/admin/companies`, `/api/admin/system` | Every company, and the server's own health, for the administrator |
-| `POST /api/reports` | A phone sends a finished report: its details, the PDF and a picture per issue (multipart) |
+| `POST /api/reports` | A phone sends a walk: its issues and the pictures the server lacks, while it is going on, and the PDF once the report is built (multipart) |
 | `GET /api/reports`, `/api/reports/{id}/pdf` | The reports in view, and a report's PDF |
 | `GET /api/issues`, `/api/issues/{id}`, `/photo`, `/fix-photo` | The issues in view, one issue with its history, and its pictures |
 | `GET /api/technicians`, `POST /api/issues/{id}/assign` | Who an issue can be given to; give it out with a deadline |

@@ -164,17 +164,21 @@ def issue(client_id: str, **changes) -> dict:
     } | changes
 
 
-def send_report(client, headers: dict, issues: list[dict] | None = None, **about):
-    """A phone sends a finished report: its details, the PDF and a picture for each issue."""
+def send_report(client, headers: dict, issues: list[dict] | None = None, built: bool = True, **about):
+    """
+    A phone sends a walk: its details and a picture for each issue, with the PDF when the report has been
+    built, and without it while the walk is still going on.
+    """
     issues = [issue("a1"), issue("a2", title="Loose cable", severity="LOW", category="Electrical")] if issues is None else issues
     meta = {
         "walk": "1001", "file": "DeskLess-tower-b-20261010-1130.pdf", "template": "SITE", "title": "Site inspection report",
         "place": "Tower B", "person": "Meena Iyer", "built_at": int(time.time() * 1000), "review": "GENUINE",
         "review_reason": "The notes and pictures agree.", "signed": True, "issues": issues,
     } | about
-    files = [("pdf", ("report.pdf", PDF, "application/pdf"))]
+    files = [("pdf", ("report.pdf", PDF, "application/pdf"))] if built else []
     for item in issues:
         for key in ("photo", "fix_photo"):
             if item.get(key):
                 files.append(("photos", (item[key], photo(), "image/jpeg")))
-    return client.post("/api/reports", data={"meta": json.dumps(meta)}, files=files, headers=headers)
+    # With no file at all the form still has to go as a form with parts, as the app sends it.
+    return client.post("/api/reports", data={"meta": json.dumps(meta)}, files=files or {"photos": ("", b"", "image/jpeg")}, headers=headers)

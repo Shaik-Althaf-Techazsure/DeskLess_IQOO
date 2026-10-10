@@ -61,15 +61,16 @@ class Api(private val server: () -> String) {
     }.getOrDefault(false)
 
     /**
-     * Sends a finished report to the office: what it holds ([about]), the PDF, and a picture for each
-     * issue, each named as [about] names it. Sending the same walk again replaces what was sent before.
+     * Sends a walk to the office: what it holds ([about]) and the pictures the office does not have yet,
+     * each named as [about] names it. A built report brings its [pdf]; a walk still going on has none.
+     * Sending the same walk again replaces what was sent before.
      */
-    fun sendReport(token: String, about: JSONObject, pdf: File, pictures: List<File>): JSONObject =
+    fun sendReport(token: String, about: JSONObject, pdf: File?, pictures: List<File>): JSONObject =
         multipart(
             "/api/reports",
             token,
             mapOf("meta" to about.toString()),
-            listOf(Part("pdf", pdf.name, "application/pdf", pdf)) + pictures.map { Part("photos", it.name, "image/jpeg", it) },
+            listOfNotNull(pdf?.let { Part("pdf", it.name, "application/pdf", it) }) + pictures.map { Part("photos", it.name, "image/jpeg", it) },
         )
 
     /** A code that works once and for two minutes, with which a browser opens the person's dashboard already signed in. */

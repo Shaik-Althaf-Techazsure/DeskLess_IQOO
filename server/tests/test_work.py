@@ -127,7 +127,7 @@ def test_a_report_built_again_replaces_the_first_and_keeps_the_work_done(client,
 
     # The inspector reworded one issue, dropped the cable, added a leak, and built the report again.
     again = send_report(client, company.inspector.headers, issues=[issue("a1", title="Cracked beam, level 2"), issue("a3", title="Water leak", severity="MEDIUM")])
-    assert again.json() == {"id": again.json()["id"], "issues": 2, "updated": True}
+    assert again.json() == {"id": again.json()["id"], "issues": 2, "updated": True, "built": True}
     assert len(client.get("/api/reports", headers=manager).json()) == 1
     assert titles(client, manager) == ["Cracked beam, level 2", "Water leak"]
     kept = the_issue(client, manager, "Cracked beam, level 2")
@@ -183,3 +183,45 @@ def test_the_dashboard_counts_what_each_may_see(client, mailbox, admin, company)
     everything = client.get("/api/dashboard", headers=admin).json()
     assert everything["me"]["role"] == "admin" and everything["tiles"]["issues"] == 4 and everything["may_direct"] is False
     assert client.get("/api/dashboard").status_code == 401
+
+
+def test_an_issue_is_on_the_dashboards_as_soon_as_it_is_raised(client, mailbox, admin, company):
+    # The managing director walks a site. The phone sends the walk as it stands, before any report is built.
+    md = company.md.headers
+    first = send_report(client, md, built=False, place="Head office", issues=[issue("m1", title="Broken door closer", severity="MEDIUM")])
+    assert first.status_code == 200 and first.json()["built"] is False
+    # The administrator sees it at once: in the numbers, in the list, and in what is happening now.
+    watching = client.get("/api/dashboard", headers=admin).json()
+    assert watching["tiles"]["issues"] == 1 and watching["tiles"]["open"] == 1
+    assert [(event["about"], event["text"]) for event in watching["activity"] if event["kind"] == "report"] == [("Broken door closer", "Asha Verma raised it at Head office")]
+    assert titles(client, admin) == ["Broken door closer"] and titles(client, md) == ["Broken door closer"]
+    listed = client.get("/api/reports", headers=admin).json()[0]
+    assert (listed["has_pdf"], listed["in_progress"], listed["issues"], listed["verdict"]) == (False, True, 1, "")
+    assert client.get(f"/api/reports/{listed['id']}/pdf", headers=admin).status_code == 404
+
+    # A second issue is raised. The picture of the first is not sent again, and is still there.
+    door = the_issue(client, md, "Broken door closer")
+    send_report(client, md, built=False, place="Head office", issues=[issue("m1", title="Broken door closer", severity="MEDIUM", photo=""), issue("m2", title="Wet floor, no sign")])
+    assert titles(client, admin) == ["Broken door closer", "Wet floor, no sign"]
+    assert the_issue(client, md, "Broken door closer")["id"] == door["id"] and the_issue(client, md, "Broken door closer")["has_photo"] is True
+    raised = [event["about"] for event in client.get("/api/dashboard", headers=admin).json()["activity"] if event["text"].startswith("Asha Verma raised it")]
+    assert raised == ["Wet floor, no sign", "Broken door closer"]
+
+    # The report is built: the same walk comes with its PDF, and nothing is doubled.
+    done = send_report(client, md, place="Head office", issues=[issue("m1", title="Broken door closer", severity="MEDIUM", photo=""), issue("m2", title="Wet floor, no sign", photo="")])
+    assert done.json()["built"] is True and done.json()["id"] == listed["id"]
+    listed = client.get("/api/reports", headers=admin).json()
+    assert len(listed) == 1 and (listed[0]["has_pdf"], listed[0]["in_progress"], listed[0]["verdict"], listed[0]["issues"]) == (True, False, "GENUINE", 2)
+    assert client.get(f"/api/reports/{listed[0]['id']}/pdf", headers=admin).content == PDF
+    assert any(event["text"] == "Asha Verma sent the report for Head office: 2 issues" for event in client.get("/api/dashboard", headers=admin).json()["activity"])
+
+    # The phone tells of the same walk again with nothing new: the built report still stands for it.
+    same = [issue("m1", title="Broken door closer", severity="MEDIUM", photo=""), issue("m2", title="Wet floor, no sign", photo="")]
+    send_report(client, md, built=False, place="Head office", issues=same)
+    assert client.get("/api/reports", headers=admin).json()[0]["in_progress"] is False
+
+    # The walk goes on after the report: it is marked as changed since, and the PDF that was built stays.
+    send_report(client, md, built=False, place="Head office", issues=[issue("m1", title="Broken door closer", photo=""), issue("m2", title="Wet floor, no sign", photo=""), issue("m3", title="Loose handrail")])
+    listed = client.get("/api/reports", headers=admin).json()[0]
+    assert (listed["has_pdf"], listed["in_progress"], listed["issues"]) == (True, True, 3)
+    assert client.get(f"/api/reports/{listed['id']}/pdf", headers=admin).status_code == 200

@@ -106,17 +106,13 @@ class MainActivity : ComponentActivity() {
         super.onStart()
         state.link.start()
         // Reports built with no network go to the office as soon as there is one.
-        state.checkIn()
-        state.sendToOffice()
+        state.comeOnline()
         runCatching { getSystemService(ConnectivityManager::class.java).registerDefaultNetworkCallback(network) }
     }
 
     private val network = object : ConnectivityManager.NetworkCallback() {
         override fun onAvailable(found: Network) {
-            runOnUiThread {
-                state.checkIn()
-                state.sendToOffice()
-            }
+            runOnUiThread { state.comeOnline() }
         }
     }
 

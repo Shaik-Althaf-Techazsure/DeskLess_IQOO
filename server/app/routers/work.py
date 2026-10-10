@@ -75,18 +75,25 @@ def _keep_picture(raw: bytes | None, name: str) -> str:
 # ---------------------------------------------------------------- reports arriving from the phones
 
 
+def _as_told(issue: Issue) -> tuple:
+    """What the phone says of an issue, to notice when a new telling changes it."""
+    return (issue.title, issue.note, issue.location, issue.category, issue.severity, issue.owner, issue.due_text, issue.ai_check, issue.photo, issue.fix_photo, issue.status)
+
+
 @router.post("/reports")
 async def send_report(
     meta: str = Form(...),
-    pdf: UploadFile = File(...),
+    pdf: UploadFile | None = File(None),
     photos: list[UploadFile] = File(default=[]),
     account: Account = Depends(current_account),
     db: Session = Depends(get_db),
 ) -> dict:
     """
-    Takes a finished report from the phone that made it: what it holds, the PDF, and a picture per issue.
-    A report built again for the same walk replaces the earlier one, and what has since been done about
-    its issues (given out, fixed, closed) is kept.
+    Takes a walk from the phone that is making it. While the walk goes on the phone sends what it holds
+    so far, with no PDF, each time an issue is found or changed, so an issue is on the dashboards within
+    moments of being raised. When the report is built, the same walk comes again with its PDF. Whatever
+    has been done about an issue meanwhile (given out, fixed, closed) is kept, and a picture the server
+    already has need not be sent again.
     """
     try:
         about = json.loads(meta)
@@ -98,10 +105,11 @@ async def send_report(
     walk = _line(about.get("walk"), 40)
     if not walk:
         raise HTTPException(422, "The report does not say which walk it is.")
-    document = await pdf.read(MAX_PDF_BYTES + 1)
+    document = await pdf.read(MAX_PDF_BYTES + 1) if pdf is not None else b""
+    built = pdf is not None
     if len(document) > MAX_PDF_BYTES:
         raise HTTPException(413, "That report is too large to send.")
-    if not document.startswith(b"%PDF"):
+    if built and not document.startswith(b"%PDF"):
         raise HTTPException(422, "That file is not a PDF report.")
     pictures: dict[str, bytes] = {}
     for upload in photos:
@@ -115,25 +123,34 @@ async def send_report(
         report = Report(id=uuid4().hex, account_id=account.id, walk=walk)
         db.add(report)
     verdict = _line(about.get("review"), 12).upper()
+    was_at = report.place if not fresh else None
     report.company_id = account.company_id
     report.template = _line(about.get("template"), 20)
     report.title = _line(about.get("title"), 80) or "Inspection report"
     report.place = _line(about.get("place"), 200)
     report.person = _line(about.get("person"), 120) or account.name
-    report.built_at = _moment(about.get("built_at"))
+    if built or not report.pdf:
+        # When the report was built; for a walk with no report yet, when it was last told of.
+        report.built_at = _moment(about.get("built_at"))
     report.received_at = now()
-    report.verdict = verdict if verdict in VERDICTS else ""
-    report.verdict_reason = str(about.get("review_reason") or "").strip()[:2000]
-    report.signed = bool(about.get("signed"))
-    report.pdf = f"{report.id}.pdf"
-    report.pdf_name = _line(about.get("file"), 160) or "DeskLess-report.pdf"
-    folder = settings().reports_dir
-    folder.mkdir(parents=True, exist_ok=True)
-    (folder / report.pdf).write_bytes(document)
+    first_pdf = built and not report.pdf
+    if built:
+        # The review, the signature and the PDF belong to the built report; a walk still going on has none.
+        report.verdict = verdict if verdict in VERDICTS else ""
+        report.verdict_reason = str(about.get("review_reason") or "").strip()[:2000]
+        report.signed = bool(about.get("signed"))
+        report.pdf = f"{report.id}.pdf"
+        report.pdf_name = _line(about.get("file"), 160) or "DeskLess-report.pdf"
+        folder = settings().reports_dir
+        folder.mkdir(parents=True, exist_ok=True)
+        (folder / report.pdf).write_bytes(document)
+    # Whether this telling of the walk says anything the last one did not.
+    changed = fresh or was_at != report.place
     db.flush()
 
     known = {issue.client_id: issue for issue in db.scalars(select(Issue).where(Issue.report_id == report.id))}
     kept = 0
+    raised: list[Issue] = []
     for at, item in enumerate(listed[:MAX_ISSUES]):
         if not isinstance(item, dict):
             continue
@@ -142,6 +159,8 @@ async def send_report(
         if issue is None:
             issue = Issue(id=uuid4().hex, report_id=report.id, client_id=client_id, author_id=account.id, status=OPEN)
             db.add(issue)
+            raised.append(issue)
+        before = _as_told(issue)
         severity = _line(item.get("severity"), 10).upper()
         issue.company_id = account.company_id
         issue.number = at + 1
@@ -171,6 +190,7 @@ async def send_report(
                 issue.closed_by = f"{account.name}, on site"
             elif issue.status == CLOSED:
                 issue.status, issue.closed_at, issue.closed_by = OPEN, None, ""
+        changed = changed or before != _as_told(issue)
         kept += 1
     # An issue the phone no longer lists is dropped, unless work has already been done on it.
     for gone in known.values():
@@ -179,17 +199,29 @@ async def send_report(
                 if name:
                     (settings().issues_dir / name).unlink(missing_ok=True)
             db.delete(gone)
+            changed = True
         else:
             kept += 1
     report.issue_count = kept
+    # A built report settles the walk. Told again without one, the walk is "going on" when no report was
+    # ever built, or when it now says something the built report does not.
+    report.in_progress = (not built) and (not report.pdf or changed or bool(report.in_progress))
     where = f" for {report.place}" if report.place else ""
-    note(
-        db, "report", account.name,
-        f"{account.name} sent the report{where}: {kept} issue{'s' if kept != 1 else ''}" if fresh else f"{account.name} sent the report{where} again",
-        company_id=account.company_id, report_id=report.id, author_id=account.id,
-    )
+    if built:
+        note(
+            db, "report", account.name,
+            f"{account.name} sent the report{where}: {kept} issue{'s' if kept != 1 else ''}" if first_pdf else f"{account.name} sent the report{where} again",
+            company_id=account.company_id, report_id=report.id, author_id=account.id,
+        )
+    else:
+        # During the walk each issue is told of as it is raised, so it shows at once to those watching.
+        for issue in raised:
+            note(
+                db, "report", account.name, f"{account.name} raised it" + (f" at {report.place}" if report.place else ""),
+                company_id=account.company_id, report_id=report.id, issue_id=issue.id, author_id=account.id,
+            )
     db.commit()
-    return {"id": report.id, "issues": kept, "updated": not fresh}
+    return {"id": report.id, "issues": kept, "updated": not fresh, "built": bool(report.pdf)}
 
 
 def _report_row(report: Report, names: dict[str, str], unsettled: dict[str, int]) -> dict:
@@ -208,6 +240,8 @@ def _report_row(report: Report, names: dict[str, str], unsettled: dict[str, int]
         "verdict_reason": report.verdict_reason,
         "signed": report.signed,
         "pdf_name": report.pdf_name,
+        "has_pdf": bool(report.pdf),
+        "in_progress": bool(report.in_progress),
     }
 
 
@@ -233,6 +267,8 @@ def _report(db: Session, actor: Actor, report_id: str) -> Report:
 @router.get("/reports/{report_id}/pdf")
 def report_pdf(report_id: str, actor: Actor = Depends(current_actor), db: Session = Depends(get_db)) -> FileResponse:
     report = _report(db, actor, report_id)
+    if not report.pdf:
+        raise HTTPException(404, "This walk is still going on: no report has been built for it yet.")
     path = settings().reports_dir / report.pdf
     if not path.is_file():
         raise HTTPException(404, "The PDF is not on the server.")

@@ -9,6 +9,7 @@ import androidx.compose.runtime.setValue
 import com.techazsure.deskless.account.AccountStore
 import com.techazsure.deskless.account.Api
 import com.techazsure.deskless.account.ApiError
+import com.techazsure.deskless.account.LiveWalk
 import com.techazsure.deskless.account.Outbox
 import com.techazsure.deskless.account.PendingSignUp
 import com.techazsure.deskless.account.Profile
@@ -42,9 +43,13 @@ import com.techazsure.deskless.structure.Rules
 import com.techazsure.deskless.structure.Structurer
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.asCoroutineDispatcher
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
 import java.io.File
@@ -400,6 +405,7 @@ class AppState(
                 photoVersion++
                 if (inspection.inspector.isBlank()) updateInspection(inspection.site, person.name) else link.rename(person.name)
                 toldToSignIn = false
+                sendWalk()
                 sendToOffice()
                 null
             },
@@ -413,9 +419,10 @@ class AppState(
 
     // ---------------------------------------------------------------- reports to the office
     //
-    // Every report built on this phone is sent to the company's server, where the manager and the
-    // managing director see it on their dashboards. Nobody has to press anything: with a network it goes
-    // at once, without one it waits in the outbox and goes when the network is back.
+    // The walk goes to the company's server as it is made: each issue moments after it is raised, and
+    // the report when it is built. The manager and the managing director see both on their dashboards.
+    // Nobody has to press anything: with a network it goes at once, without one it waits on the phone and
+    // goes when the network is back.
 
     private val outbox = Outbox(context)
 
@@ -424,6 +431,11 @@ class AppState(
     val sentToOffice = mutableStateListOf<String>().apply { addAll(outbox.sent()) }
     private var sending = false
     private var toldToSignIn = false
+    private val liveWalk = LiveWalk(context)
+    private var walkSettling: Job? = null
+
+    /** One thing at a time goes to the office, so a walk and its built report never cross on the way. */
+    private val officeLine = Mutex()
 
     private fun queueForOffice(file: File, inspection: Inspection, issues: List<Issue>, review: Review?) {
         val listed = issues.toList()
@@ -454,34 +466,91 @@ class AppState(
         sending = true
         scope.launch {
             val trouble = withContext(Dispatchers.IO) {
-                var said: String? = null
-                for (report in outbox.waiting { File(library.folder, it) }) {
-                    val error = runCatching { api.sendReport(account.token, report.about, report.pdf, report.pictures) }.exceptionOrNull()
-                    if (error == null) {
-                        outbox.done(report)
-                        continue
-                    }
-                    val refusal = error as? ApiError
-                    if (refusal?.status == 401) {
-                        // Said once in a run of the app, not at every try.
-                        if (!toldToSignIn) said = "Sign in again to send your reports to the office. They are kept on the phone until then."
-                        toldToSignIn = true
-                    } else if (refusal?.refused == true && (refusal.status == 413 || refusal.status == 422)) {
-                        // The DeskLess server itself says it will never take this one; the others still can go.
-                        outbox.drop(report)
-                        said = "A report could not be sent to the office: ${error.message}"
-                        continue
-                    }
-                    // Anything else, such as no network, a wrong address or a server that is not up yet,
-                    // leaves the report waiting on the phone for the next try.
-                    break
-                }
-                said
+                officeLine.withLock { sendWaitingReports() }
             }
             showOutbox()
             sending = false
             trouble?.let { notice = it }
         }
+    }
+
+    /** Sends each waiting report in turn. Returns what the person should be told, if anything. */
+    private fun sendWaitingReports(): String? {
+        var said: String? = null
+        for (report in outbox.waiting { File(library.folder, it) }) {
+            val error = runCatching { api.sendReport(account.token, report.about, report.pdf, report.pictures) }.exceptionOrNull()
+            if (error == null) {
+                outbox.done(report)
+                // The office now has this walk as the report tells it; it need not go again as a walk.
+                liveWalk.remember(report.about)
+                continue
+            }
+            val refusal = error as? ApiError
+            if (refusal?.status == 401) {
+                // Said once in a run of the app, not at every try.
+                if (!toldToSignIn) said = "Sign in again to send your reports to the office. They are kept on the phone until then."
+                toldToSignIn = true
+            } else if (refusal?.refused == true && (refusal.status == 413 || refusal.status == 422)) {
+                // The DeskLess server itself says it will never take this one; the others still can go.
+                outbox.drop(report)
+                said = "A report could not be sent to the office: ${error.message}"
+                continue
+            }
+            // Anything else, such as no network, a wrong address or a server that is not up yet,
+            // leaves the report waiting on the phone for the next try.
+            break
+        }
+        return said
+    }
+
+    /** Notes that the walk has changed. A few seconds later, when the typing has stopped, it is sent on. */
+    private fun walkChanged() {
+        if (profile == null) return
+        walkSettling?.cancel()
+        walkSettling = scope.launch {
+            delay(WALK_SETTLES_MS)
+            sendWalk()
+        }
+    }
+
+    /**
+     * Sends the walk in progress to the office, so an issue is on the dashboards moments after it is
+     * raised, before any report is built. Only what has changed travels: the words, and the pictures the
+     * office does not have yet. Called when the walk changes, when the app comes to the front and when
+     * the phone finds a network; with no network it does nothing and the next call sends the walk as it
+     * then stands.
+     */
+    fun sendWalk() {
+        if (profile == null || account.token.isBlank()) return
+        // A note still being turned into text or into fields would go out half done; it goes when it is ready.
+        if (transcribing.isNotEmpty() || structuring.isNotEmpty()) {
+            walkChanged()
+            return
+        }
+        val walk = inspection
+        val listed = issues.toList()
+        // A walk with nothing in it is not told of, unless the office has issues of it that are now gone.
+        if (listed.isEmpty() && !liveWalk.knows(walk)) return
+        scope.launch {
+            withContext(Dispatchers.IO) {
+                officeLine.withLock {
+                    runCatching {
+                        val (about, pictures) = liveWalk.prepare(walk, listed, store::file)
+                        if (pictures.isNotEmpty() || !liveWalk.unchanged(about)) {
+                            api.sendReport(account.token, about, null, pictures)
+                            liveWalk.done(walk, listed, about)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /** What the app does whenever it can reach the office again: says it is here, and sends what waits. */
+    fun comeOnline() {
+        checkIn()
+        sendWalk()
+        sendToOffice()
     }
 
     /**
@@ -915,9 +984,15 @@ class AppState(
         }
     }
 
-    private fun persist() = store.save(inspection, issues.toList())
+    private fun persist() {
+        store.save(inspection, issues.toList())
+        walkChanged()
+    }
 
     companion object {
+        /** How long the walk is left to settle after a change before it is sent to the office. */
+        private const val WALK_SETTLES_MS = 5_000L
+
         /** How issues with no type yet are named in filters and group headings. */
         const val UNSORTED = "Not sorted yet"
     }

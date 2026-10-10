@@ -9,6 +9,77 @@ import com.techazsure.deskless.report.Review
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
+import java.security.MessageDigest
+
+/** What the office is told about a walk, and the copying of pictures at a size fit to send. */
+object WalkNotes {
+    const val PICTURE_EDGE = 1600
+
+    /**
+     * A walk and its issues as the server takes them. One walk is one report at the office: sent again,
+     * it replaces what was sent before. Each picture is named after its issue; the server keeps the one
+     * it has when none is sent along.
+     */
+    fun describe(inspection: Inspection, issues: List<Issue>, file: String = "", review: Review? = null, signed: Boolean = false): JSONObject {
+        val listed = JSONArray()
+        for (issue in issues) {
+            val measured = issue.stamp?.let { Readings.describe(it) }.orEmpty() + issue.readings.map { Readings.describe(it) }
+            listed.put(
+                JSONObject()
+                    .put("id", issue.id)
+                    .put("title", issue.title)
+                    .put("note", issue.note)
+                    .put("location", issue.location.ifBlank { issue.place })
+                    .put("category", issue.category)
+                    .put("severity", issue.severity.name)
+                    .put("owner", issue.owner)
+                    .put("due", issue.dueDate)
+                    .put("check", issue.check.name)
+                    .put("seen", issue.seen)
+                    .put("measured", measured.joinToString(" · "))
+                    .put("lat", issue.lat ?: JSONObject.NULL)
+                    .put("lon", issue.lon ?: JSONObject.NULL)
+                    .put("captured_at", issue.createdAt)
+                    .put("resolved", issue.resolved)
+                    .put("fixed_at", issue.fixedAt)
+                    .put("photo", photoName(issue))
+                    .put("fix_photo", if (issue.fixPhoto != null) fixName(issue) else ""),
+            )
+        }
+        return JSONObject()
+            .put("walk", inspection.startedAt.toString())
+            .put("file", file)
+            .put("template", inspection.template.name)
+            .put("title", inspection.template.title + " report")
+            .put("place", inspection.site)
+            .put("person", inspection.inspector)
+            .put("built_at", System.currentTimeMillis())
+            .put("review", review?.verdict?.name.orEmpty())
+            .put("review_reason", review?.reason.orEmpty())
+            .put("signed", signed)
+            .put("issues", listed)
+    }
+
+    fun photoName(issue: Issue) = "${issue.id}.jpg"
+
+    fun fixName(issue: Issue) = "${issue.id}-fix.jpg"
+
+    /** Copies a picture at a size fit to send. Returns the copy, or null when there is no picture to copy. */
+    fun copy(from: File, to: File): File? = runCatching {
+        from.copyTo(to, overwrite = true)
+        normalizeJpeg(to, PICTURE_EDGE)
+        to
+    }.getOrElse {
+        to.delete()
+        null
+    }
+
+    /** A short mark of what a walk holds, to tell whether it has changed since it was last sent. */
+    fun mark(about: JSONObject): String {
+        val told = listOf("walk", "template", "place", "person", "issues").joinToString("|") { about.opt(it).toString() }
+        return MessageDigest.getInstance("SHA-256").digest(told.toByteArray()).joinToString("") { "%02x".format(it) }
+    }
+}
 
 /** A finished report that waits to be sent to the office: what it holds, its PDF and a picture for each issue. */
 class WaitingReport(val folder: File, val about: JSONObject, val pdf: File, val pictures: List<File>)
@@ -31,46 +102,12 @@ class Outbox(context: Context) {
         val folder = File(dir, pdf.nameWithoutExtension)
         folder.deleteRecursively()
         folder.mkdirs()
-        val listed = JSONArray()
         for (issue in issues) {
-            val measured = issue.stamp?.let(Readings::describe).orEmpty() + issue.readings.map(Readings::describe)
-            listed.put(
-                JSONObject()
-                    .put("id", issue.id)
-                    .put("title", issue.title)
-                    .put("note", issue.note)
-                    .put("location", issue.location.ifBlank { issue.place })
-                    .put("category", issue.category)
-                    .put("severity", issue.severity.name)
-                    .put("owner", issue.owner)
-                    .put("due", issue.dueDate)
-                    .put("check", issue.check.name)
-                    .put("seen", issue.seen)
-                    .put("measured", measured.joinToString(" · "))
-                    .put("lat", issue.lat ?: JSONObject.NULL)
-                    .put("lon", issue.lon ?: JSONObject.NULL)
-                    .put("captured_at", issue.createdAt)
-                    .put("resolved", issue.resolved)
-                    .put("fixed_at", issue.fixedAt)
-                    .put("photo", copy(fileOf(issue.photoFile), File(folder, "${issue.id}.jpg")))
-                    .put("fix_photo", issue.fixPhoto?.let { copy(fileOf(it), File(folder, "${issue.id}-fix.jpg")) }.orEmpty()),
-            )
+            WalkNotes.copy(fileOf(issue.photoFile), File(folder, WalkNotes.photoName(issue)))
+            issue.fixPhoto?.let { WalkNotes.copy(fileOf(it), File(folder, WalkNotes.fixName(issue))) }
         }
-        val about = JSONObject()
-            // One walk is one report at the office: built again, it replaces what was sent before.
-            .put("walk", inspection.startedAt.toString())
-            .put("file", pdf.name)
-            .put("template", inspection.template.name)
-            .put("title", inspection.template.title + " report")
-            .put("place", inspection.site)
-            .put("person", inspection.inspector)
-            .put("built_at", System.currentTimeMillis())
-            .put("review", review?.verdict?.name.orEmpty())
-            .put("review_reason", review?.reason.orEmpty())
-            .put("signed", signed)
-            .put("issues", listed)
         // Written last: a folder without it was interrupted and is not sent.
-        File(folder, ABOUT).writeText(about.toString())
+        File(folder, ABOUT).writeText(WalkNotes.describe(inspection, issues, pdf.name, review, signed).toString())
         sentList.writeText((sent() - pdf.name).joinToString("\n"))
     }
 
@@ -109,18 +146,63 @@ class Outbox(context: Context) {
         report.folder.deleteRecursively()
     }
 
-    /** Copies a picture at a size fit to send. Returns the copy's name, or blank when there is no picture. */
-    private fun copy(from: File, to: File): String = runCatching {
-        from.copyTo(to, overwrite = true)
-        normalizeJpeg(to, PICTURE_EDGE)
-        to.name
-    }.getOrElse {
-        to.delete()
-        ""
-    }
-
     private companion object {
         const val ABOUT = "about.json"
-        const val PICTURE_EDGE = 1600
     }
+}
+
+/**
+ * The walk that is going on, sent to the office as it grows: an issue is on the dashboards moments after
+ * it is raised, without waiting for the report to be built. A picture is sent once; after that only the
+ * words travel. With no network nothing is lost: the next change, or the network coming back, sends the
+ * walk as it then stands.
+ */
+class LiveWalk(context: Context) {
+    private val copies = File(context.cacheDir, "live").apply { mkdirs() }
+    private val notes = File(context.filesDir, "outbox").apply { mkdirs() }
+    private val sentPictures = File(notes, "live-pictures.txt")
+    private val lastMark = File(notes, "live-mark.txt")
+
+    /** What to send now: the walk in words, and the pictures the office does not have yet. */
+    @Synchronized
+    fun prepare(inspection: Inspection, issues: List<Issue>, fileOf: (String) -> File): Pair<JSONObject, List<File>> {
+        val have = have()
+        copies.listFiles().orEmpty().forEach { it.delete() }
+        val pictures = issues.flatMap { issue ->
+            listOfNotNull(
+                issue.photoFile.takeIf { key(inspection, issue, it) !in have }?.let { WalkNotes.copy(fileOf(it), File(copies, WalkNotes.photoName(issue))) },
+                issue.fixPhoto?.takeIf { key(inspection, issue, it) !in have }?.let { WalkNotes.copy(fileOf(it), File(copies, WalkNotes.fixName(issue))) },
+            )
+        }
+        return WalkNotes.describe(inspection, issues) to pictures
+    }
+
+    /** True when the office has been sent something of this walk. */
+    @Synchronized
+    fun knows(inspection: Inspection): Boolean = have().any { it.startsWith("${inspection.startedAt}/") }
+
+    /** True when the walk has not changed since the office last had it. */
+    @Synchronized
+    fun unchanged(about: JSONObject): Boolean = runCatching { lastMark.readText() }.getOrNull() == WalkNotes.mark(about)
+
+    /** The office has the walk as [about] tells it, and every picture of [issues]. */
+    @Synchronized
+    fun done(inspection: Inspection, issues: List<Issue>, about: JSONObject) {
+        // Only this walk's pictures are remembered; a new walk starts the list afresh.
+        val mine = have().filter { it.startsWith("${inspection.startedAt}/") }.toSet() +
+            issues.flatMap { issue -> listOfNotNull(issue.photoFile, issue.fixPhoto).map { key(inspection, issue, it) } }
+        sentPictures.writeText(mine.joinToString("\n"))
+        remember(about)
+    }
+
+    /** Notes what the office has, also when it came as a built report rather than as a walk in progress. */
+    @Synchronized
+    fun remember(about: JSONObject) {
+        lastMark.writeText(WalkNotes.mark(about))
+    }
+
+    private fun have(): Set<String> = runCatching { sentPictures.readLines().toSet() }.getOrDefault(emptySet())
+
+    /** A picture is known by its walk, its issue and its file: a picture taken again is a new one. */
+    private fun key(inspection: Inspection, issue: Issue, file: String) = "${inspection.startedAt}/${issue.id}/$file"
 }

@@ -154,8 +154,10 @@ class Report(Base):
     verdict_reason: Mapped[str] = mapped_column(Text, default="")
     #: True when the inspector signed the PDF with their fingerprint.
     signed: Mapped[bool] = mapped_column(Boolean, default=False)
-    #: File name of the PDF in the reports folder.
+    #: File name of the PDF in the reports folder; blank while the walk is going on and none has been built.
     pdf: Mapped[str] = mapped_column(String(64), default="")
+    #: True when issues have arrived since the last PDF was built, or before any was.
+    in_progress: Mapped[bool | None] = mapped_column(Boolean, nullable=True, default=False)
     pdf_name: Mapped[str] = mapped_column(String(160), default="")
 
 

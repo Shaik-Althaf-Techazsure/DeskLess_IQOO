@@ -2,7 +2,8 @@
 
 // One page for every role. After signing in, the server says who the person is, and the page shows the
 // sections, numbers and actions that belong to that role. What each may see is decided by the server; the
-// page only decides how to show it. The overview keeps itself up to date every few seconds, in place.
+// page only decides how to show it. The overview keeps itself up to date every ten seconds, in place; the
+// lists are drawn when they are opened and when Refresh is pressed, never under somebody's hands.
 
 const $ = (id) => document.getElementById(id);
 const store = sessionStorage;
@@ -707,6 +708,7 @@ async function load() {
     $("view").replaceChildren(...(board ? [board.node] : content));
     if (board) board.update(dash, more);
     $("live").hidden = !board;
+    $("again").hidden = Boolean(board);
     lastHeard = Date.now();
     heard = true;
   } catch (error) {
@@ -729,21 +731,22 @@ async function refresh() {
   }
 }
 
-let beats = 0;
-setInterval(() => {
-  if (!token || !dash || document.hidden) return;
-  beats += 1;
-  if (board) return refresh();
-  // The other sections are lists somebody may be reading or typing in; they are drawn again less often.
-  const busy = $("sheet").open || $("big").open || ["INPUT", "TEXTAREA", "SELECT"].includes(document.activeElement?.tagName);
-  if (beats % 4 === 0 && !busy) load();
-}, 5000);
+// Only the live sections (the overview, and the system page) keep themselves up to date, every ten
+// seconds. The lists are left as they are while somebody reads or works in them, and everything waits
+// while an issue, an approval or a picture is open.
+const REFRESH_SECONDS = 10;
+const reading = () => $("sheet").open || $("big").open;
+setInterval(() => { if (token && dash && board && !document.hidden && !reading()) refresh(); }, REFRESH_SECONDS * 1000);
 setInterval(() => {
   if ($("live").hidden) return;
   const seconds = Math.round((Date.now() - lastHeard) / 1000);
   $("live").classList.toggle("down", !heard);
-  $("live-text").textContent = !heard ? "Reconnecting…" : seconds < 3 ? "Live · updated just now" : `Live · updated ${seconds} s ago`;
+  $("live").classList.toggle("held", heard && reading());
+  $("live-text").textContent = !heard ? "Reconnecting…" : reading() ? "Waiting while this is open" : seconds < 3 ? "Live · updated just now" : `Live · updated ${seconds} s ago`;
 }, 1000);
+// Closing what was open brings the page up to date at once.
+for (const opened of [$("sheet"), $("big")]) opened.addEventListener("close", () => { if (board && !reading()) refresh(); });
+$("again").onclick = () => load();
 
 // ---------------------------------------------------------------- the overview, live
 
@@ -830,7 +833,7 @@ function overviewBoard() {
   const quiet = el("div", { class: "card hint", hidden: true, text:
     role === "technical" ? "Nothing has been given to you yet. When your manager gives you an issue, it appears here."
       : role === "inspector" ? "No report yet. Build a report in the DeskLess app; it is sent here as soon as the phone has a network."
-      : "No report has arrived yet. Reports are sent from the DeskLess app as soon as the phone has a network. This page fills in by itself when the first one comes." });
+      : "Nothing has arrived yet. The DeskLess app sends each issue as it is raised, and each report as it is built, whenever the phone has a network. This page fills in by itself when the first one comes." });
   const teamsCard = el("div", { class: "card panel", hidden: true }, el("div", { class: "head" }, el("h4", { text: "Teams, side by side" })), teams.node);
 
   const panel = (title, body, width) => el("div", { class: "card panel " + width }, el("div", { class: "head" }, el("h4", { text: title })), body);
@@ -1089,7 +1092,7 @@ function reports(rows) {
     const cards = shown().map((row) => {
       const verdict = VERDICT[row.verdict];
       return el("div", { class: "item" },
-        el("div", { class: "blank", style: "display:grid;place-items:center;font-weight:800;color:var(--mute)", text: "PDF" }),
+        el("div", { class: "blank", style: "display:grid;place-items:center;font-weight:800;color:var(--mute)", text: row.has_pdf ? "PDF" : "WALK" }),
         el("div", {},
           el("h4", { text: row.place || row.title }),
           el("div", { class: "meta", text: [row.title, "by " + (row.sent_by || row.person), when(row.built_at)].join(" · ") }),
@@ -1097,10 +1100,11 @@ function reports(rows) {
             chip(count(row.issues, "issue")),
             row.open_issues ? chip(row.open_issues + " not closed", "warn") : row.issues ? chip("All closed", "good") : null,
             verdict ? el("span", { class: "chip " + verdict[0], text: verdict[1], title: row.verdict_reason }) : null,
+            row.in_progress ? chip(row.has_pdf ? "Changed since the report was built" : "Walk going on, no report built yet", "warn") : null,
             row.signed ? chip("Signed with fingerprint", "good") : null),
           verdict && row.verdict !== "GENUINE" && row.verdict_reason ? el("div", { class: "meta", style: "margin-top:8px", text: row.verdict_reason }) : null),
         el("div", { class: "actions" },
-          el("button", { class: "primary", text: "Open PDF", onclick: () => openPdf(row) }),
+          row.has_pdf ? el("button", { class: "primary", text: "Open PDF", onclick: () => openPdf(row) }) : null,
           el("button", { text: "See issues", onclick: () => { ofReport = row; issueFilter = "all"; view = "issues"; load(); } })));
     });
     list.replaceChildren(...(cards.length ? cards : [el("div", { class: "empty", text: "Nothing matches." })]));
@@ -1111,7 +1115,7 @@ function reports(rows) {
   return [
     el("div", { class: "tools" }, search, el("button", { text: "Export", onclick: () => download("deskless-reports.csv", [
       ["Site", "place"], ["Report", "title"], ["Sent by", "sent_by"], ["Built", (row) => when(row.built_at)], ["Issues", "issues"], ["Not closed", "open_issues"],
-      ["AI review", "verdict"], ["Why", "verdict_reason"], ["Signed", (row) => (row.signed ? "yes" : "no")],
+      ["AI review", "verdict"], ["Why", "verdict_reason"], ["Signed", (row) => (row.signed ? "yes" : "no")], ["Report built", (row) => (row.has_pdf ? "yes" : "not yet")],
     ], shown()) })),
     list,
   ];
@@ -1210,7 +1214,8 @@ async function act(button, work, said) {
     fetched.delete(`/issues/${issue.id}/fix-photo`);
     note(said(issue));
     await openIssue(issue.id);
-    load();
+    // A list behind the sheet is drawn again; the live overview only takes up the change.
+    if (board) refresh(); else load();
   } catch (error) {
     note(error.message, true);
     button.disabled = false;
