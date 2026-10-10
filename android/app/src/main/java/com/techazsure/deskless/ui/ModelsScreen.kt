@@ -52,6 +52,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
 import com.techazsure.deskless.AppState
 import com.techazsure.deskless.Screen
+import com.techazsure.deskless.bench.Bench
 import com.techazsure.deskless.models.ModelCatalog
 import com.techazsure.deskless.models.ModelFetch
 import com.techazsure.deskless.ui.theme.Chalk
@@ -422,7 +423,7 @@ private fun MeasureCard(state: AppState) {
                 Text("Measured on this phone", style = MaterialTheme.typography.titleMedium, color = Chalk)
                 Text(
                     text = if (card == null || card.notes == 0) "Twenty fixed notes: how many fields come out right, how fast, and what it costs the battery."
-                    else "Last run: ${(card.fieldsRight * 100).toInt()}% of fields right over ${card.notes} notes, %.1f s a note.".format(card.fieldSeconds + (card.speechSeconds ?: 0f)),
+                    else Bench.lastRun(card),
                     style = MaterialTheme.typography.bodySmall,
                     color = Fog,
                 )

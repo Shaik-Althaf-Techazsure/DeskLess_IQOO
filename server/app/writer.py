@@ -22,6 +22,7 @@ import urllib.request
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from . import pulse
 from .assistant import mark_of
 from .config import settings
 from .db import SessionLocal
@@ -196,25 +197,34 @@ def write_next(db: Session) -> bool:
         brief = Brief(issue_id=issue.id, tries=0, talk_upto=0)
         db.add(brief)
     _state["busy"] = True
+    title = issue.title or "Untitled issue"
+    engine = _state["model"] or settings().ai_model or "local model"
+    concerned = dict(company_id=issue.company_id, people=[issue.author_id, issue.assigned_to], issue_id=issue.id, ai=True)
     try:
         if summary:
             mark = mark_of(issue)
             if brief.mark != mark:
                 brief.mark, brief.tries, brief.summary = mark, 0, ""
+            pulse.record("model", pulse.SERVER, pulse.WRITER, f"asked {engine} to summarise “{title}”", **concerned)
             written = _read(ask(prompt_for(issue)), "summary", 500)
+            spent = round((time.perf_counter() - began) * 1000)
             if written:
                 brief.summary = written
-                brief.engine = _state["model"] or settings().ai_model or "local model"
+                brief.engine = engine
                 brief.made_at = now()
                 _state["written"] += 1
-                _state["last_ms"] = round((time.perf_counter() - began) * 1000)
+                _state["last_ms"] = spent
+                pulse.record("model", pulse.WRITER, pulse.SERVER, f"{engine} summarised “{title}” in {spent / 1000:.1f} s", ms=spent, **concerned)
             else:
                 # Kept with nothing in it, so the same telling is not tried for ever.
                 brief.tries = (brief.tries or 0) + 1
+                pulse.record("model", pulse.WRITER, pulse.SERVER, f"{engine} gave no usable summary of “{title}”", ms=spent, **concerned)
         if talk:
             # Tried once for each new message: an empty answer just leaves the messages to speak for themselves.
+            pulse.record("model", pulse.SERVER, pulse.WRITER, f"asked {engine} what the messages about “{title}” come to", **concerned)
             brief.talk = _read(ask(prompt_for_talk(issue, thread)), "talk", 400)
             brief.talk_upto = thread[-1].id
+            pulse.record("model", pulse.WRITER, pulse.SERVER, f"{engine} summed up the {len(thread)} messages about “{title}”" if brief.talk else f"{engine} had nothing to say of the messages about “{title}”", **concerned)
     finally:
         _state["busy"] = False
     db.commit()

@@ -28,6 +28,7 @@ docker compose up --build
 | **http://localhost:8700** | The Android app: an install page with the two APKs that were just built from `android/`: DeskLess for an organisation's own people, and DeskLess User for the people who use the place |
 | **http://localhost:8800** | The home page: what DeskLess is and how it works, with the film, the pitch deck and screens of the app and the dashboards. **Sign in** and **Sign up** are in its top bar. |
 | **http://localhost:8800/dashboard** | The sign-in page of the dashboards: administrator, managing director, manager, inspector, technical |
+| **http://localhost:8800/linking** | The live linkage: every phone, person, place and service as a node in three dimensions, and what moves between them as it moves |
 | **http://localhost:8825** | A test mailbox that catches every email the server sends (opens on this computer only) |
 | **http://localhost:8600** | The web prototype. Tap **Load the sample walk-through** to see a finished report |
 
@@ -485,6 +486,28 @@ sudo bash deploy/setup.sh ai                                 # on a real server;
 
 The first start downloads the model. From then on the server hands it each new or changed issue in the background, the most severe first; the dashboards never wait for it, and an open issue's brief fills in by itself when the words arrive. On our development computer one summary takes 3 to 5 seconds on two processor threads. `AI_MODEL` picks another model, and `AI_URL` points the server at a llama.cpp or Ollama that already runs elsewhere on the machine.
 
+### The live linkage
+
+`/linking` beside the dashboard (`http://localhost:8800/linking` here, `https://www.shaikalthaf.in/competitions/iqoo/linking` on our server, also reached as `/dashboard/linking`; **Live linkage** in the dashboard's side bar) draws the whole system as it runs, in three dimensions, with nothing fetched from elsewhere: the server in the middle; beside it the assistant's rules, the writing model, the assistant's own rounds, the mail server and the administrator's console; each place on a ring around them, its managing director between it and the server, its managers, inspectors and technicians fanned out beyond it, and the people who use the place beyond them. Drag to turn it, wheel or pinch to zoom, tap a node for what it is and what it did lately. It turns by itself until touched.
+
+Whatever moves on the server is a packet flying from one node to the other, within a second of the thing itself, and a line in the feed beside the picture:
+
+| What moved | Drawn from | to |
+|---|---|---|
+| A walk or a report arriving, an issue raised during a walk | the inspector's phone | the server |
+| The assistant ranking it, choosing who gives it out and who is best placed | the assistant | that person |
+| Something sent in by a user of the place, and the inspector chosen for it | the user's phone | the server, then the inspector |
+| An issue passed on with a note, given to a technician, marked fixed with a photo, checked and closed, sent back | the person who did it | the person it now waits on |
+| The writing model asked to summarise an issue, and answering, with how long it took | the server | the model, and back |
+| The assistant's own rounds: a reminder, an issue taken one level up | the rounds | the person told |
+| An email going out | mail | the person it is for |
+| A phone listening for its desk to change, and being told the moment it has | the phone | the server, and back |
+| Somebody signing in, a phone checking in, a browser opening a console or a list | the phone or browser | the server |
+
+The last two kinds are the background hum and are drawn faintly; the feed lists them only when **every question too** is ticked. A phone and a browser are told apart by what asked, and each person's node carries a small phone or screen for the last thing they used. Each viewer sees what their dashboard shows them, decided on the server by the same rules: the administrator everything, a managing director their company and the users who wrote to it, a manager their team, everyone else what concerns them. The page asks the server once for the whole picture, then waits on `GET /api/linking/wait`, which answers the moment there is a pulse for that viewer, so nothing is polled; the whole picture is fetched again every half minute for who has come online. The pulses are kept in memory, the last five hundred, and start afresh with the server.
+
+**Play a demo** walks a made-up issue through the real nodes on the page alone (a user sends it in, the assistant routes it, the model summarises it, it is passed up, given out, chased on the rounds, fixed and closed) with a banner saying so the whole time; nothing is sent to the server.
+
 ### Try it on this computer
 
 ```bash
@@ -608,6 +631,7 @@ It makes, once, an apartment block, a college and an office park, each with a ma
 | `POST /api/issues/{id}/fixed` | The technician marks it fixed, with a photo of the repair (multipart) |
 | `POST /api/issues/{id}/close`, `/reopen` | Accept a repair and close the issue; send it back |
 | `GET /api/dashboard` | Everything the signed-in person's console shows: numbers, the fortnight, who is online, what happened lately, what needs them first with the proposed step, the triage lines, and what was sent to them |
+| `GET /api/linking`, `/api/linking/wait` | The live linkage as this person may see it: the server, the services beside it, the places and the people, and what moved between them; and a wait that answers the moment something new moves |
 | `GET /api/desk` | A phone's desk, and nothing more: the issues that need the person asking, each with the proposed step, its place, note, deadline in words and whom it may be sent to; the most pressing of the rest in view; what was sent to them; their technicians, for those who give out work; and a `mark` of the whole |
 | `GET /api/desk/wait?mark=…&seconds=…` | Waits until that person's desk is no longer the one the mark stands for, and says so at once; after `seconds` (1 to 30) with nothing new it says that instead. This is how a phone hears of something new within a second or two. While it waits the server holds neither a database connection nor a thread for it |
 | `GET /api/health` | Status |

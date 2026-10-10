@@ -70,6 +70,9 @@ def _days(n: int) -> str:
 
 
 def _span(hours: float) -> str:
+    # Something a few minutes old is not "1 h" old: under an hour it is said so.
+    if hours < 0.75:
+        return "less than an hour"
     return _days(round(hours / 24)) if hours >= 36 else f"{max(1, round(hours))} h"
 
 

@@ -145,6 +145,30 @@ class DeskTest {
         assertEquals("m1", (plan(hand, DeskAsk("send", message = "I need a ladder"), "Say I need a ladder", sendTo = listOf(ravi)) as DeskPlan.Act).to?.id)
         assertTrue(plan(hand, DeskAsk("send"), "send it on", sendTo = listOf(ravi)) is DeskPlan.Refused)
         assertTrue(plan(hand, DeskAsk("send", person = "Farah", message = "I will start today"), "Tell Farah I will start today", sendTo = listOf(ravi)) is DeskPlan.Refused)
+        // "Tell her": the model names the person it takes "her" to be. She is who the job goes to anyway, so nothing is left out.
+        val her = plan(lead, DeskAsk("send", jobs = listOf(2), person = "Farah Qureshi", message = "it is with Arjun"), "for job 2 tell her it is with Arjun") as DeskPlan.Act
+        assertEquals("d1", her.to?.id)
+        assertEquals("It is with Arjun", her.text)
+        assertTrue(her.leftOut.isEmpty())
+        // A pronoun handed back as the person names nobody either.
+        assertEquals("d1", (plan(lead, DeskAsk("send", jobs = listOf(2), person = "her", message = "it is with Arjun"), "for job 2 tell her it is with Arjun") as DeskPlan.Act).to?.id)
+        // Seen on the iQOO 15: the model handed the whole sentence back, with no comma in it. The words after "him" are the message.
+        val lift = "Tell him the lift is serviced on the first Monday of every month"
+        assertEquals("The lift is serviced on the first Monday of every month", (plan(lead, DeskAsk("send", jobs = listOf(2), person = "Farah Qureshi", message = lift), lift) as DeskPlan.Act).text)
+        // The model picked out no words at all: they are still what follows the name.
+        assertEquals("Yes, the visitor parking is open on Sunday", (plan(lead, DeskAsk("send", jobs = listOf(2), person = "her"), "For job 2 tell her yes, the visitor parking is open on Sunday") as DeskPlan.Act).text)
+        assertEquals("I need a ladder", (plan(hand, DeskAsk("send", person = "manager"), "Tell the manager that I need a ladder", sendTo = listOf(ravi)) as DeskPlan.Act).text)
+        assertEquals("The tank is cleaned every month", DeskCommands.wordsFor("Let her know the tank is cleaned every month", farah))
+        assertNull(DeskCommands.wordsFor("Send job 2 to the manager", ravi))
+        assertNull(DeskCommands.wordsFor("Tell the manager", ravi))
+        assertNull(DeskCommands.wordsFor("Tell him about job 2", ravi))
+        assertEquals("Please come tomorrow morning", DeskCommands.wordsFor("Ask Ravi to come tomorrow morning", ravi))
+        assertEquals("He is right", DeskCommands.wordsFor("Tell him he is right", ravi))
+        assertEquals("Yes", DeskCommands.wordsFor("Tell her yes", farah))
+        assertEquals("The pump is fixed", DeskCommands.wordsFor("Send a message to Ravi that the pump is fixed", ravi))
+        // Words that speak of somebody else are left whole: the technician is not who this goes to.
+        assertNull(DeskCommands.wordsFor("I will ask the technician to come tomorrow", farah))
+        assertEquals("I will ask the technician to come tomorrow", (plan(lead, DeskAsk("send", jobs = listOf(2), person = "her", message = "I will ask the technician to come tomorrow"), "For job 2 tell her I will ask the technician to come tomorrow") as DeskPlan.Act).text)
         // A message the model made up is not sent.
         assertTrue(plan(hand, DeskAsk("send", person = "manager", message = "The part is on order"), "tell the manager", sendTo = listOf(ravi)) is DeskPlan.Refused)
     }

@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0f1115">
+<title>DeskLess · Live linkage</title>
+<link rel="stylesheet" href="static/linking.css">
+</head>
+<body>
+
+<section id="signin" hidden>
+  <div class="signin-card card">
+    <a class="brandmark" href="./" title="What DeskLess is">
+      <div class="mark">DL</div>
+      <div><strong>DeskLess</strong><span>Live linkage</span></div>
+    </a>
+    <div class="stripes"></div>
+    <h2>Sign in</h2>
+    <p class="hint">The live linkage shows what you may see on your dashboard: every phone, person, place and service as a node, and what moves between them as it moves.</p>
+    <form id="signin-form">
+      <label for="id">DeskLess ID</label>
+      <input id="id" autocomplete="username" autocapitalize="characters" spellcheck="false" placeholder="DL-MD-0001" required>
+      <label for="password">Password</label>
+      <input id="password" type="password" autocomplete="current-password" required>
+      <div class="error" id="signin-error"></div>
+      <button class="primary wide">Sign in</button>
+    </form>
+    <p class="hint small">The administrator signs in with their email address. <a href="dashboard">Back to the dashboard</a></p>
+  </div>
+</section>
+
+<div id="stage" hidden>
+  <canvas id="scene" aria-label="The live linkage, drawn in three dimensions"></canvas>
+
+  <header id="top">
+    <a class="brandmark" href="dashboard" title="Back to the dashboard">
+      <div class="mark">DL</div>
+      <div><strong>Live linkage</strong><span id="who"></span></div>
+    </a>
+    <div class="counts" aria-live="off">
+      <span><b id="n-nodes">0</b> nodes</span>
+      <span><b id="n-online">0</b> online</span>
+      <span><b id="n-minute">0</b> in the last minute</span>
+    </div>
+    <div id="live" class="live"><i></i><span id="live-text">Connecting</span></div>
+    <div class="tools">
+      <button id="turn" class="small on" title="Turn the scene by itself">Turning</button>
+      <button id="demo" class="small" title="Draw a made-up walk through the real nodes; nothing is sent to the server">Play a demo</button>
+      <button id="feed-toggle" class="small" title="Show or hide what moves">Feed</button>
+      <a class="small button" href="dashboard">Dashboard</a>
+      <button id="signout" class="small quiet">Sign out</button>
+    </div>
+    <div id="demo-banner" hidden>Demo · made-up traffic drawn on this page through the real nodes. Nothing was sent to the server.</div>
+  </header>
+
+  <aside id="feed">
+    <div class="feed-head">
+      <h3>What moves</h3>
+      <label class="switch"><input type="checkbox" id="every-question"> every question too</label>
+    </div>
+    <ol id="pulses"></ol>
+    <p class="empty" id="feed-empty">Nothing has moved since the server started. Open the app on a phone, or play the demo.</p>
+  </aside>
+
+  <aside id="detail" hidden>
+    <button id="detail-close" class="small quiet" aria-label="Close">×</button>
+    <div id="detail-body"></div>
+  </aside>
+
+  <div id="legend"></div>
+  <div id="hint">Drag to turn · wheel or pinch to zoom · tap a node</div>
+</div>
+
+<div id="note" role="status" hidden></div>
+
+<script src="static/linking.js"></script>
+</body>
+</html>

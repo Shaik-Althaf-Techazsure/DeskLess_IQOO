@@ -15,13 +15,13 @@ import json
 import secrets
 from uuid import uuid4
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
 from pydantic import BaseModel
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from .. import mailer, security, writer
-from ..assistant import dealt_with
+from .. import mailer, pulse, security, writer
+from ..assistant import Desk, dealt_with
 from ..config import settings
 from ..db import get_db
 from ..models import (
@@ -269,6 +269,7 @@ async def send_in(
     account: Account = Depends(current_account),
     db: Session = Depends(get_db),
     post: mailer.Mailer = Depends(get_mailer),
+    request: Request = None,
 ) -> dict:
     """
     Takes what a user of a place noticed or wants to know, and brings it to the place: it becomes an
@@ -339,6 +340,18 @@ async def send_in(
         to_id=receiver.id, to_name=receiver.name, text=said,
     ))
     db.commit()
+    # For the live linkage: the user's phone to the server, then the assistant choosing who at the place is told.
+    device = pulse.device_of(request.headers.get("user-agent")) if request is not None else "phone"
+    pulse.record(
+        "sent_in", pulse.person(account.id), pulse.SERVER, f"sent in {what} to {firm.name}: “{issue.title}”" + (", with a photo" if issue.photo else ""),
+        company_id=firm.id, people=[account.id, receiver.id], issue_id=issue.id, ai=bool(issue.ai_check), device=device,
+    )
+    score = Desk(db, Actor(admin="DeskLess"), [issue]).priority(issue)
+    pulse.record(
+        "route", pulse.ASSISTANT, pulse.person(receiver.id),
+        f"chose {receiver.name} ({ROLE_NAMES.get(receiver.role, receiver.role).lower()}, least waiting) and ranked it {score['band_name']} ({score['score']})",
+        company_id=firm.id, people=[account.id, receiver.id], issue_id=issue.id, ai=True,
+    )
     writer.nudge()
     try:
         post.send(receiver.email, *mailer.sent_email(receiver.name, f"{account.name}, a user of {firm.name},", issue.title, "", said))
@@ -408,6 +421,10 @@ def say(
         company_id=issue.company_id, report_id=issue.report_id, issue_id=issue.id, author_id=account.id, assignee_id=to.id,
     )
     db.commit()
+    pulse.record(
+        "message", pulse.person(account.id), pulse.person(to.id), f"wrote to {to.name} about “{issue.title}”: “{shown}”",
+        company_id=issue.company_id, people=[account.id, to.id], issue_id=issue.id,
+    )
     writer.nudge()
     try:
         post.send(to.email, *mailer.sent_email(to.name, f"{account.name}, a user of the place,", issue.title, issue.site, words))

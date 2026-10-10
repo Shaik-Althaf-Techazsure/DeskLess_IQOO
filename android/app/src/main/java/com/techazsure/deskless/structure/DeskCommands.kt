@@ -70,10 +70,17 @@ object DeskCommands {
     private val COUNTS = listOf("one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten")
     private val NAMES_A_JOB = setOf("job", "jobs", "issue", "issues", "number", "item", "task")
     private val BRIEF = Regex("""^(?:please\s+)?(?:brief me|what(?:'s| is) (?:waiting|on my desk|new)|what do i have|read (?:it|them|my desk|the list)(?: again)?|say (?:it|that) again|repeat(?: that| it)?|my desk)\b""")
+    private val PRONOUNS = setOf("her", "him", "them", "he", "she", "they", "me", "us", "you", "someone", "somebody")
     private val ROLE_WORDS = mapOf(
         "manager" to "Manager", "director" to "Managing Director", "md" to "Managing Director", "boss" to "Managing Director",
         "administrator" to "Administrator", "admin" to "Administrator", "technician" to "Technical", "inspector" to "Inspector",
+        "user" to "User", "resident" to "User", "customer" to "User", "sender" to "User",
     )
+
+    /** How a sentence starts when it carries words for somebody, and the little words that may follow the name. */
+    private val TELLING = Regex("""\b(?:tell|ask|answer|inform|message|remind|reply\s+to|say\s+to|let)\b""", RegexOption.IGNORE_CASE)
+    private val AFTER_A_NAME = setOf("that", "know")
+    private val SHORT_ANSWERS = setOf("yes", "no", "done", "okay", "ok", "thanks", "sorry")
 
     /** True for "brief me", "what is waiting" and the like, which need no model to understand. */
     fun wantsBrief(said: String): Boolean = BRIEF.containsMatchIn(said.trim().lowercase(Locale.ENGLISH))
@@ -124,11 +131,12 @@ object DeskCommands {
         today: Date = Date(),
     ): DeskPlan {
         val leftOut = ArrayList<String>()
+        // The model sometimes hands back the whole instruction as the message. What follows the
+        // instruction's first comma or colon is then taken as the words, if anything does.
+        val whole = ask.message.isNotBlank() && Grounding.share(said, ask.message) >= 0.99f
         val message = ask.message.trim().takeIf { it.isNotEmpty() }?.let { words ->
             when {
-                // The model sometimes hands back the whole instruction as the message. What follows the
-                // instruction's first comma or colon is then taken as the words, if anything does.
-                Grounding.share(said, words) >= 0.99f -> said.substringAfter(',', "").ifBlank { said.substringAfter(':', "") }.trim().trimEnd('.')
+                whole -> said.substringAfter(',', "").ifBlank { said.substringAfter(':', "") }.trim().trimEnd('.')
                     .takeIf { it.split(' ').size >= 2 }?.replaceFirstChar { it.uppercase(Locale.ENGLISH) }
                 Grounding.heard(words, said) -> words.replaceFirstChar { it.uppercase(Locale.ENGLISH) }
                 else -> null.also { leftOut.add("The message \"$words\" was not in what you said.") }
@@ -136,9 +144,16 @@ object DeskCommands {
         }
         // The model may write a name out in full ("Arjun Das" for "Arjun"). Only the words of it that
         // were really said are used to find the person, so a name it added cannot choose anybody.
+        // "Tell her", "ask him": that names nobody, and the model fills in who it takes it to be.
         val spoken = Grounding.words(said)
-        val named = Grounding.keyWords(ask.person).filter { word -> spoken.any { Grounding.slip(word, it) } }.joinToString(" ").takeIf { it.isNotEmpty() }
-        if (named == null && ask.person.isNotBlank()) leftOut.add("\"${ask.person.trim()}\" was not in what you said.")
+        val named = Grounding.keyWords(ask.person).filter { word -> word !in PRONOUNS && spoken.any { Grounding.slip(word, it) } }.joinToString(" ").takeIf { it.isNotEmpty() }
+        // A name the model gave and nobody said is said so, unless it is the very person the job goes to anyway.
+        fun unsaid(to: Person?) {
+            val offered = ask.person.trim()
+            if (named == null && offered.isNotEmpty() && Grounding.keyWords(offered).any { it !in PRONOUNS } && !(to != null && Grounding.heard(offered, to.name))) {
+                leftOut.add("\"$offered\" was not in what you said.")
+            }
+        }
         // The action the office itself proposes for this job, carried out as it stands.
         val proposed = job.next
         val action = if (ask.action.startsWith("do")) {
@@ -166,6 +181,7 @@ object DeskCommands {
                 val day = when_?.let { DueDates.resolve(it, today) }?.let { resolved -> DueDates.iso(resolved)?.let { it to resolved } }
                 if (when_ != null && day == null) leftOut.add("\"$when_\" is not a day I can put a date to; the day it already has is kept.")
                 val same = proposed.kind == "assign" && proposed.to == to.id
+                unsaid(to)
                 DeskPlan.Act(
                     number, job, "assign", to,
                     dueOn = day?.first ?: if (same) proposed.dueOn else "",
@@ -181,11 +197,19 @@ object DeskCommands {
                         if (sendTo.isEmpty()) "There is nobody you can send job $number to."
                         else "You cannot send job $number to \"$named\". It can go to: ${sendTo.joinToString(", ") { "${it.name} (${it.role})" }}."
                     )
-                    proposed.kind == "send" && proposed.to.isNotBlank() -> Person(proposed.to, proposed.toName)
+                    proposed.kind == "send" && proposed.to.isNotBlank() -> sendTo.firstOrNull { it.id == proposed.to } ?: Person(proposed.to, proposed.toName)
                     else -> sendTo.firstOrNull() ?: return DeskPlan.Refused("There is nobody you can send job $number to.")
                 }
-                val words = message ?: proposed.text.takeIf { proposed.kind == "send" && proposed.to == to.id && it.isNotBlank() }
-                    ?: return DeskPlan.Refused(leftOut.firstOrNull() ?: "Say what to tell ${to.name}. For example: \"Tell ${to.name.substringBefore(' ')} I will start on it today.\"")
+                unsaid(to)
+                // "Tell him the lift is serviced on Monday": the words for him are what follows his name,
+                // whether the model picked them out, handed the whole sentence back, or gave none.
+                val spokenWords = when {
+                    whole -> wordsFor(said, to) ?: message
+                    message != null -> wordsFor(message, to, fromItsStart = true) ?: message
+                    else -> wordsFor(said, to)
+                }
+                val words = spokenWords ?: proposed.text.takeIf { proposed.kind == "send" && proposed.to == to.id && it.isNotBlank() }
+                    ?: return DeskPlan.Refused(leftOut.firstOrNull() ?: "Say what to tell ${to.name}. For example: \"Tell ${to.name.substringBefore(' ')} \u2026\" and then your words.")
                 DeskPlan.Act(number, job, "send", to, text = words, leftOut = leftOut)
             }
             action.startsWith("fixed") || action.startsWith("fix") -> {
@@ -204,6 +228,45 @@ object DeskCommands {
             action.startsWith("brief") -> DeskPlan.Brief
             else -> DeskPlan.Question
         }
+    }
+
+    /**
+     * The words meant for somebody, out of a sentence that also says who they are for: "tell him the lift
+     * is serviced on Monday" gives "the lift is serviced on Monday", and "tell the manager that I need a
+     * ladder" gives "I need a ladder". Null when the sentence does not name anybody that way, or says
+     * nothing after the name.
+     */
+    fun wordsFor(said: String, to: Person?, fromItsStart: Boolean = false): String? {
+        val verb = TELLING.find(said)?.takeIf { !fromItsStart || said.substring(0, it.range.first).isBlank() } ?: return null
+        val tokens = said.substring(verb.range.last + 1).trim().split(Regex("""\s+""")).filter { it.isNotEmpty() }
+        val name = to?.let { Grounding.words(it.name) }.orEmpty()
+        fun bare(at: Int) = tokens.getOrNull(at)?.lowercase(Locale.ENGLISH)?.trim(',', ':', '.', ';').orEmpty()
+        // A word that says who they are: part of their name, or what they are. Another role's name is somebody else.
+        fun theirs(at: Int): Boolean {
+            val word = bare(at)
+            val role = if (word == "managing") "Managing Director" else ROLE_WORDS[word]
+            return word.isNotEmpty() && (name.any { Grounding.slip(it, word) } || (role != null && (to == null || to.role.isBlank() || role.equals(to.role, ignoreCase = true))))
+        }
+        // "Send a message to Ravi that ...": the "to" before the name is no part of the words either.
+        var at = if (bare(0) == "to") 1 else 0
+        if (bare(at) == "the" && theirs(at + 1)) at++
+        // "Tell him he is right": one word stands for the person, and the next "he" belongs to the message.
+        if (bare(at) in PRONOUNS) at++ else {
+            val from = at
+            while (theirs(at)) at++
+            if (at == from) return null
+        }
+        while (bare(at) in AFTER_A_NAME) at++
+        val rest = tokens.drop(at)
+        val first = rest.firstOrNull()?.lowercase(Locale.ENGLISH).orEmpty()
+        val words = when {
+            // "Tell him about job 2" says nothing to him; "ask him to come tomorrow" asks him to come tomorrow.
+            first == "about" -> return null
+            first == "to" && rest.size >= 2 -> listOf("please") + rest.drop(1)
+            else -> rest
+        }
+        if (words.size < 2 && bare(at) !in SHORT_ANSWERS) return null
+        return words.joinToString(" ").trim().trimEnd('.').replaceFirstChar { it.uppercase(Locale.ENGLISH) }
     }
 
     /**

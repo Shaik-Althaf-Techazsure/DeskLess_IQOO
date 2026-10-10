@@ -10,13 +10,13 @@ from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from uuid import uuid4
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from .. import autopilot, mailer, writer
+from .. import autopilot, mailer, pulse, writer
 from ..assistant import Desk, dealt_with, role_word
 from ..config import settings
 from ..db import get_db
@@ -96,6 +96,7 @@ async def send_report(
     photos: list[UploadFile] = File(default=[]),
     account: Account = Depends(current_account),
     db: Session = Depends(get_db),
+    request: Request = None,
 ) -> dict:
     """
     Takes a walk from the phone that is making it. While the walk goes on the phone sends what it holds
@@ -232,9 +233,51 @@ async def send_report(
                 company_id=account.company_id, report_id=report.id, issue_id=issue.id, author_id=account.id,
             )
     db.commit()
+    _arrived(db, account, report, raised, built, kept, request)
     # The writing model, where one runs, takes up what is new; nothing here waits for it.
     writer.nudge()
     return {"id": report.id, "issues": kept, "updated": not fresh, "built": bool(report.pdf)}
+
+
+#: How many newly raised issues of one upload the assistant's routing is shown for, one by one.
+ROUTED_SHOWN = 4
+
+
+def _arrived(db: Session, account: Account, report: Report, raised: list[Issue], built: bool, kept: int, request: Request | None) -> None:
+    """
+    For the live linkage: the walk coming in from the phone, and for each issue new in it the assistant
+    ranking it and putting it on the desk of whoever gives it out. The phone's own model is credited
+    where it judged a picture.
+    """
+    device = pulse.device_of(request.headers.get("user-agent")) if request is not None else "phone"
+    where = f" for {report.place}" if report.place else ""
+    judged = any(issue.ai_check for issue in raised)
+    if built:
+        words = f"sent the report{where}: {kept} issue{'s' if kept != 1 else ''}" + (", signed with a fingerprint" if report.signed else "")
+    elif len(raised) == 1:
+        words = f"raised “{raised[0].title or 'Untitled issue'}”{' at ' + report.place if report.place else ''}"
+    else:
+        words = f"told the walk{where}: {len(raised)} new issue{'s' if len(raised) != 1 else ''}" if raised else f"told the walk{where} again"
+    pulse.record("walk", pulse.person(account.id), pulse.SERVER, words, company_id=account.company_id, people=[account.id], issue_id=report.id, ai=judged, device=device)
+    if not raised:
+        return
+    desk = Desk(db, Actor(admin="DeskLess"), raised)
+    for at, issue in enumerate(raised):
+        lead = desk.lead_for(issue)
+        to = pulse.person(lead.id) if lead else pulse.SERVER
+        concerned = [account.id, lead.id if lead else None]
+        if at >= ROUTED_SHOWN:
+            left = len(raised) - at
+            pulse.record("route", pulse.ASSISTANT, to, f"ranked {left} more issue{'s' if left != 1 else ''} of the walk", company_id=issue.company_id, people=concerned, ai=True)
+            break
+        score = desk.priority(issue)
+        could = desk.who_could(issue)
+        said = f"ranked “{issue.title or 'Untitled issue'}” {score['band_name']} ({score['score']})"
+        if lead is not None:
+            said += f": on {lead.name}'s desk to give out" + (f", {could[0]['name']} best placed" if could else "")
+        if issue.ai_check == "MISMATCH":
+            said += "; the phone doubted the picture"
+        pulse.record("route", pulse.ASSISTANT, to, said, company_id=issue.company_id, people=concerned, issue_id=issue.id, ai=True)
 
 
 def _report_row(report: Report, names: dict[str, str], unsettled: dict[str, int]) -> dict:
@@ -476,6 +519,11 @@ def assign(
     if words:
         _say(db, actor, issue, technician, words)
     db.commit()
+    pulse.record(
+        "assign", pulse.person(lead.id), pulse.person(technician.id),
+        f"gave “{issue.title or 'Untitled issue'}” to {technician.name}" + (f", due {due}" if due else "") + (", with a note" if words else ""),
+        company_id=issue.company_id, people=[lead.id, technician.id, issue.author_id], issue_id=issue.id,
+    )
     writer.nudge()
     try:
         post.send(technician.email, *mailer.assigned_email(technician.name, issue.title or "Untitled issue", issue.site, due, lead.name, words))
@@ -522,6 +570,11 @@ def send(
         company_id=issue.company_id, report_id=issue.report_id, issue_id=issue.id, author_id=issue.author_id, assignee_id=to.id if to else issue.assigned_to,
     )
     db.commit()
+    pulse.record(
+        "message", pulse.ADMIN if actor.is_admin else pulse.person(actor.account.id), pulse.person(to.id) if to else pulse.ADMIN,
+        f"sent “{issue.title or 'Untitled issue'}” to {message.to_name}: “{shown}”",
+        company_id=issue.company_id, people=[None if actor.is_admin else actor.account.id, to.id if to else None, issue.author_id], issue_id=issue.id,
+    )
     writer.nudge()
     try:
         post.send(to.email if to else settings().admin_email, *mailer.sent_email(message.to_name, actor.name, issue.title or "Untitled issue", issue.site, words))
@@ -587,6 +640,12 @@ async def fixed(
     note(db, "fixed", account.name, f"{account.name} marked it fixed" + (f": {issue.fix_note}" if issue.fix_note else ""), **_about(issue))
     dealt_with(db, actor, issue)
     db.commit()
+    checker = Desk(db, actor, [issue]).lead_for(issue)
+    pulse.record(
+        "fixed", pulse.person(account.id), pulse.person(checker.id) if checker else pulse.SERVER,
+        f"marked “{issue.title or 'Untitled issue'}” fixed, with a photo of the repair" + (f"; {checker.name} is to check it" if checker else ""),
+        company_id=issue.company_id, people=[account.id, checker.id if checker else None, issue.author_id], issue_id=issue.id,
+    )
     return _rows(db, [issue])[0]
 
 
@@ -613,6 +672,12 @@ def close(issue_id: str, body: Remark = Remark(), actor: Actor = Depends(current
     )
     dealt_with(db, actor, issue)
     db.commit()
+    title = issue.title or "Untitled issue"
+    pulse.record(
+        "closed", pulse.person(lead.id), pulse.person(issue.author_id) if issue.author_id != lead.id else pulse.SERVER,
+        (f"checked the repair and closed “{title}”" if was_fixed else f"closed “{title}”") + (f": {remark}" if remark else ""),
+        company_id=issue.company_id, people=[lead.id, issue.author_id, issue.assigned_to], issue_id=issue.id,
+    )
     return _rows(db, [issue])[0]
 
 
@@ -634,6 +699,12 @@ def reopen(issue_id: str, body: Remark = Remark(), actor: Actor = Depends(curren
         if technician is not None:
             _say(db, actor, issue, technician, remark)
     db.commit()
+    back_to = issue.assigned_to or issue.author_id
+    pulse.record(
+        "reopened", pulse.person(lead.id), pulse.person(back_to) if back_to and back_to != lead.id else pulse.SERVER,
+        f"sent “{issue.title or 'Untitled issue'}” back" + (f": {remark}" if remark else ""),
+        company_id=issue.company_id, people=[lead.id, issue.assigned_to, issue.author_id], issue_id=issue.id,
+    )
     return _rows(db, [issue])[0]
 
 

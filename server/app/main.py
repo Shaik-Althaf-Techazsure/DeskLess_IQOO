@@ -20,7 +20,7 @@ from . import autopilot, changes, metrics, writer
 from .config import settings
 from .db import SessionLocal, init_db
 from .mailer import Mailer
-from .routers import admin, auth, desk, door, people, signup, work, types
+from .routers import admin, auth, desk, door, linking, people, signup, work, types
 
 STATIC = Path(__file__).parent / "static"
 
@@ -148,11 +148,12 @@ class Squeezed:
         await self.app(scope, receive, squeezing)
 
 
-# Each page has its style and script beside it: the dashboard, the home page and the sign-up page.
+# Each page has its style and script beside it: the dashboard, the home page, the sign-up page and the live linkage.
 _PAGE_FILES = {
     "app.css": "text/css", "app.js": "text/javascript",
     "home.css": "text/css", "home.js": "text/javascript",
     "signup.css": "text/css", "signup.js": "text/javascript",
+    "linking.css": "text/css", "linking.js": "text/javascript",
 }
 
 # What the home page shows: the film, the deck's slides, pictures of the app and of the dashboards.
@@ -185,6 +186,7 @@ app.include_router(work.router)
 app.include_router(desk.router)
 app.include_router(door.router)
 app.include_router(types.router)
+app.include_router(linking.router)
 
 
 @app.exception_handler(HTTPException)
@@ -257,6 +259,18 @@ def dashboard_page() -> HTMLResponse:
 def signup_page() -> HTMLResponse:
     """Signing up in a browser: the same form, code and wait as in the app."""
     return _page("signup.html")
+
+
+@app.get("/linking", include_in_schema=False)
+def linking_page() -> HTMLResponse:
+    """The live linkage: every phone, person, place and service as a node, and what moves between them as it moves."""
+    return _page("linking.html")
+
+
+@app.get("/dashboard/linking", include_in_schema=False)
+def to_the_linkage() -> RedirectResponse:
+    """The same page, reached from the dashboard's address."""
+    return RedirectResponse(f"{settings().base_path}/linking")
 
 
 @app.get("/static/{name}", include_in_schema=False)

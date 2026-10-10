@@ -10,7 +10,7 @@ from pydantic import BaseModel
 from sqlalchemy import func, select, text
 from sqlalchemy.orm import Session
 
-from .. import mailer, metrics, security, writer
+from .. import mailer, metrics, pulse, security, writer
 from ..config import settings
 from ..db import get_db
 from ..models import APPROVED, CLOSED, PENDING_APPROVAL, REJECTED, Account, Company, Event, Issue, Report
@@ -58,6 +58,7 @@ def login(body: AdminLogin, request: Request) -> dict:
             record["until"] = moment + _LOCK_SECONDS
         raise HTTPException(401, "Wrong email or password.")
     _wrong.pop(_address(request), None)
+    pulse.record("signin", pulse.ADMIN, pulse.SERVER, "the administrator signed in", device=pulse.device_of(request.headers.get("user-agent")))
     return {"token": security.make_token(config.admin_email, "admin", timedelta(hours=ADMIN_HOURS)), "email": config.admin_email}
 
 

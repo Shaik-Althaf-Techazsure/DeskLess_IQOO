@@ -16,7 +16,7 @@ from fastapi import APIRouter, Depends, Header
 from sqlalchemy.orm import Session
 from starlette.concurrency import run_in_threadpool
 
-from .. import changes
+from .. import changes, pulse
 from ..db import SessionLocal, get_db
 from ..service import Actor, current_actor, may_direct
 from .work import Tray, asker, due_words, technicians, tray_for
@@ -91,19 +91,27 @@ def desk(actor: Actor = Depends(current_actor), db: Session = Depends(get_db)) -
     return laid_out(db, actor)
 
 
-def _mark_now(authorization: str | None) -> str:
+def _mark_now(authorization: str | None) -> tuple[str, Actor]:
     """
-    The mark of the desk of whoever holds this sign-in, as it stands this moment. It is worked out on a
-    session of its own, opened and closed here, and the person is looked up afresh each time. So a phone
-    that waits holds no connection to the database in between, and one whose account has been suspended
-    meanwhile is turned away at the next look.
+    The mark of the desk of whoever holds this sign-in, as it stands this moment, and who they are. It is
+    worked out on a session of its own, opened and closed here, and the person is looked up afresh each
+    time. So a phone that waits holds no connection to the database in between, and one whose account
+    has been suspended meanwhile is turned away at the next look.
     """
     with SessionLocal() as db:
-        return laid_out(db, current_actor(authorization, db))["mark"]
+        actor = current_actor(authorization, db)
+        return laid_out(db, actor)["mark"], actor
+
+
+def _node(actor: Actor) -> tuple[str, list, str | None]:
+    """Where a waiting phone stands in the live linkage: its node, who is concerned, and the company."""
+    if actor.is_admin:
+        return pulse.ADMIN, [], None
+    return pulse.person(actor.account.id), [actor.account.id], actor.account.company_id
 
 
 @router.get("/desk/wait")
-async def wait(mark: str = "", seconds: int = USUAL_WAIT_SECONDS, authorization: str | None = Header(None)) -> dict:
+async def wait(mark: str = "", seconds: int = USUAL_WAIT_SECONDS, authorization: str | None = Header(None), user_agent: str | None = Header(None)) -> dict:
     """
     Waits until the person's desk is no longer the one `mark` was given for, and says so at once:
     `changed` true with the new mark, straight away when it already differs. When `seconds` have passed
@@ -113,14 +121,20 @@ async def wait(mark: str = "", seconds: int = USUAL_WAIT_SECONDS, authorization:
     count of what has been written, and reads the desk again only when that count has moved. What moves
     with the clock alone, such as a job running past its day, is seen when the phone next asks.
     """
-    until = time.monotonic() + max(1, min(MAX_WAIT_SECONDS, seconds))
+    held = max(1, min(MAX_WAIT_SECONDS, seconds))
+    until = time.monotonic() + held
     # The count is read before the desk is, so something written between the two is looked at again.
     written = changes.count()
-    current = await run_in_threadpool(_mark_now, authorization)
+    current, actor = await run_in_threadpool(_mark_now, authorization)
+    node, people, company = _node(actor)
+    device = pulse.device_of(user_agent)
+    pulse.record("listen", node, pulse.SERVER, f"listening for the desk to change, up to {held} s", people=people, company_id=company, device=device)
     while current == mark and time.monotonic() < until:
         await asyncio.sleep(max(0.0, min(LOOK_EVERY_SECONDS, until - time.monotonic())))
         seen = changes.count()
         if seen != written:
             written = seen
-            current = await run_in_threadpool(_mark_now, authorization)
+            current, actor = await run_in_threadpool(_mark_now, authorization)
+    if current != mark:
+        pulse.record("push", pulse.SERVER, node, "the desk changed: the phone is told and reads it again", people=people, company_id=company, device=device)
     return {"mark": current, "changed": current != mark}

@@ -10,7 +10,7 @@ from fastapi import Depends, Header, HTTPException, Request
 from sqlalchemy import ColumnElement, false, or_, select, true
 from sqlalchemy.orm import Session
 
-from . import mailer, security
+from . import mailer, pulse, security
 from .config import settings
 from .db import get_db
 from .models import APPROVED, LEADS, PENDING_APPROVAL, REJECTED, ROLE_NAMES, ROLES, Account, Company, Counter, Event, Issue, Message, Otp, Report, now
@@ -87,34 +87,41 @@ def _seen(db: Session, account: Account) -> None:
         db.commit()
 
 
-def current_account(authorization: str | None = Header(None), db: Session = Depends(get_db)) -> Account:
-    """The signed-in person. An account that has since been rejected or suspended is turned away."""
+def current_account(authorization: str | None = Header(None), db: Session = Depends(get_db), request: Request = None) -> Account:
+    """
+    The signed-in person. An account that has since been rejected or suspended is turned away. Asked
+    for a request, it also notes the question for the live linkage; called by hand, it notes nothing.
+    """
     account_id = security.read_token(_bearer(authorization), "user")
     account = db.get(Account, account_id) if account_id else None
     if account is None or account.status != APPROVED:
         raise HTTPException(401, "Sign in again.")
     _seen(db, account)
+    pulse.asked(request, pulse.person(account.id), people=[account.id], company_id=account.company_id)
     return account
 
 
-def current_admin(authorization: str | None = Header(None)) -> str:
+def current_admin(authorization: str | None = Header(None), request: Request = None) -> str:
     admin = security.read_token(_bearer(authorization), "admin")
     if admin is None:
         raise HTTPException(401, "Sign in as the administrator.")
+    pulse.asked(request, pulse.ADMIN)
     return admin
 
 
-def current_actor(authorization: str | None = Header(None), db: Session = Depends(get_db)) -> Actor:
+def current_actor(authorization: str | None = Header(None), db: Session = Depends(get_db), request: Request = None) -> Actor:
     """Whoever is signed in, person or administrator. The dashboards serve both from the same calls."""
     token = _bearer(authorization)
     admin = security.read_token(token, "admin")
     if admin is not None:
+        pulse.asked(request, pulse.ADMIN)
         return Actor(admin=admin)
     account_id = security.read_token(token, "user")
     account = db.get(Account, account_id) if account_id else None
     if account is None or account.status != APPROVED:
         raise HTTPException(401, "Sign in again.")
     _seen(db, account)
+    pulse.asked(request, pulse.person(account.id), people=[account.id], company_id=account.company_id)
     return Actor(account=account)
 
 

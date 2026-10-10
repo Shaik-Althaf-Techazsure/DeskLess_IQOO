@@ -25,7 +25,7 @@ from datetime import timedelta
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from . import changes, mailer
+from . import changes, mailer, pulse
 from .assistant import Desk, _days, _first, _place, _span, _title
 from .config import settings
 from .db import SessionLocal
@@ -63,6 +63,7 @@ def _send(db: Session, post, issue: Issue, to: Account, rule: str, text: str, sa
     db.commit()
     # No request brought this about, so whoever waits to hear of a change to their desk is told from here.
     changes.bump()
+    pulse.record("rounds", pulse.ROUNDS, pulse.person(to.id), f"on its rounds, {said}", company_id=issue.company_id, people=[to.id, issue.author_id, issue.assigned_to], issue_id=issue.id, ai=True)
     if post is not None:
         try:
             post.send(to.email, *mailer.sent_email(to.name, "The DeskLess assistant", _title(issue), issue.site, text))

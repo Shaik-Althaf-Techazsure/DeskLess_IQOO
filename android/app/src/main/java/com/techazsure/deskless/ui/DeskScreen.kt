@@ -259,7 +259,8 @@ fun DeskScreen(state: AppState) {
                         busy != null -> busy
                         !state.speechReady -> "Speech is not on this phone yet: type below, or tap what is proposed."
                         desk?.mayDirect == true -> "Tap and say it: “Give the first one to … by Friday”, “Do job 2”."
-                        else -> "Tap and say it: “I fixed the first one”, “Tell the manager …”."
+                        desk?.role == "technical" -> "Tap and say it: “I fixed the first one”, “Tell the manager …”."
+                        else -> "Tap and say it: “Do the first one”, “Tell her …”, “Read me job 2”."
                     },
                     style = MaterialTheme.typography.bodyLarge,
                     color = if (recording) SignalRed else Chalk,
@@ -451,6 +452,7 @@ private fun RepairCard(state: AppState, repair: AppState.Repair) {
                     repair.check == Check.MATCH -> "The phone's AI compared the two: the problem is no longer visible."
                     repair.check == Check.MISMATCH -> "The phone's AI compared the two: the problem may still be there."
                     repair.check == Check.UNSURE -> "The phone's AI could not tell from the two pictures."
+                    repair.before == null -> "No picture came with the report, so there was nothing to compare yours with. Whoever checks the repair will see it."
                     else -> "The pictures were not compared on the phone. Whoever checks the repair will see both."
                 },
                 style = MaterialTheme.typography.bodyLarge,

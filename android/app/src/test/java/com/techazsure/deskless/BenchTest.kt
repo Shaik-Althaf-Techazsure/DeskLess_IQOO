@@ -76,6 +76,9 @@ class BenchTest {
         assertEquals(1, card.keptOut)
         assertNull(card.copy(charging = true).mahPerNote)
         assertTrue(Bench.summary(card, "today").contains("Report fields right: 50%"))
+        // The line on the card that opens the measurements: it once crashed the screen, a per cent sign in a formatted text.
+        assertEquals("Last run: 50% of fields right over 2 notes, 3.5 s a note.", Bench.lastRun(card))
+        assertEquals("Last run: 100% of fields right over 1 note, 2.0 s a note.", Bench.lastRun(card.copy(spoken = false, outcomes = outcomes.take(1).map { it.copy(heard = null, wordsRight = null) })))
     }
 
     @Test

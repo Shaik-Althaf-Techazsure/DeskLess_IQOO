@@ -17,7 +17,7 @@ _lock = Lock()
 # The monitor's own questions and the container's health checks are not what anyone wants counted. Nor
 # is a phone waiting to hear of a change: its question is held open on purpose, for up to half a minute,
 # which says nothing of how quick the server is.
-_QUIET = ("/api/health", "/api/admin/system", "/api/desk/wait")
+_QUIET = ("/api/health", "/api/admin/system", "/api/desk/wait", "/api/linking")
 
 
 def record(path: str, status: int, milliseconds: float) -> None:

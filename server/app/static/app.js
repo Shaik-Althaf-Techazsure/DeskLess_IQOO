@@ -25,9 +25,9 @@ let peopleRole = "";
 let reportSearch = "";
 
 const NAV = {
-  admin: [["overview", "Control room", "grid"], ["inbox", "Inbox", "inbox"], ["approvals", "Approvals", "check"], ["companies", "Companies", "building"], ["people", "People", "users"], ["reports", "Reports", "file"], ["issues", "Issues", "alert"], ["system", "System", "pulse"]],
-  md: [["overview", "Console", "grid"], ["inbox", "Inbox", "inbox"], ["approvals", "Approvals", "check"], ["issues", "Issues", "alert"], ["reports", "Reports", "file"], ["people", "People", "users"], ["types", "Report types", "layers"]],
-  manager: [["overview", "Console", "grid"], ["inbox", "Inbox", "inbox"], ["approvals", "Approvals", "check"], ["issues", "Issues", "alert"], ["reports", "Reports", "file"], ["people", "My team", "users"], ["types", "Report types", "layers"]],
+  admin: [["overview", "Control room", "grid"], ["linking", "Live linkage", "orbit"], ["inbox", "Inbox", "inbox"], ["approvals", "Approvals", "check"], ["companies", "Companies", "building"], ["people", "People", "users"], ["reports", "Reports", "file"], ["issues", "Issues", "alert"], ["system", "System", "pulse"]],
+  md: [["overview", "Console", "grid"], ["linking", "Live linkage", "orbit"], ["inbox", "Inbox", "inbox"], ["approvals", "Approvals", "check"], ["issues", "Issues", "alert"], ["reports", "Reports", "file"], ["people", "People", "users"], ["types", "Report types", "layers"]],
+  manager: [["overview", "Console", "grid"], ["linking", "Live linkage", "orbit"], ["inbox", "Inbox", "inbox"], ["approvals", "Approvals", "check"], ["issues", "Issues", "alert"], ["reports", "Reports", "file"], ["people", "My team", "users"], ["types", "Report types", "layers"]],
   inspector: [["overview", "Console", "grid"], ["inbox", "Inbox", "inbox"], ["reports", "My reports", "file"], ["issues", "My issues", "alert"]],
   technical: [["overview", "Console", "grid"], ["issues", "My jobs", "wrench"], ["inbox", "Inbox", "inbox"]],
 };
@@ -42,6 +42,7 @@ const ICONS = {
   wrench: "M14.7 6.3a4 4 0 00-5.4 5.4L3 18l3 3 6.3-6.3a4 4 0 005.4-5.4l-2.5 2.5-2.5-2.5z",
   layers: "M12 2l10 5-10 5L2 7zM2 12l10 5 10-5M2 17l10 5 10-5",
   inbox: "M22 12h-6l-2 3h-4l-2-3H2M5.5 5.1L2 12v6a2 2 0 002 2h16a2 2 0 002-2v-6l-3.5-6.9A2 2 0 0016.8 4H7.2a2 2 0 00-1.7 1.1z",
+  orbit: "M12 14.5a2.5 2.5 0 100-5 2.5 2.5 0 000 5zM5 6a1.5 1.5 0 100-3 1.5 1.5 0 000 3zM19 6a1.5 1.5 0 100-3 1.5 1.5 0 000 3zM12 22a1.5 1.5 0 100-3 1.5 1.5 0 000 3zM6 6l4.3 4.3M18 6l-4.3 4.3M12 14.5V19",
 };
 const STATUS = { open: "To give out", assigned: "With technician", fixed: "Fixed, to check", closed: "Closed" };
 const STAGES = [["open", "To give out", "var(--stage-open)"], ["assigned", "With technicians", "var(--stage-assigned)"], ["fixed", "Fixed, to check", "var(--stage-fixed)"], ["closed", "Closed", "var(--stage-closed)"]];
@@ -1045,7 +1046,7 @@ function drawNav() {
   if (now === navDrawn) return;
   navDrawn = now;
   $("nav").replaceChildren(...NAV[role].map(([section, label, sign]) =>
-    el("button", { class: section === view ? "on" : "", onclick: () => go(section) }, icon(sign), label, waiting[section] ? el("span", { class: "n", text: waiting[section] }) : null)));
+    el("button", { class: section === view ? "on" : "", onclick: () => (section === "linking" ? (location.href = "linking") : go(section)) }, icon(sign), label, waiting[section] ? el("span", { class: "n", text: waiting[section] }) : null)));
 }
 
 function go(to, filter) {

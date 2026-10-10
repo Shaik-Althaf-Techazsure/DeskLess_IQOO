@@ -6,13 +6,13 @@ the one-time link with which the app opens the person's dashboard in a browser.
 import secrets
 from datetime import timedelta
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from .. import mailer, security
+from .. import mailer, pulse, security
 from ..config import settings
 from ..db import get_db
 from ..models import APPROVED, SUSPENDED, Account, Otp, now
@@ -40,7 +40,7 @@ def _by_unique_id(db: Session, unique_id: str, also_suspended: bool = False) -> 
 
 
 @router.post("/login")
-def login(body: Login, db: Session = Depends(get_db)) -> dict:
+def login(body: Login, request: Request, db: Session = Depends(get_db)) -> dict:
     """
     Signs in. The answer is a token the phone keeps and the person's details, so that the app can go on
     working with no network afterwards.
@@ -69,6 +69,7 @@ def login(body: Login, db: Session = Depends(get_db)) -> dict:
         # Said only to someone who knows the password, so it tells a stranger nothing.
         raise HTTPException(403, "This account has been suspended. Ask the person you report to.")
     days = settings().token_days
+    pulse.record("signin", pulse.person(account.id), pulse.SERVER, "signed in", people=[account.id], company_id=account.company_id, device=pulse.device_of(request.headers.get("user-agent")))
     return {
         "token": security.make_token(account.id, "user", timedelta(days=days)),
         "token_days": days,
@@ -205,7 +206,7 @@ def web_link(account: Account = Depends(current_account), db: Session = Depends(
 
 
 @router.post("/web-link/open")
-def open_web_link(body: WebLink, db: Session = Depends(get_db)) -> dict:
+def open_web_link(body: WebLink, request: Request, db: Session = Depends(get_db)) -> dict:
     """Trades the one-time link for a sign-in on the dashboard."""
     otp = db.scalars(
         select(Otp).where(Otp.purpose == "web", Otp.code_hash == security.keyed_hash("web", body.code), Otp.used_at.is_(None))
@@ -215,4 +216,5 @@ def open_web_link(body: WebLink, db: Session = Depends(get_db)) -> dict:
         raise HTTPException(401, "That link has run out. Sign in with your ID and password.")
     otp.used_at = now()
     db.commit()
+    pulse.record("signin", pulse.person(account.id), pulse.SERVER, "opened the dashboard from the app", people=[account.id], company_id=account.company_id, device=pulse.device_of(request.headers.get("user-agent")))
     return {"token": security.make_token(account.id, "user", timedelta(hours=WEB_HOURS)), "profile": profile(db, account)}

@@ -4,6 +4,7 @@ import logging
 import smtplib
 from email.message import EmailMessage
 
+from . import pulse
 from .config import settings
 
 log = logging.getLogger("deskless.mail")
@@ -26,6 +27,7 @@ class Mailer:
         if not config.smtp_host:
             # No mail server at all: say so in the log rather than lose the message silently.
             log.warning("No SMTP_HOST is set. Email for %s not sent. Subject: %s\n%s", to, subject, text)
+            pulse.record("mail", pulse.MAIL, f"e:{to.strip().lower()}", f"would have emailed “{subject}”, but no mail server is set")
             return False
         message = EmailMessage()
         message["From"] = config.mail_from
@@ -44,7 +46,9 @@ class Mailer:
                     server.login(config.smtp_user, config.smtp_password)
                 server.send_message(message)
         except (OSError, smtplib.SMTPException) as error:
+            pulse.record("mail", pulse.MAIL, f"e:{to.strip().lower()}", f"the mail server refused “{subject}”: {error}")
             raise MailError(str(error)) from error
+        pulse.record("mail", pulse.MAIL, f"e:{to.strip().lower()}", f"emailed “{subject}”")
         return True
 
 

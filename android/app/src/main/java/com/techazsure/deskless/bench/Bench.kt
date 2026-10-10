@@ -222,5 +222,13 @@ object Bench {
         card.mahPerNote?.let { "Battery: %.1f mAh a note by the phone's own gauge".format(it) },
     ).joinToString("\n")
 
+    /**
+     * The last run in one line, for the card that opens the measurements. The seconds are put into words
+     * apart from the rest: a per cent sign in a text that is itself formatted is read as an instruction.
+     */
+    fun lastRun(card: Scorecard): String =
+        "Last run: ${percent(card.fieldsRight)} of fields right over ${card.notes} note${if (card.notes == 1) "" else "s"}, " +
+            "%.1f s a note.".format(card.fieldSeconds + (card.speechSeconds ?: 0f))
+
     fun percent(share: Float): String = "${(share * 100).toInt()}%"
 }

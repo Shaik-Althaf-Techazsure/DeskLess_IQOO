@@ -147,7 +147,8 @@ fun UserHome(state: AppState) {
             horizontalArrangement = Arrangement.spacedBy(10.dp),
         ) {
             LogoMark(Modifier.size(34.dp))
-            Text("DESKLESS", style = MaterialTheme.typography.headlineSmall, color = Chalk, modifier = Modifier.weight(1f))
+            // The mark stands for the name here: with the language and three buttons beside it, the word would break in two.
+            Spacer(Modifier.weight(1f))
             LanguageChip(state)
             RoundIconButton(
                 icon = if (user.speaks) Icons.AutoMirrored.Rounded.VolumeUp else Icons.AutoMirrored.Rounded.VolumeOff,
