@@ -149,15 +149,23 @@ Phones exchange their public keys the first time they connect after linking, und
 
 ### AI models
 
-The models are open and run on the phone. They are not in this repository or inside the APK (about 2.8 GB). Copy the files to a folder on the phone, open **Models** in the app and import the folder.
+The models are open and run on the phone. They are not in this repository or inside the APK: together they are 2.96 GB.
 
-| File | Job | From |
-|---|---|---|
-| `small-encoder.int8.onnx`, `small-decoder.int8.onnx`, `small-tokens.txt` | Speech to English text | Whisper `small` in the [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx) `asr-models` release |
-| `silero_vad.onnx` | Splitting long voice notes | Same release |
-| `gemma-4-E2B-it.litertlm` | Structuring and the picture check | `litert-community/gemma-4-E2B-it-litert-lm` on Hugging Face |
+**A newly installed app fetches them by itself.** The first time it is opened it asks Android's own download service for whatever it lacks, straight from where each file is published. Nothing has to be copied to the phone by hand.
 
-The Gemma file can also be given in two halves, `.part1` and `.part2`, for transfer tools with a 2 GB limit. The app joins them and checks the SHA-256.
+| File | Size | Job | Fetched from |
+|---|---|---|---|
+| `silero_vad.onnx` | 0.6 MB | Splitting long voice notes | The [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx) `asr-models` release |
+| `small-tokens.txt`, `small-encoder.int8.onnx`, `small-decoder.int8.onnx` | 0.8, 112 and 262 MB | Speech to English text (Whisper `small`) | `csukuangfj/sherpa-onnx-whisper-small` on Hugging Face, the same files as in that release |
+| `gemma-4-E2B-it.litertlm` | 2.59 GB | Structuring and the picture check | `litert-community/gemma-4-E2B-it-litert-lm` on Hugging Face |
+
+- **Over Wi-Fi unless told otherwise.** With only mobile data it waits for Wi-Fi; **Use mobile data** on the AI screen lets it go on at once.
+- **It goes on while the app is closed**, shows its progress among the phone's notifications, and picks up where it stopped when the network drops. The first screen shows a card with how far it is, and the small speech files come first, so voice notes are turned into text long before the large model has arrived.
+- **Nothing is used unchecked.** The app asks for one exact published version of each file and knows its size and SHA-256. A file that arrives cut short or changed is thrown away with a message, not loaded.
+- **It needs room**: the files plus 300 MB, or it says how much is missing instead of starting.
+- **Stop** on the AI screen ends it; it then starts again only when **Download** is pressed.
+
+**With no internet**, the files can still be brought to the phone and imported: send the folder with them (for example with Office Kit file transfer), open the AI screen, **Import from a folder**. The Gemma file can be given in two halves, `.part1` and `.part2`, for transfer tools with a 2 GB limit; the app joins them and checks the SHA-256.
 
 Without the models the app still takes pictures and voice notes, accepts typed notes and builds the PDF; built-in rules then fill only the title and the severity.
 

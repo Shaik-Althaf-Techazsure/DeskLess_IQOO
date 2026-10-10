@@ -118,6 +118,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onStop() {
         state.link.stop()
+        state.restModelsWatch()
         runCatching { getSystemService(ConnectivityManager::class.java).unregisterNetworkCallback(network) }
         super.onStop()
     }

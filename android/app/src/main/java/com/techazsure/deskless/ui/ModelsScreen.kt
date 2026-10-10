@@ -35,6 +35,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.Check
+import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.FolderOpen
 import androidx.compose.material.icons.rounded.Translate
 import androidx.compose.material3.Icon
@@ -50,6 +51,8 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
 import com.techazsure.deskless.AppState
 import com.techazsure.deskless.Screen
+import com.techazsure.deskless.models.ModelCatalog
+import com.techazsure.deskless.models.ModelFetch
 import com.techazsure.deskless.ui.theme.Chalk
 import com.techazsure.deskless.ui.theme.Coal
 import com.techazsure.deskless.ui.theme.Fog
@@ -103,7 +106,7 @@ fun ModelsScreen(state: AppState) {
         ) {
             Text(
                 text = "Both models run on this phone, so nothing you photograph or say leaves it. " +
-                    "They are too large to ship inside the app and are stored here once.",
+                    "They are too large to ship inside the app, so the app downloads them once and keeps them here.",
                 style = MaterialTheme.typography.bodyLarge,
                 color = Fog,
             )
@@ -120,13 +123,15 @@ fun ModelsScreen(state: AppState) {
                 ready = state.gemmaReady,
             )
 
+            FetchCard(state.modelFetch)
+
             ProofCard(state)
 
             Surface(shape = RoundedCornerShape(20.dp), color = Coal, border = BorderStroke(1.dp, Line.copy(alpha = 0.6f))) {
                 Column(modifier = Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Text("HOW TO ADD THEM", style = MaterialTheme.typography.labelSmall, color = Fog)
-                    HowTo(1, "Send the DeskLess-models folder from the laptop with Office Kit file transfer.")
-                    HowTo(2, "Tap Import below and pick that folder. DeskLess copies and checks the files.")
+                    Text("WITH NO INTERNET", style = MaterialTheme.typography.labelSmall, color = Fog)
+                    HowTo(1, "Send the DeskLess-models folder from a laptop with Office Kit file transfer.")
+                    HowTo(2, "Tap Import from a folder below and pick it. DeskLess copies and checks the files.")
                 }
             }
 
@@ -179,11 +184,40 @@ fun ModelsScreen(state: AppState) {
             modifier = Modifier.padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
+            val fetch = state.modelFetch
+            if (fetch.busy) {
+                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    BrandButton(
+                        text = "Stop",
+                        onClick = { state.stopFetchingModels() },
+                        kind = ButtonKind.Danger,
+                        modifier = Modifier.weight(1f),
+                    )
+                    if (!fetch.mobileData && fetch.phase != ModelFetch.Phase.CHECKING) {
+                        BrandButton(
+                            text = "Use mobile data",
+                            onClick = { state.fetchModels(mobileData = true) },
+                            kind = ButtonKind.Secondary,
+                            modifier = Modifier.weight(1.6f),
+                        )
+                    }
+                }
+            } else if (fetch.phase != ModelFetch.Phase.COMPLETE) {
+                BrandButton(
+                    text = "Download · ${ModelCatalog.size(fetch.missingBytes)}",
+                    onClick = { state.fetchModels(mobileData = false) },
+                    icon = Icons.Rounded.Download,
+                    enabled = !state.importing,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
             BrandButton(
                 text = if (state.importing) "Importing…" else "Import from a folder",
                 onClick = { pickFolder.launch(null) },
                 icon = Icons.Rounded.FolderOpen,
+                kind = ButtonKind.Secondary,
                 enabled = !state.importing,
+                height = 48.dp,
                 modifier = Modifier.fillMaxWidth(),
             )
             BrandButton(
@@ -191,9 +225,68 @@ fun ModelsScreen(state: AppState) {
                 onClick = { pickFiles.launch(arrayOf("*/*")) },
                 kind = ButtonKind.Secondary,
                 enabled = !state.importing,
+                height = 48.dp,
                 modifier = Modifier.fillMaxWidth(),
             )
         }
+    }
+}
+
+/**
+ * Where the fetching of the model files stands: how much has arrived, what is arriving now, what it is
+ * waiting for, and what went wrong if something did. Nothing is shown once every model is on the phone.
+ */
+@Composable
+fun FetchCard(fetch: ModelFetch, modifier: Modifier = Modifier, onClick: (() -> Unit)? = null) {
+    if (fetch.phase == ModelFetch.Phase.COMPLETE) return
+    val fraction by animateFloatAsState(targetValue = fetch.fraction, label = "fetch")
+    val shape = RoundedCornerShape(20.dp)
+    val border = BorderStroke(1.dp, SafetyYellow.copy(alpha = 0.45f))
+    val content: @Composable () -> Unit = {
+        Column(modifier = Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Text(if (fetch.busy) "GETTING THE AI MODELS" else "THE AI MODELS", style = MaterialTheme.typography.labelSmall, color = Fog)
+            Text(fetch.words, style = MaterialTheme.typography.bodyLarge, color = Chalk)
+            if (fetch.busy) {
+                Box(
+                    Modifier
+                        .fillMaxWidth()
+                        .height(10.dp)
+                        .clip(RoundedCornerShape(5.dp))
+                        .background(Steel)
+                ) {
+                    Box(
+                        Modifier
+                            .fillMaxWidth(fraction.coerceIn(0.02f, 1f))
+                            .height(10.dp)
+                            .background(SafetyYellow)
+                    )
+                }
+                Text(
+                    text = listOf("${fetch.percent}%", fetch.now).filter { it.isNotBlank() }.joinToString(" · "),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = Fog,
+                )
+            }
+            fetch.problem?.let { Text(it, style = MaterialTheme.typography.bodyMedium, color = SignalRed) }
+            // What went wrong already says what to do next; otherwise a line on how the fetching behaves.
+            if (fetch.busy || fetch.problem == null) Text(
+                text = when {
+                    fetch.stopped -> "You stopped the download. Tap Download to fetch them; until they are here, notes are not turned into text or report fields."
+                    !fetch.busy -> "DeskLess downloads them by itself over Wi-Fi. Until they are here, notes are not turned into text or report fields."
+                    fetch.phase == ModelFetch.Phase.WAITING_FOR_WIFI ->
+                        "It goes on by itself when Wi-Fi is back. Use mobile data makes it go on now; the file that was arriving then starts again."
+                    fetch.mobileData -> "Mobile data may be used. It goes on while DeskLess is closed, and picks up where it stopped if the network drops."
+                    else -> "Over Wi-Fi only. It goes on while DeskLess is closed, and picks up where it stopped if the network drops."
+                },
+                style = MaterialTheme.typography.bodySmall,
+                color = Fog,
+            )
+        }
+    }
+    if (onClick != null) {
+        Surface(onClick = onClick, shape = shape, color = Coal, border = border, modifier = modifier.fillMaxWidth(), content = content)
+    } else {
+        Surface(shape = shape, color = Coal, border = border, modifier = modifier.fillMaxWidth(), content = content)
     }
 }
 

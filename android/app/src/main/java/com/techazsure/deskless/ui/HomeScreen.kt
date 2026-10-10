@@ -301,6 +301,10 @@ fun HomeScreen(state: AppState) {
         ) {
             item(key = "brand") { BrandBar(state, onSideBar = { scope.launch { sideBar.open() } }) }
             item(key = "hero") { Hero(state, onNew = { confirmNew = true }, onChangeType = { pickTemplate = true }) }
+            // On a newly installed app the models are on their way: the card says how far, and opens the AI screen.
+            if (!(state.speechReady && state.gemmaReady)) {
+                item(key = "models") { FetchCard(state.modelFetch, onClick = { state.screen = Screen.Models }) }
+            }
             // Reports that came from other phones and have not been opened yet sit at the top until they are.
             state.unread.forEach { arrived ->
                 item(key = "new-${arrived.fileName}") {
@@ -554,6 +558,7 @@ private fun BrandBar(state: AppState, onSideBar: () -> Unit) {
                 )
                 Text(
                     text = when {
+                        !ready && state.modelFetch.busy -> "AI models ${state.modelFetch.percent}%"
                         !ready -> "Add AI models"
                         state.gemmaBackend != null -> "AI · ${state.gemmaBackend}"
                         else -> "AI on device"

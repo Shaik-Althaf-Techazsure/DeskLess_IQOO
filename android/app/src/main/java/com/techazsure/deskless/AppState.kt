@@ -30,6 +30,8 @@ import com.techazsure.deskless.data.Template
 import com.techazsure.deskless.link.Link
 import com.techazsure.deskless.link.Peer
 import com.techazsure.deskless.link.Voice
+import com.techazsure.deskless.models.ModelDownloads
+import com.techazsure.deskless.models.ModelFetch
 import com.techazsure.deskless.models.ModelStore
 import com.techazsure.deskless.report.ReportEntry
 import com.techazsure.deskless.report.ReportLibrary
@@ -546,11 +548,15 @@ class AppState(
         }
     }
 
-    /** What the app does whenever it can reach the office again: says it is here, and sends what waits. */
+    /**
+     * What the app does whenever it comes to the front or finds a network: says it is here, sends what
+     * waits, and goes on fetching its model files if the phone still lacks any.
+     */
     fun comeOnline() {
         checkIn()
         sendWalk()
         sendToOffice()
+        fetchModelsIfMissing()
     }
 
     /**
@@ -958,6 +964,108 @@ class AppState(
         )
     }
 
+    // ---------------------------------------------------------------- fetching the models
+    //
+    // A newly installed app fetches its model files by itself, over Wi-Fi, from where they are published;
+    // nothing has to be sent to the phone by hand. Android's own download service does the fetching, so
+    // it goes on while the app is closed. Importing from a folder stays, for a phone with no internet.
+
+    private val downloads = ModelDownloads(context, models)
+
+    /** Where the fetching of the model files stands. */
+    var modelFetch by mutableStateOf(
+        ModelFetch(
+            phase = if (models.speechReady && models.gemma != null) ModelFetch.Phase.COMPLETE else ModelFetch.Phase.IDLE,
+            missingBytes = downloads.missing().sumOf { it.bytes },
+        )
+    )
+        private set
+    private var modelsWatch: Job? = null
+    private var modelProblem: String? = null
+
+    /** A try failed in this run: the fetching is not started again by itself, only when the person asks. */
+    private var modelsHeld = false
+
+    /** Fetches whatever model files the phone lacks, unless the person stopped it or a try has just failed. */
+    private fun fetchModelsIfMissing() {
+        scope.launch {
+            if (!importing && !modelsHeld) {
+                val trouble = withContext(Dispatchers.IO) {
+                    if (downloads.stopped || downloads.missing().isEmpty()) null else downloads.start(downloads.mobileData)
+                }
+                if (trouble != null) {
+                    modelProblem = trouble
+                    modelsHeld = true
+                }
+            }
+            watchModels()
+        }
+    }
+
+    /** The person asks for the models: over Wi-Fi only, or allowing mobile data as well. */
+    fun fetchModels(mobileData: Boolean) {
+        modelsHeld = false
+        scope.launch {
+            modelProblem = withContext(Dispatchers.IO) { if (mobileData) downloads.useMobileData() else downloads.start(false) }
+            modelsHeld = modelProblem != null
+            watchModels()
+        }
+    }
+
+    fun stopFetchingModels() {
+        scope.launch {
+            withContext(Dispatchers.IO) { downloads.stop() }
+            modelProblem = null
+            watchModels()
+        }
+    }
+
+    /** Follows the fetching once a second while there is something to follow, and takes in what has arrived. */
+    private fun watchModels() {
+        if (modelsWatch?.isActive == true) return
+        modelsWatch = scope.launch {
+            while (true) {
+                val look = withContext(Dispatchers.IO) { downloads.look(modelProblem) }
+                if (look.failed) modelsHeld = true
+                modelProblem = look.fetch.problem
+                modelFetch = look.fetch
+                if (look.toCheck) {
+                    val problems = withContext(Dispatchers.IO) { downloads.settle() }
+                    if (problems.isNotEmpty()) {
+                        modelProblem = problems.joinToString(" ")
+                        modelsHeld = true
+                    }
+                    modelsChanged()
+                    continue
+                }
+                if (!look.fetch.busy) break
+                delay(1000)
+            }
+        }
+    }
+
+    /** Stops following the fetching while nobody is looking; the fetching itself goes on. */
+    fun restModelsWatch() {
+        modelsWatch?.cancel()
+    }
+
+    /** Model files have arrived or gone: whatever was loaded is let go, and the screens are told what is ready now. */
+    private suspend fun modelsChanged() {
+        val speech = models.speechReady
+        val gemma = models.gemma != null
+        if (speech == speechReady && gemma == gemmaReady) return
+        withContext(modelWork) {
+            transcriber.release()
+            structurer.release()
+        }
+        gemmaBackend = null
+        val first = !speechReady && speech && !gemma
+        speechReady = speech
+        gemmaReady = gemma
+        if (speech && gemma) notice = "The AI models are on this phone now."
+        else if (first) notice = "Speech to English is ready. The large model is still on its way."
+    }
+
     fun importModelFolder(folder: Uri) = importModels { models.importFrom(folder, it) }
 
     fun importModelFiles(files: List<Uri>) = importModels { models.importFiles(files, it) }
@@ -981,6 +1089,8 @@ class AppState(
             importResult = result
             importProgress = null
             importing = false
+            // What came by import is no longer fetched.
+            watchModels()
         }
     }
 
