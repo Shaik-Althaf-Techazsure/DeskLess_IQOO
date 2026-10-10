@@ -58,13 +58,16 @@ import com.techazsure.deskless.ui.LockScreen
 import com.techazsure.deskless.ui.RadioScreen
 import com.techazsure.deskless.ui.ReportsScreen
 import com.techazsure.deskless.ui.CaptureScreen
+import com.techazsure.deskless.ui.DeskScreen
 import com.techazsure.deskless.ui.EditScreen
 import com.techazsure.deskless.ui.HomeScreen
 import com.techazsure.deskless.ui.IntroScreen
 import com.techazsure.deskless.ui.ModelsScreen
 import com.techazsure.deskless.ui.ReportScreen
 import com.techazsure.deskless.ui.ScanScreen
+import com.techazsure.deskless.ui.ScorecardScreen
 import com.techazsure.deskless.ui.SensorsScreen
+import com.techazsure.deskless.ui.UserHome
 import com.techazsure.deskless.ui.theme.DesklessTheme
 import com.techazsure.deskless.ui.theme.Ink
 import java.io.File
@@ -112,6 +115,9 @@ class MainActivity : ComponentActivity() {
         state.link.start()
         // Reports built with no network go to the office as soon as there is one.
         state.comeOnline()
+        // What is newly given or sent to this person reaches the phone while the app is in front.
+        state.watchDesk(true)
+        state.user.watch(true)
         runCatching { getSystemService(ConnectivityManager::class.java).registerDefaultNetworkCallback(network) }
     }
 
@@ -123,6 +129,8 @@ class MainActivity : ComponentActivity() {
 
     override fun onStop() {
         state.link.stop()
+        state.watchDesk(false)
+        state.user.watch(false)
         state.restModelsWatch()
         runCatching { getSystemService(ConnectivityManager::class.java).unregisterNetworkCallback(network) }
         super.onStop()
@@ -170,10 +178,16 @@ class MainActivity : ComponentActivity() {
     /**
      * A test build can be handed a tag from a computer, since an emulator has no NFC:
      * `adb shell am start -n com.techazsure.deskless/.MainActivity --es tag 04A1B2C3`.
+     * In the same way `--es answer "Ravi, by Friday"` answers the question the phone is asking aloud,
+     * since an emulator has no voice.
      */
     private fun simulatedTag(intent: Intent?) {
         if (applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE == 0) return
         intent?.getStringExtra("tag")?.takeIf { it.isNotBlank() }?.let { state.onTag(it, intent.getStringExtra("tagText")) }
+        intent?.getStringExtra("answer")?.takeIf { it.isNotBlank() }?.let {
+            state.pretendAnswer(it)
+            state.user.pretend(it)
+        }
     }
 
     /** Whether the phone has NFC and it is switched on; null when it has none. */
@@ -226,8 +240,10 @@ fun DeskLessApp(state: AppState, lifecycleOwner: LifecycleOwner) {
     // Nothing of the app is reachable until somebody is signed in and, on a phone with a fingerprint set
     // up, has unlocked it.
     val inside = introDone && state.profile != null && state.unlocked
-    LaunchedEffect(inside) {
-        if (!inside) return@LaunchedEffect
+    // Someone who uses a place links with no other phone, so is not asked to let DeskLess find any.
+    val links = state.profile?.usesAPlace != true && !state.userOnly
+    LaunchedEffect(inside, links) {
+        if (!inside || !links) return@LaunchedEffect
         when {
             !state.link.allowed -> allowLink.launch(state.link.permissions)
             state.link.bluetoothOn == false -> runCatching { turnBluetoothOn.launch(Intent(BluetoothAdapter.ACTION_REQUEST_ENABLE)) }
@@ -239,7 +255,8 @@ fun DeskLessApp(state: AppState, lifecycleOwner: LifecycleOwner) {
             .fillMaxSize()
             .background(Ink),
     ) {
-        if (introDone && state.profile == null) {
+        if (introDone && (state.profile == null || state.addingAccount)) {
+            // Nobody is signed in yet, or another person is signing in beside the one in use.
             AccountFlow(state)
         } else if (introDone && !state.unlocked) {
             LockScreen(state)
@@ -266,14 +283,17 @@ fun DeskLessApp(state: AppState, lifecycleOwner: LifecycleOwner) {
         ) { screen ->
             when (screen) {
                 null -> IntroScreen(onFinished = { introDone = true })
-                Screen.Home -> HomeScreen(state)
-                is Screen.Capture -> CaptureScreen(state, lifecycleOwner, screen.retakeId, screen.fix)
+                // Someone who uses a place has a first screen of their own: tell the place, hear what comes back.
+                Screen.Home -> if (state.userOnly || state.profile?.usesAPlace == true) UserHome(state) else HomeScreen(state)
+                is Screen.Capture -> CaptureScreen(state, lifecycleOwner, screen.retakeId, screen.fix, screen.jobId)
                 Screen.Models -> ModelsScreen(state)
                 Screen.Sensors -> SensorsScreen(state)
                 Screen.Reports -> ReportsScreen(state)
                 Screen.Scan -> ScanScreen(state, lifecycleOwner)
                 Screen.Ask -> AskScreen(state)
                 Screen.Radio -> RadioScreen(state)
+                Screen.Scorecard -> ScorecardScreen(state)
+                Screen.MyDesk -> DeskScreen(state)
                 is Screen.Edit -> {
                     val issue = state.issues.firstOrNull { it.id == screen.id }
                     if (issue == null) {
@@ -291,22 +311,26 @@ fun DeskLessApp(state: AppState, lifecycleOwner: LifecycleOwner) {
 
 private fun keyOf(screen: Screen): String = when (screen) {
     Screen.Home -> "home"
-    is Screen.Capture -> "capture-${screen.retakeId}-${screen.fix}"
+    is Screen.Capture -> "capture-${screen.retakeId}-${screen.fix}-${screen.jobId}"
     Screen.Models -> "models"
     Screen.Sensors -> "sensors"
     Screen.Reports -> "reports"
     Screen.Scan -> "scan"
     Screen.Ask -> "ask"
     Screen.Radio -> "radio"
+    Screen.Scorecard -> "scorecard"
+    Screen.MyDesk -> "desk"
     is Screen.Edit -> "edit-${screen.id}"
     is Screen.Report -> "report-${screen.path}"
 }
 
 private fun depthOf(screen: Screen): Int = when (screen) {
     Screen.Home -> 0
-    Screen.Models, Screen.Sensors, Screen.Reports, Screen.Scan, Screen.Ask, Screen.Radio -> 1
+    Screen.Models, Screen.Sensors, Screen.Reports, Screen.Scan, Screen.Ask, Screen.Radio, Screen.MyDesk -> 1
+    // The measurements are opened from the AI screen.
+    Screen.Scorecard -> 2
     // A retake is opened from an issue, so it sits above it; a new capture sits below.
-    is Screen.Capture -> if (screen.retakeId != null) 3 else 1
+    is Screen.Capture -> if (screen.retakeId != null) 3 else if (screen.jobId != null) 2 else 1
     is Screen.Edit -> 2
     is Screen.Report -> 2
 }

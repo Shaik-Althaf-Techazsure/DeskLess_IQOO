@@ -1,7 +1,13 @@
 package com.techazsure.deskless
 
+import android.Manifest
 import android.content.Context
+import android.content.pm.PackageManager
 import android.net.Uri
+import android.os.BatteryManager
+import android.os.Build
+import android.os.SystemClock
+import androidx.core.content.ContextCompat
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
@@ -9,14 +15,22 @@ import androidx.compose.runtime.setValue
 import com.techazsure.deskless.account.AccountStore
 import com.techazsure.deskless.account.Api
 import com.techazsure.deskless.account.ApiError
+import com.techazsure.deskless.account.Desk
+import com.techazsure.deskless.account.DeskJob
+import com.techazsure.deskless.account.Person
 import com.techazsure.deskless.account.LiveWalk
 import com.techazsure.deskless.account.Outbox
 import com.techazsure.deskless.account.PendingSignUp
 import com.techazsure.deskless.account.Profile
+import com.techazsure.deskless.bench.Bench
+import com.techazsure.deskless.bench.Outcome
+import com.techazsure.deskless.bench.Scorecard
+import com.techazsure.deskless.bench.Wav
 import com.techazsure.deskless.capture.Haptics
 import com.techazsure.deskless.capture.Locator
 import com.techazsure.deskless.capture.SiteSensors
 import com.techazsure.deskless.capture.TagBook
+import com.techazsure.deskless.capture.WavRecorder
 import com.techazsure.deskless.data.Check
 import com.techazsure.deskless.data.Inspection
 import com.techazsure.deskless.structure.Expiry
@@ -43,9 +57,22 @@ import com.techazsure.deskless.report.ReportPack
 import com.techazsure.deskless.report.Review
 import com.techazsure.deskless.report.Reviewer
 import com.techazsure.deskless.report.SignOff
+import com.techazsure.deskless.speech.Spoken
 import com.techazsure.deskless.speech.Transcriber
+import com.techazsure.deskless.structure.Asking
+import com.techazsure.deskless.structure.Commands
+import com.techazsure.deskless.structure.DeskAsk
+import com.techazsure.deskless.structure.DeskCommands
+import com.techazsure.deskless.structure.DeskPlan
+import com.techazsure.deskless.structure.DueDates
+import com.techazsure.deskless.structure.Field
 import com.techazsure.deskless.structure.Fields
+import com.techazsure.deskless.structure.Gap
+import com.techazsure.deskless.structure.Guard
+import com.techazsure.deskless.structure.Memory
+import com.techazsure.deskless.structure.Plan
 import com.techazsure.deskless.structure.Rules
+import com.techazsure.deskless.structure.Source
 import com.techazsure.deskless.structure.Structurer
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -67,9 +94,10 @@ sealed interface Screen {
 
     /**
      * The camera. With [retakeId] it works on that issue instead of adding a new one: it replaces the
-     * picture, or with [fix] it adds the picture taken after the repair.
+     * picture, or with [fix] it adds the picture taken after the repair. With [jobId] it photographs the
+     * repair of a job that came from the office, and goes back to the desk.
      */
-    data class Capture(val retakeId: String? = null, val fix: Boolean = false) : Screen
+    data class Capture(val retakeId: String? = null, val fix: Boolean = false, val jobId: String? = null) : Screen
     data object Models : Screen
 
     /** The phone's sensors, live: what DeskLess measures with and whether each one is working. */
@@ -86,6 +114,12 @@ sealed interface Screen {
 
     /** Push to talk with the linked phones, with no internet. */
     data object Radio : Screen
+
+    /** The app's own measurements of its models on this phone: how right, how fast, how much battery. */
+    data object Scorecard : Screen
+
+    /** What waits for the signed-in person at the office, said aloud and acted on by voice. */
+    data object MyDesk : Screen
     data class Edit(val id: String) : Screen
 
     /** One built report. [fromLibrary] is where Back goes: the library, or the current walk. */
@@ -133,6 +167,17 @@ class AppState(
     private val modelWork = Executors.newSingleThreadExecutor { Thread(it, "models") }.asCoroutineDispatcher()
     private val transcriber = Transcriber(models)
     private val structurer = Structurer(models, cacheDir)
+    private val app: Context = context.applicationContext
+    private val settings = context.getSharedPreferences("walk-settings", Context.MODE_PRIVATE)
+
+    /** The language notes are spoken in; the speech model is told, and writes them down in English. */
+    var spoken by mutableStateOf(Spoken.named(settings.getString("spoken", null)))
+        private set
+
+    fun speakIn(choice: Spoken) {
+        spoken = choice
+        settings.edit().putString("spoken", choice.name).apply()
+    }
 
     var inspection by mutableStateOf(Inspection())
         private set
@@ -218,6 +263,7 @@ class AppState(
         val entry = library.record(file, inspection, issues, flagged = issues.count(::needsALook), review = review)
         reports.removeAll { it.fileName == entry.fileName }
         reports.add(0, entry)
+        issues.forEach { learn(it.id) }
         queueForOffice(file, inspection, issues, review)
     }
 
@@ -394,7 +440,9 @@ class AppState(
     // Once signed in, the phone holds the sign-in and the person's details: capturing, the models and
     // building a report work with no network, and a report built offline is sent when the network is back.
 
-    private val account = AccountStore(context)
+    /** True in the edition handed to the people who use a place: it shows their side and nothing else. */
+    val userOnly = Edition.userOnly(context)
+    private val account = AccountStore(context).also { if (userOnly) it.keepOnlyUsers() }
     private val filesDir: File = context.filesDir
     private val api = Api { account.server }
 
@@ -412,6 +460,63 @@ class AppState(
 
     /** True once the app has been unlocked in this run, by signing in or with the fingerprint. */
     var unlocked by mutableStateOf(false)
+
+    /** The app as someone who uses a place has it: telling the place what they noticed, and hearing what comes back. */
+    val user = UserSide(
+        context, scope, modelWork, transcriber, structurer, voice, haptics, api,
+        token = { account.token }, who = { profile }, language = { spoken.code },
+        speechReady = { speechReady }, gemmaReady = { gemmaReady }, cacheDir = cacheDir,
+    )
+
+    /** The other people signed in on this phone; it changes to one of them with a tap. */
+    val otherAccounts = mutableStateListOf<Profile>().apply { addAll(account.others) }
+
+    /** True while another person is signing in beside the one in use. */
+    var addingAccount by mutableStateOf(false)
+
+    /** Changes to another person signed in on this phone: their desk, their name on what is sent. */
+    fun switchAccount(uniqueId: String) {
+        val leaving = profile
+        if (account.switchTo(uniqueId)) becomeWhoIsSignedIn(leaving)
+    }
+
+    /**
+     * The phone has changed hands: everything that belongs to a person follows whoever is signed in now.
+     * A walk in hand stays with the one who began it, and is not sent to the office under another name.
+     */
+    private fun becomeWhoIsSignedIn(leaving: Profile?) {
+        if (leaving != null && issues.isNotEmpty() && settings.getString(WALK_OWNER, "").isNullOrBlank()) {
+            settings.edit().putString(WALK_OWNER, leaving.uniqueId).apply()
+        }
+        val person = account.profile
+        profile = person
+        otherAccounts.clear()
+        otherAccounts.addAll(account.others)
+        addingAccount = false
+        toldToSignIn = false
+        photoVersion++
+        voice.hush()
+        desk = null
+        deskBriefing = ""
+        deskSaid = ""
+        deskAnswer = ""
+        deskPlan = null
+        deskTrouble = null
+        repair = null
+        deskFile.delete()
+        user.changedHands()
+        if (person == null) return
+        // Someone who uses a place has one first screen: wherever the phone was, it goes there.
+        if (person.usesAPlace) screen = Screen.Home
+        link.rename(person.name)
+        notice = "This phone is now ${person.name}, ${person.roleName}."
+        scope.launch {
+            online { api.photo(account.token, account.photo) }
+            photoVersion++
+        }
+        checkIn()
+        refreshDesk(aloud = screen == Screen.MyDesk)
+    }
 
     /** The signed-in person's photo, and a number that changes when the file does. */
     val accountPhoto: File get() = account.photo
@@ -435,6 +540,17 @@ class AppState(
         online { api.signUp(fields, photo) }.fold(
             onSuccess = { answer ->
                 account.waitingFor(PendingSignUp(answer.getString("email"), answer.getString("ticket"), fields["name"].orEmpty()))
+                pending = account.pending
+                null
+            },
+            onFailure = ::why,
+        )
+
+    /** The short sign-up of someone who uses a place: a name, an email address and a password. Null when it went through. */
+    suspend fun signUpUser(name: String, email: String, phone: String, password: String): String? =
+        online { api.signUpUser(name, email, phone, password) }.fold(
+            onSuccess = { answer ->
+                account.waitingFor(PendingSignUp(answer.getString("email"), answer.getString("ticket"), name))
                 pending = account.pending
                 null
             },
@@ -482,17 +598,22 @@ class AppState(
         online {
             val answer = api.login(uniqueId.trim(), password)
             val token = answer.getString("token")
+            val person = Profile.from(answer.getJSONObject("profile"))
+            // The edition for people who use a place has nothing of an organisation's own work in it.
+            if (userOnly && !person.usesAPlace) {
+                throw ApiError("This is DeskLess User, for the people who use a place. As ${person.roleName}, sign in on the DeskLess app of your organisation.")
+            }
             api.photo(token, account.photo)
-            token to Profile.from(answer.getJSONObject("profile"))
+            token to person
         }.fold(
             onSuccess = { (token, person) ->
+                val leaving = profile
                 account.signedIn(token, person)
                 pending = null
-                profile = person
                 unlocked = true
-                photoVersion++
-                if (inspection.inspector.isBlank()) updateInspection(inspection.site, person.name) else link.rename(person.name)
-                toldToSignIn = false
+                // Someone signing in beside another takes the phone over; the other stays signed in.
+                becomeWhoIsSignedIn(leaving)
+                if (inspection.inspector.isBlank()) updateInspection(inspection.site, person.name)
                 // The company's own report types, and the one it starts its walks with, come with the first check-in.
                 checkIn()
                 sendWalk()
@@ -619,6 +740,9 @@ class AppState(
      */
     fun sendWalk() {
         if (profile == null || account.token.isBlank()) return
+        // A walk goes to the office under the name of the person who began it, whoever holds the phone now.
+        val owner = settings.getString(WALK_OWNER, "")
+        if (!owner.isNullOrBlank() && owner != profile?.uniqueId) return
         // A note still being turned into text or into fields would go out half done; it goes when it is ready.
         if (transcribing.isNotEmpty() || structuring.isNotEmpty()) {
             walkChanged()
@@ -652,6 +776,9 @@ class AppState(
         sendWalk()
         sendToOffice()
         fetchModelsIfMissing()
+        // What has newly arrived at the person's desk is announced; the briefing waits until the desk is opened.
+        refreshDesk(aloud = false)
+        user.comeOnline()
     }
 
     /**
@@ -685,10 +812,14 @@ class AppState(
 
     /** Signs out of this phone. The inspection in progress and the reports stay where they are. */
     fun signOut() {
+        val leaving = profile
         account.signOut()
-        profile = null
-        unlocked = false
-        screen = Screen.Home
+        // Whoever else is signed in on this phone takes over; with nobody left, it is back at the welcome.
+        becomeWhoIsSignedIn(leaving)
+        if (profile == null) {
+            unlocked = false
+            screen = Screen.Home
+        }
     }
 
     fun fileOf(name: String): File = store.file(name)
@@ -712,8 +843,12 @@ class AppState(
         return issue
     }
 
-    /** The first issue of a walk has no previous one to count steps from. */
-    private fun forNewIssue(stamp: Stamp?): Stamp? = if (issues.isEmpty()) stamp?.copy(steps = null) else stamp
+    /** The first issue of a walk has no previous one to count steps from. It also makes the walk its reporter's. */
+    private fun forNewIssue(stamp: Stamp?): Stamp? {
+        if (issues.isNotEmpty()) return stamp
+        settings.edit().putString(WALK_OWNER, profile?.uniqueId.orEmpty()).apply()
+        return stamp?.copy(steps = null)
+    }
 
     /** Attaches a reading taken with one of the phone's instruments. */
     fun addReading(id: String, reading: Reading) {
@@ -908,7 +1043,7 @@ class AppState(
             // A speech model handed silence makes a sentence up. A recording with no voice in it is not
             // given to it at all.
             val heard = if (withContext(Dispatchers.IO) { loudness(askFile()) } < QUIET) "" else
-                withContext(modelWork) { runCatching { transcriber.toEnglish(askFile()) } }.getOrNull().orEmpty().trim()
+                spoken.code.let { language -> withContext(modelWork) { runCatching { transcriber.toEnglish(askFile(), language) } } }.getOrNull().orEmpty().trim()
             if (heard.isBlank()) {
                 askQuestion = "(nothing was heard)"
                 askAnswer = "No question was heard. Try again, a little closer to the phone."
@@ -928,6 +1063,14 @@ class AppState(
         askQuestion = question
         askAnswer = ""
         askSeconds = 0f
+        plan = null
+        canUndo = false
+        // "New issue" and "take a picture" need no model to understand.
+        if (Commands.wantsCapture(question)) {
+            askBusy = null
+            act(Plan.Capture)
+            return
+        }
         if (issues.isEmpty()) {
             askAnswer = "There are no issues on this walk yet, so there is nothing to answer from."
             askBusy = null
@@ -938,8 +1081,24 @@ class AppState(
             askBusy = null
             return
         }
-        askBusy = "Thinking, on this phone…"
         val lines = walkLines()
+        // Something to do, not something to answer: the model says which action and with what values,
+        // and Commands checks every part of that before anything is shown as about to change.
+        if (Commands.looksLikeOne(question)) {
+            askBusy = "Working out what to do, on this phone…"
+            val listed = issues.toList()
+            val template = inspection.template
+            val command = withContext(modelWork) { runCatching { structurer.command(question, lines, template) }.getOrNull() }
+            gemmaBackend = structurer.backend
+            val made = command?.let { Commands.plan(it, question, listed, template, memory, inspection.site) }
+            if (made != null && made != Plan.Question) {
+                askSeconds = structurer.lastSeconds
+                askBusy = null
+                act(made)
+                return
+            }
+        }
+        askBusy = "Thinking, on this phone…"
         val said = withContext(modelWork) { runCatching { structurer.answer(question, lines, inspection.template) }.getOrNull() }
         gemmaBackend = structurer.backend
         askSeconds = if (said != null) structurer.lastSeconds else 0f
@@ -1054,6 +1213,8 @@ class AppState(
         val at = issues.indexOfFirst { it.id == id }
         if (at < 0) return
         deleteFiles(issues.removeAt(at))
+        memory.unlearn(id)
+        memoryChanged++
         persist()
     }
 
@@ -1073,9 +1234,10 @@ class AppState(
     fun startNewInspection() {
         issues.forEach(::deleteFiles)
         issues.clear()
-        inspection = Inspection(inspector = inspection.inspector, template = inspection.template)
+        inspection = Inspection(inspector = profile?.name ?: inspection.inspector, template = inspection.template)
         filter = Filter.All
         place = ""
+        settings.edit().remove(WALK_OWNER).apply()
         persist()
     }
 
@@ -1091,9 +1253,10 @@ class AppState(
             return
         }
         transcribing.add(id)
+        val language = spoken.code
         scope.launch {
             val result = withContext(modelWork) {
-                runCatching { transcriber.toEnglish(store.file(voice)) }
+                runCatching { transcriber.toEnglish(store.file(voice), language) }
             }
             transcribing.remove(id)
             if (transcribeAgain.remove(id)) {
@@ -1139,6 +1302,8 @@ class AppState(
                     // The motor says how it came out, so the inspector need not look: serious, or just done.
                     val rated = issues.firstOrNull { issue -> issue.id == id }?.severity ?: Severity.MEDIUM
                     if (rated.ordinal >= Severity.HIGH.ordinal) haptics.alert() else haptics.filled()
+                    // What the note left out, the phone asks for aloud, once.
+                    askBackIfWanted(id)
                 }
                 .onFailure {
                     applyFields(id, Rules.structure(note))
@@ -1147,30 +1312,977 @@ class AppState(
         }
     }
 
-    private fun applyFields(id: String, fields: Fields, seconds: Float = 0f, backend: String = "") = edit(id) {
-        // An expiry date the model read off the pack and that has passed makes the issue expired stock,
-        // rated High at least, whatever the note said.
-        val expired = Expiry.parse(fields.expiry)?.let(Expiry::isExpired) == true
-        val expiredType = inspection.template.categories.firstOrNull { type -> type.startsWith("Expired") }
-        val severity = fields.severity ?: it.severity
-        it.copy(
-            title = fields.title.ifBlank { it.title },
-            // The spoken location is joined to the tagged place and to where the camera was aimed.
-            location = if (fields.location.isBlank()) {
-                it.location
+    private fun applyFields(id: String, fields: Fields, seconds: Float = 0f, backend: String = "") {
+        val note = issues.firstOrNull { it.id == id }?.note ?: return
+        // Nothing the model wrote reaches the report before it has been held against what was said.
+        val checked = Guard.check(fields, note, memory, inspection.site)
+        val kept = checked.fields
+        edit(id) {
+            // An expiry date the model read off the pack and that has passed makes the issue expired stock,
+            // rated High at least, whatever the note said.
+            val expired = Expiry.parse(kept.expiry)?.let(Expiry::isExpired) == true
+            val expiredType = inspection.template.categories.firstOrNull { type -> type.startsWith("Expired") }
+            val sources = HashMap(it.sources)
+            // What a person typed, said in answer or set by voice is theirs: the model does not write over it.
+            fun mine(field: String) = Source.of(it.sources[field]) in OWN_WORDS
+            fun take(field: String, old: String, new: String): String =
+                if (new.isBlank() || mine(field)) old else new.also { checked.sources[field]?.let { from -> sources[field] = from.key } }
+            val severity = if (kept.severity == null || mine(Field.SEVERITY)) it.severity else kept.severity.also {
+                checked.sources[Field.SEVERITY]?.let { from -> sources[Field.SEVERITY] = from.key }
+            }
+            val owner = take(Field.OWNER, it.owner, kept.owner)
+            val due = take(Field.DUE, it.dueDate, kept.dueDate)
+            val placed = kept.location.isNotBlank() && !mine(Field.LOCATION)
+            if (placed) checked.sources[Field.LOCATION]?.let { from -> sources[Field.LOCATION] = from.key }
+            // A suggestion is kept aside only for a field that is still empty: a filled one needs none.
+            val held = checked.held.filter { (field, _) ->
+                when (field) {
+                    Field.OWNER -> owner.isBlank()
+                    Field.DUE -> due.isBlank()
+                    else -> !placed && locationIsPhones(it)
+                }
+            }
+            it.copy(
+                title = take(Field.TITLE, it.title, kept.title),
+                // The spoken location is joined to the tagged place and to where the camera was aimed.
+                location = if (placed) Readings.location(it.place, kept.location, Readings.aim(it.stamp?.pitch)) else it.location,
+                severity = if (expired && severity.ordinal < Severity.HIGH.ordinal) Severity.HIGH else severity,
+                owner = owner,
+                dueDate = due,
+                category = if (expired && expiredType != null) expiredType else take(Field.CATEGORY, it.category, kept.category),
+                check = kept.check,
+                seen = kept.seen,
+                aiSeconds = seconds,
+                aiBackend = backend,
+                expiry = kept.expiry,
+                sources = sources,
+                held = held,
+            )
+        }
+        // What the model wrote is remembered beside the issue, so a correction made to it can be learned from.
+        issues.firstOrNull { it.id == id }?.let { now -> wrote[id] = now.owner to placeSaid(now) }
+        learn(id)
+    }
+
+    // ---------------------------------------------------------------- where each field came from, and what the phone has learned
+    //
+    // Every field of an issue carries where its value came from: heard in the note, seen in the picture,
+    // from the phone itself, asked for, set by voice, typed, or the model's own judgement. A name, a place
+    // or a date the model offers that nobody said is kept out of the report (see Guard). And the phone
+    // learns who gets given work and what the places are called, from the fields as the inspector leaves
+    // them (see Memory).
+
+    /** Who gets given work and what the places are called, learned on this phone. */
+    val memory = Memory(File(context.filesDir, "memory.json"))
+
+    /** Changes whenever [memory] does, so a screen showing it draws again. */
+    var memoryChanged by mutableStateOf(0)
+        private set
+
+    /** The owner and the place the model wrote for an issue, by its id, until the app closes. */
+    private val wrote = HashMap<String, Pair<String, String>>()
+
+    /** Where a field's value came from; null when the field is empty or nothing is known of it. */
+    fun sourceOf(issue: Issue, field: String): Source? = when {
+        field == Field.LOCATION && issue.location.isNotBlank() && locationIsPhones(issue) -> Source.PHONE
+        else -> Source.of(issue.sources[field])
+    }
+
+    /** A field changed by the person's own hand: it is marked as theirs, and the model will not write over it. */
+    fun typed(id: String, field: String, change: (Issue) -> Issue) = edit(id) {
+        val next = change(it)
+        val empty = when (field) {
+            Field.TITLE -> next.title
+            Field.LOCATION -> next.location
+            Field.OWNER -> next.owner
+            Field.DUE -> next.dueDate
+            Field.CATEGORY -> next.category
+            else -> "set"
+        }.isBlank()
+        next.copy(sources = if (empty) next.sources - field else next.sources + (field to Source.TYPED.key), held = next.held - field)
+    }
+
+    /** Takes a value the guard kept out: the inspector says it is right after all. */
+    fun acceptHeld(id: String, field: String) {
+        typed(id, field) {
+            val value = it.held[field].orEmpty()
+            when (field) {
+                Field.OWNER -> it.copy(owner = value)
+                Field.DUE -> it.copy(dueDate = value)
+                else -> it.copy(location = Readings.location(it.place, value, Readings.aim(it.stamp?.pitch)))
+            }
+        }
+        learn(id)
+    }
+
+    fun dropHeld(id: String, field: String) = edit(id) { it.copy(held = it.held - field) }
+
+    /** The place a person named for an issue, without the tagged place and the camera's aim that the phone adds. */
+    private fun placeSaid(issue: Issue): String =
+        if (locationIsPhones(issue)) "" else Memory.placeIn(issue.location.removePrefix(issue.place).trimStart(',', ' '))
+
+    /**
+     * Learns from an issue as it now stands: who it was given to and what its place is called. Where the
+     * inspector changed a name the model had written, the change itself is remembered, so the same
+     * mishearing is put right by the phone the next time. Called when the model has filled the fields,
+     * when the inspector leaves the issue, and when a report is built.
+     */
+    fun learn(id: String) {
+        val issue = issues.firstOrNull { it.id == id } ?: return
+        val place = placeSaid(issue)
+        memory.learn(id, inspection.site, issue.owner, place)
+        wrote[id]?.let { (owner, spot) ->
+            if (issue.owner.isNotBlank() && Source.of(issue.sources[Field.OWNER]) == Source.TYPED) memory.correctedPerson(owner, issue.owner)
+            if (place.isNotBlank() && Source.of(issue.sources[Field.LOCATION]) == Source.TYPED) memory.correctedPlace(spot, place, inspection.site)
+        }
+        memoryChanged++
+    }
+
+    /** People and teams to offer for an issue that has nobody yet: the ones given work most often. */
+    fun peopleToOffer(): List<String> = memory.people(4)
+
+    /** Places on this site to offer for an issue nobody has placed. */
+    fun placesToOffer(): List<String> = memory.places(inspection.site, 4)
+
+    fun forgetPerson(name: String) {
+        memory.forgetPerson(name)
+        memoryChanged++
+    }
+
+    fun forgetPlace(name: String, site: String) {
+        memory.forgetPlace(name, site)
+        memoryChanged++
+    }
+
+    // ---------------------------------------------------------------- asking back
+    //
+    // A note often leaves out where the problem is, who should deal with it or by when. The phone then
+    // asks, aloud, one question for whatever is missing, listens for the answer, and fills the fields
+    // from it. Nothing the answer does not say is written.
+
+    enum class AskPhase { SPEAKING, LISTENING, THINKING, DONE, UNHEARD }
+
+    /** A question the phone is asking about one issue, and how far it has got. */
+    data class AskBack(
+        val id: String,
+        val phase: AskPhase,
+        val question: String,
+        val gaps: List<Gap>,
+        /** What the answer was heard as, in English. */
+        val heard: String = "",
+        /** The fields the answer filled, as a person calls them. */
+        val filled: List<String> = emptyList(),
+        /** How loud the microphone is right now, 0 to 1. */
+        val level: Float = 0f,
+    )
+
+    var askBack by mutableStateOf<AskBack?>(null)
+        private set
+
+    /** Whether the phone asks by itself when a note leaves something out; otherwise only when told to. */
+    var asksBack by mutableStateOf(settings.getBoolean("asksBack", true))
+        private set
+
+    fun letAskBack(on: Boolean) {
+        asksBack = on
+        settings.edit().putBoolean("asksBack", on).apply()
+        if (!on) cancelAskBack()
+    }
+
+    private var askBackJob: Job? = null
+    private val answerRecorder = WavRecorder()
+    private var answerEnded = false
+
+    /** In a test build, an answer handed over from a computer, standing in for the microphone. */
+    private var answerGiven: String? = null
+
+    private fun answerFile(): File = File(cacheDir, "answer.wav")
+
+    /** What a report needs that this issue does not have yet. A tagged place counts as knowing where. */
+    fun gapsOf(issue: Issue): List<Gap> =
+        Asking.gaps(placed = issue.place.isNotBlank() || !locationIsPhones(issue), owner = issue.owner, due = issue.dueDate)
+
+    /** After the model has filled an issue: asks for what is missing, if the issue is the one on screen and has not been asked before. */
+    private fun askBackIfWanted(id: String) {
+        if (!asksBack || askBack != null || (screen as? Screen.Edit)?.id != id) return
+        val issue = issues.firstOrNull { it.id == id } ?: return
+        if (!issue.asked && gapsOf(issue).isNotEmpty()) askBack(id)
+    }
+
+    /** Asks aloud for what issue [id] lacks, listens, and fills the fields from the answer. */
+    fun askBack(id: String) {
+        val issue = issues.firstOrNull { it.id == id } ?: return
+        val gaps = gapsOf(issue)
+        if (gaps.isEmpty() || !speechReady) return
+        cancelAskBack()
+        val question = Asking.question(gaps)
+        edit(id) { it.copy(asked = true) }
+        askBack = AskBack(id, AskPhase.SPEAKING, question, gaps)
+        answerEnded = false
+        answerGiven = null
+        askBackJob = scope.launch {
+            try {
+                voice.sayAndWait(question)
+                // A moment for the room to go quiet, so the phone does not hear its own question.
+                delay(250)
+                val allowed = ContextCompat.checkSelfPermission(app, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
+                if (!allowed || !answerRecorder.start(answerFile())) {
+                    askBack = null
+                    notice = "The microphone could not be opened for your answer. Type it in the fields below."
+                    return@launch
+                }
+                haptics.listening()
+                askBack = askBack?.copy(phase = AskPhase.LISTENING)
+                listenForAnswer()
+                answerRecorder.stop()
+                haptics.heard()
+                askBack = askBack?.copy(phase = AskPhase.THINKING, level = 0f)
+                val language = spoken.code
+                val heard = answerGiven ?: if (withContext(Dispatchers.IO) { loudness(answerFile()) } < QUIET) "" else
+                    withContext(modelWork) { runCatching { transcriber.toEnglish(answerFile(), language) } }.getOrNull().orEmpty().trim()
+                if (heard.isBlank()) {
+                    askBack = askBack?.copy(phase = AskPhase.UNHEARD)
+                    return@launch
+                }
+                val filled = takeAnswer(id, question, gaps, heard)
+                askBack = askBack?.copy(phase = AskPhase.DONE, heard = heard, filled = filled)
+                if (filled.isNotEmpty()) {
+                    haptics.filled()
+                    voice.say("Noted.")
+                }
+            } finally {
+                answerRecorder.stop()
+            }
+        }
+    }
+
+    /** Waits while the person answers: until they have spoken and then gone quiet, or nobody speaks, or it has gone on too long. */
+    private suspend fun listenForAnswer() {
+        val started = SystemClock.elapsedRealtime()
+        var spokeAt = 0L
+        var lastLoud = 0L
+        var floor = 1f
+        while (!answerEnded) {
+            delay(80)
+            val now = SystemClock.elapsedRealtime()
+            val level = answerRecorder.level
+            askBack = askBack?.copy(level = level)
+            // The room's own noise is the quietest the microphone has been; a voice stands well above it.
+            if (now - started > 200) floor = minOf(floor, level)
+            if (level > maxOf(ANSWER_LEVEL, floor * 3f)) {
+                if (spokeAt == 0L) spokeAt = now
+                lastLoud = now
+            }
+            val waited = now - started
+            if (spokeAt == 0L && waited > ANSWER_WAIT_MS) break
+            if (spokeAt != 0L && now - lastLoud > ANSWER_PAUSE_MS) break
+            if (waited > ANSWER_LIMIT_MS) break
+        }
+    }
+
+    /** The person says they have finished answering, without waiting for the pause to be noticed. */
+    fun endAnswer() {
+        answerEnded = true
+    }
+
+    /** For a test build on an emulator, which has no voice to answer with: [words] are taken as what was answered. */
+    fun pretendAnswer(words: String) {
+        if (askBack?.phase != AskPhase.LISTENING) return
+        answerGiven = words
+        answerEnded = true
+    }
+
+    /** Stops the question, the listening and the card, as when the person starts doing something else. */
+    fun cancelAskBack() {
+        askBackJob?.cancel()
+        askBackJob = null
+        if (askBack?.phase == AskPhase.SPEAKING) voice.hush()
+        answerRecorder.stop()
+        askBack = null
+    }
+
+    /** Puts the card away once it has said what it filled. */
+    fun closeAskBack() {
+        if (askBack?.phase == AskPhase.DONE || askBack?.phase == AskPhase.UNHEARD) askBack = null
+    }
+
+    /**
+     * Fills what was asked for from the spoken answer and gives back the names of the fields filled. The
+     * model reads the answer; each value is then held against the answer's own words, and only fields
+     * that were asked about are touched. The answer is added to the note, where the report shows it.
+     */
+    private suspend fun takeAnswer(id: String, question: String, gaps: List<Gap>, heard: String): List<String> {
+        val template = inspection.template
+        val read = if (!gemmaReady) null else
+            withContext(modelWork) { runCatching { structurer.followUp(question, heard, template) }.getOrNull() }
+        gemmaBackend = structurer.backend
+        val checked = read?.let { Guard.check(it, heard, memory, inspection.site).fields }
+        // With no model to read it, the answer to a single question is taken as it stands.
+        val whole = if (checked == null && gaps.size == 1) Asking.direct(heard) else ""
+        val filled = ArrayList<String>()
+        edit(id) { issue ->
+            var next = issue
+            val sources = HashMap(issue.sources)
+            for (gap in gaps) {
+                val value = when (gap) {
+                    Gap.WHERE -> checked?.location ?: whole
+                    Gap.WHO -> checked?.owner ?: whole.let { memory.person(it) ?: it }
+                    Gap.WHEN -> checked?.dueDate ?: DueDates.resolve(whole)
+                }
+                if (value.isBlank()) continue
+                next = when (gap) {
+                    Gap.WHERE -> next.copy(location = Readings.location(next.place, value, Readings.aim(next.stamp?.pitch)))
+                    Gap.WHO -> next.copy(owner = value)
+                    Gap.WHEN -> next.copy(dueDate = value)
+                }
+                sources[gap.field] = Source.ASKED.key
+                filled.add(if (gap == Gap.WHO) template.ownerLabel else if (gap == Gap.WHERE) "Location" else "Due")
+            }
+            if (filled.isEmpty()) issue else next.copy(
+                sources = sources,
+                held = issue.held - gaps.map { it.field }.toSet(),
+                note = issue.note.trimEnd().let { if (it.isEmpty()) heard else "$it $heard" },
+            )
+        }
+        if (filled.isNotEmpty()) learn(id)
+        return filled
+    }
+
+    // ---------------------------------------------------------------- telling the app what to do
+    //
+    // "Mark issue 3 critical, give it to Ravi, due Friday." The model on the phone reads the instruction
+    // and says which of a few actions it is and with what values; plain code checks every part of that
+    // (see Commands) and lists exactly what will change. Nothing changes until the person taps Do it,
+    // and one tap puts it back.
+
+    /** Changes a spoken instruction asks for, waiting for the person's yes. */
+    var plan by mutableStateOf<Plan.Changes?>(null)
+        private set
+
+    /** True when the last changes made by voice can still be put back. */
+    var canUndo by mutableStateOf(false)
+        private set
+    private var beforePlan: List<Issue> = emptyList()
+
+    private fun act(made: Plan) {
+        when (made) {
+            is Plan.Changes -> {
+                plan = made
+                val count = made.list.size
+                askAnswer = "I will make $count change${if (count == 1) "" else "s"}. Nothing is changed until you tap Do it."
+                voice.say(Commands.spoken(made) + " Tap Do it to make the change${if (count == 1) "" else "s"}.")
+            }
+            is Plan.Show -> {
+                filter = made.filter
+                askAnswer = "Showing ${made.words}."
+                voice.say(askAnswer)
+                screen = Screen.Home
+            }
+            is Plan.Open -> {
+                askAnswer = "Opening issue ${made.number}."
+                voice.say(askAnswer)
+                screen = Screen.Edit(made.issueId)
+            }
+            is Plan.Refused -> {
+                askAnswer = made.why
+                voice.say(made.why)
+            }
+            Plan.Capture -> {
+                askAnswer = "Opening the camera for a new issue."
+                voice.say(askAnswer)
+                screen = Screen.Capture()
+            }
+            Plan.Question -> Unit
+        }
+    }
+
+    /** Makes the changes the person has just agreed to. */
+    fun doPlan() {
+        val made = plan ?: return
+        val touched = made.list.map { it.issueId }.distinct()
+        beforePlan = issues.filter { it.id in touched }
+        made.list.forEach { change ->
+            edit(change.issueId) { issue ->
+                when (change.field) {
+                    Field.SEVERITY -> issue.copy(severity = Severity.entries.firstOrNull { it.label == change.to } ?: issue.severity)
+                    Field.OWNER -> issue.copy(owner = change.to)
+                    Field.DUE -> issue.copy(dueDate = change.to)
+                    Field.LOCATION -> issue.copy(location = change.to)
+                    else -> issue.copy(category = change.to)
+                }.let { it.copy(sources = it.sources + (change.field to Source.TOLD.key), held = it.held - change.field) }
+            }
+        }
+        touched.forEach(::learn)
+        plan = null
+        canUndo = true
+        askAnswer = "Done: " + Commands.spoken(made)
+        haptics.filled()
+        voice.say("Done.")
+    }
+
+    fun dropPlan() {
+        plan = null
+        askAnswer = "Nothing was changed."
+    }
+
+    /** Puts the issues back as they were before the last changes made by voice. */
+    fun undoPlan() {
+        if (!canUndo) return
+        beforePlan.forEach { old -> edit(old.id) { old } }
+        beforePlan.forEach { learn(it.id) }
+        beforePlan = emptyList()
+        canUndo = false
+        askAnswer = "Put back as it was."
+    }
+
+    // ---------------------------------------------------------------- measuring the models on this phone
+    //
+    // A fixed set of notes (see Bench) is run through the same models and the same guard as a real note,
+    // on the phone, and marked: how many report fields came out right, whether anything was made up, how
+    // long each step took and what it cost the battery. The last run is kept and shown.
+
+    private val scoreFile = File(context.filesDir, "scorecard.json")
+
+    /** The last measurements taken on this phone; while a run is going, the notes done so far. */
+    var scorecard by mutableStateOf(runCatching { Scorecard.from(JSONObject(scoreFile.readText())) }.getOrNull())
+        private set
+
+    /** What the run is doing now, in words; null when none is going. */
+    var measuring by mutableStateOf<String?>(null)
+        private set
+    private var measureJob: Job? = null
+
+    /**
+     * Runs the fixed notes: five of them when [quick], otherwise all twenty. With [aloud] each note is
+     * first said by the phone's own voice into a sound file and listened to by the speech model, so the
+     * whole chain is measured; otherwise the text goes straight to the large model.
+     */
+    fun measure(quick: Boolean, aloud: Boolean) {
+        if (measureJob?.isActive == true || !gemmaReady) return
+        val picked = if (quick) Bench.quick else Bench.cases.indices.toList()
+        measureJob = scope.launch {
+            val battery = app.getSystemService(BatteryManager::class.java)
+            val before = battery?.getIntProperty(BatteryManager.BATTERY_PROPERTY_CHARGE_COUNTER) ?: 0
+            val charging = battery?.isCharging == true
+            val language = spoken
+            var listened = aloud && speechReady && voice.ready
+            val outcomes = ArrayList<Outcome>()
+            val raw = File(cacheDir, "measure-said.wav")
+            val wav = File(cacheDir, "measure.wav")
+            fun card(used: Float?) = Scorecard(
+                at = System.currentTimeMillis(),
+                phone = listOf(Build.BRAND, Build.MODEL).filter { it.isNotBlank() }.joinToString(" "),
+                processor = structurer.backend.orEmpty(),
+                language = language.label,
+                spoken = listened,
+                outcomes = outcomes.toList(),
+                usedMah = used,
+                charging = charging,
+            )
+            try {
+                for ((done, index) in picked.withIndex()) {
+                    val case = Bench.cases[index]
+                    val step = "Note ${done + 1} of ${picked.size}"
+                    var heard: String? = null
+                    var speechSeconds = 0f
+                    if (listened) {
+                        measuring = "$step: the phone reads it aloud to itself…"
+                        val made = voice.toFile(case.note, raw) && withContext(Dispatchers.IO) { Wav.to16k(raw, wav) }
+                        // A phone whose voice cannot be recorded this way is measured from the text alone.
+                        if (!made && outcomes.isEmpty()) listened = false
+                        if (made) {
+                            measuring = "$step: speech to English…"
+                            heard = withContext(modelWork) { runCatching { transcriber.toEnglish(wav, language.code) }.getOrNull() }.orEmpty()
+                            speechSeconds = transcriber.lastSeconds
+                        }
+                    }
+                    val note = if (listened) heard.orEmpty() else case.note
+                    measuring = "$step: note to report fields…"
+                    val result = if (note.isBlank()) Result.failure(IllegalStateException("Nothing was heard.")) else
+                        withContext(modelWork) { runCatching { structurer.structure(note, emptyList(), Template.SITE) } }
+                    gemmaBackend = structurer.backend
+                    // The same guard as a real note goes through, with no memory, so every run is alike.
+                    val checked = result.getOrNull()?.let { Guard.check(it, note) }
+                    outcomes.add(
+                        Outcome(
+                            number = index + 1,
+                            note = case.note,
+                            heard = if (listened) heard.orEmpty() else null,
+                            wordsRight = if (listened) Bench.wordsRight(case.note, heard.orEmpty()) else null,
+                            // A note that could not be run has every field marked wrong.
+                            marks = Bench.mark(case, checked?.fields ?: Fields("", "", null, "", "")).let { marks ->
+                                if (checked == null) marks.map { it.copy(right = false, madeUp = false) } else marks
+                            },
+                            speechSeconds = speechSeconds,
+                            fieldSeconds = if (checked == null) 0f else structurer.lastSeconds,
+                            keptOut = checked?.held?.size ?: 0,
+                            failed = result.exceptionOrNull()?.message,
+                        )
+                    )
+                    scorecard = card(null)
+                }
+            } finally {
+                val after = battery?.getIntProperty(BatteryManager.BATTERY_PROPERTY_CHARGE_COUNTER) ?: 0
+                // The gauge counts in millionths of an amp-hour; some phones do not give it at all.
+                val used = if (before > 0 && after > 0) (before - after) / 1000f else null
+                if (outcomes.isNotEmpty()) {
+                    val last = card(used)
+                    scorecard = last
+                    runCatching { scoreFile.writeText(last.toJson().toString()) }
+                }
+                raw.delete()
+                wav.delete()
+                measuring = null
+            }
+        }
+    }
+
+    fun stopMeasuring() {
+        measureJob?.cancel()
+    }
+
+    // ---------------------------------------------------------------- my desk
+    //
+    // What waits for the signed-in person at the office: the issues the server's assistant says need
+    // them, each with the step it proposes. The phone fetches the list, the model on the phone words a
+    // short briefing, and the phone says it. The person answers by voice: "give the first one to Arjun by
+    // Friday", "tell the manager I will start today", "I fixed job two". The model fills a form,
+    // DeskCommands checks it, the action is shown, and only after Do it does it go to the office, which
+    // checks it again. The list is kept on the phone and can be read with no network; acting on it
+    // needs one.
+
+    private val deskFile = File(context.filesDir, "desk.json")
+
+    var desk by mutableStateOf(runCatching { Desk.kept(deskFile.readText()) }.getOrNull())
+        private set
+
+    /** What the desk is doing right now, in words; null when nothing. */
+    var deskBusy by mutableStateOf<String?>(null)
+        private set
+
+    /** True while what keeps the desk busy is only the wording of its briefing, which anything said to it cuts short. */
+    var deskWording by mutableStateOf(false)
+        private set
+
+    /** True while the desk's microphone is open, so that nothing is said over the person speaking. */
+    var deskHearing by mutableStateOf(false)
+
+    /** Whether the desk can be spoken or typed to right now. */
+    val deskListens: Boolean get() = deskBusy == null || deskWording
+
+    private fun stopWording() {
+        if (!deskWording) return
+        deskWork?.cancel()
+        deskWording = false
+        deskBusy = null
+    }
+
+    /** The briefing as it is shown and said. */
+    var deskBriefing by mutableStateOf(desk?.plain().orEmpty())
+        private set
+
+    /** What was last said to the desk, and what it answered. */
+    var deskSaid by mutableStateOf("")
+        private set
+    var deskAnswer by mutableStateOf("")
+        private set
+
+    /** How long the model on the phone took over the last thing. */
+    var deskSeconds by mutableStateOf(0f)
+        private set
+
+    /** An action waiting for the person's yes. */
+    var deskPlan by mutableStateOf<DeskPlan.Act?>(null)
+        private set
+
+    /** Why the office could not be reached, when it could not; the desk shown is then the one last fetched. */
+    var deskTrouble by mutableStateOf<String?>(null)
+        private set
+
+    /** Whether the desk speaks: the briefing when it is opened, and a line when something new arrives. */
+    var deskSpeaks by mutableStateOf(settings.getBoolean("deskSpeaks", true))
+        private set
+
+    fun letDeskSpeak(on: Boolean) {
+        deskSpeaks = on
+        settings.edit().putBoolean("deskSpeaks", on).apply()
+        if (!on) voice.hush()
+    }
+
+    /**
+     * A picture of a repair, taken for a job the person says they fixed, on its way to the office. The
+     * model on the phone first compares it with the picture the issue was reported with.
+     */
+    data class Repair(
+        val number: Int,
+        val job: DeskJob,
+        val photo: File,
+        val note: String,
+        /** The picture the issue was reported with, once fetched from the office. */
+        val before: File? = null,
+        val checking: Boolean = false,
+        val check: Check = Check.NONE,
+        val seen: String = "",
+    )
+
+    var repair by mutableStateOf<Repair?>(null)
+        private set
+    private var repairPlan: DeskPlan.Act? = null
+    private var deskFetching = false
+    private var deskWork: Job? = null
+
+    /**
+     * Fetches the desk from the office. With [aloud] the briefing is then worded and said; without, only
+     * something newly arrived is announced, in a line.
+     */
+    fun refreshDesk(aloud: Boolean) {
+        if (profile == null || account.token.isBlank()) return
+        // Someone who uses a place has no desk at it: what the place answers them is said by their own screen.
+        if (profile?.usesAPlace == true) return
+        if (deskFetching) return
+        deskFetching = true
+        scope.launch {
+            val before = desk
+            val fetched = online { api.desk(account.token) }
+            deskFetching = false
+            fetched.onFailure { error ->
+                deskTrouble = if ((error as? ApiError)?.status == 401) "Sign in again to see your desk." else why(error)
+                // With no network the desk as it was last fetched is still read out.
+                if (aloud && before != null) briefDesk()
+            }.onSuccess { said ->
+                val at = System.currentTimeMillis()
+                val now = Desk.from(said, at)
+                desk = now
+                deskTrouble = null
+                withContext(Dispatchers.IO) { runCatching { deskFile.writeText(Desk.keep(said, at).toString()) } }
+                val known = before?.waiting?.map { it.id }?.toSet()
+                val arrived = if (known == null) emptyList() else now.waiting.filter { it.id !in known }
+                when {
+                    aloud -> briefDesk()
+                    arrived.isNotEmpty() -> {
+                        deskBriefing = now.plain()
+                        val line = now.announce(arrived.first()) + if (arrived.size > 1) " And ${arrived.size - 1} more." else ""
+                        notice = line
+                        haptics.filled()
+                        // Said aloud only where nothing is being recorded, or the phone would hear itself.
+                        val quiet = deskHearing || screen is Screen.Edit || screen is Screen.Capture || screen == Screen.Ask || screen == Screen.Radio || screen == Screen.Scan
+                        if (deskSpeaks && !quiet) voice.say(line)
+                    }
+                    before == null || before.jobs.map { it.id to it.next.label } != now.jobs.map { it.id to it.next.label } -> deskBriefing = now.plain()
+                }
+            }
+        }
+    }
+
+    private var deskWatch: Job? = null
+
+    /**
+     * While the app is in front, the phone waits on the server: one question that the server answers the
+     * moment this person's desk changes, asked again when it has. So a job given out on another phone or
+     * on a dashboard is announced here within a second or two. With an older server, which has no such
+     * door, the desk looks again by the clock instead.
+     */
+    fun watchDesk(on: Boolean) {
+        deskWatch?.cancel()
+        deskWatch = null
+        if (!on) return
+        deskWatch = scope.launch {
+            while (true) {
+                val token = account.token
+                val mark = desk?.mark.orEmpty()
+                if (profile == null || token.isBlank() || mark.isBlank()) {
+                    delay(5_000)
+                    continue
+                }
+                val answer = online { api.deskWait(token, mark) }
+                val refused = (answer.exceptionOrNull() as? ApiError)?.status
+                when {
+                    // Asked for the person who has since handed the phone on: the answer is nobody's.
+                    token != account.token -> Unit
+                    answer.getOrNull()?.optBoolean("changed") == true -> {
+                        refreshDesk(aloud = false)
+                        delay(1_500)
+                    }
+                    answer.isSuccess -> Unit
+                    refused == 404 -> return@launch
+                    else -> delay(10_000)
+                }
+            }
+        }
+    }
+
+    /** Opens the desk, showing at once what was last fetched, then fetching it anew and saying the briefing. */
+    fun openDesk() {
+        screen = Screen.MyDesk
+        refreshDesk(aloud = true)
+    }
+
+    /**
+     * Words the briefing and says it. The plain one, made by code, is shown at once; the model's wording
+     * replaces it when it is ready and holds nothing the list does not.
+     */
+    fun briefDesk() {
+        val now = desk ?: return
+        deskBusy = null
+        deskWording = false
+        deskBriefing = now.plain()
+        deskWork?.cancel()
+        deskWork = scope.launch {
+            // With nothing that needs the person, the plain words say so exactly; the model is given only
+            // the jobs that do need them, so it cannot urge them to deal with somebody else's.
+            if (gemmaReady && now.waiting.isNotEmpty()) {
+                deskBusy = "Wording your briefing, on this phone…"
+                deskWording = true
+                val worded = withContext(modelWork) { runCatching { structurer.deskBrief(now.lines(mine = true), now.firstName, now.roleName, now.waiting.size) }.getOrNull() }
+                gemmaBackend = structurer.backend
+                deskWording = false
+                deskBusy = null
+                // A briefing that names a job the desk does not have is not used.
+                val numbers = Regex("""\b[Jj]ob (\d+)""").findAll(worded.orEmpty()).mapNotNull { it.groupValues[1].toIntOrNull() }
+                if (worded != null && numbers.all { it in 1..now.jobs.size }) {
+                    deskBriefing = worded
+                    deskSeconds = structurer.lastSeconds
+                }
+            }
+            if (deskSpeaks) {
+                voice.hush()
+                voice.say(deskBriefing)
+            }
+        }
+    }
+
+    /** Where something said to the desk is recorded to. */
+    fun deskSaidFile(): File = File(cacheDir, "desk-said.wav")
+
+    /** Something has been recorded to [deskSaidFile]: it is turned into text, then acted on. */
+    fun tellDeskAloud() {
+        if (!deskListens) return
+        stopWording()
+        if (!speechReady) {
+            deskAnswer = "Speech is not on this phone yet. Type it instead."
+            return
+        }
+        voice.hush()
+        deskBusy = "Turning what you said into text…"
+        val language = spoken.code
+        deskWork = scope.launch {
+            val heard = if (withContext(Dispatchers.IO) { loudness(deskSaidFile()) } < QUIET) "" else
+                withContext(modelWork) { runCatching { transcriber.toEnglish(deskSaidFile(), language) } }.getOrNull().orEmpty().trim()
+            if (heard.isBlank()) {
+                deskSaid = "(nothing was heard)"
+                deskAnswer = "Nothing was heard. Try again, a little closer to the phone."
+                deskBusy = null
             } else {
-                Readings.location(it.place, fields.location, Readings.aim(it.stamp?.pitch))
-            },
-            severity = if (expired && severity.ordinal < Severity.HIGH.ordinal) Severity.HIGH else severity,
-            owner = fields.owner.ifBlank { it.owner },
-            dueDate = fields.dueDate.ifBlank { it.dueDate },
-            category = if (expired && expiredType != null) expiredType else fields.category.ifBlank { it.category },
-            check = fields.check,
-            seen = fields.seen,
-            aiSeconds = seconds,
-            aiBackend = backend,
-            expiry = fields.expiry,
-        )
+                hearDesk(heard)
+            }
+        }
+    }
+
+    fun tellDesk(said: String) {
+        if (!deskListens || said.isBlank()) return
+        stopWording()
+        voice.hush()
+        deskWork = scope.launch { hearDesk(said.trim()) }
+    }
+
+    /** A tap on what the office proposes for a job: the same as saying "do job [number]", with no model needed. */
+    fun proposeFor(number: Int) {
+        if (!deskListens) return
+        stopWording()
+        voice.hush()
+        deskWork = scope.launch { hearDesk("Do job $number", DeskAsk("do", listOf(number))) }
+    }
+
+    private fun deskReplies(words: String) {
+        deskBusy = null
+        deskAnswer = words
+        if (deskSpeaks) voice.say(words)
+    }
+
+    private suspend fun hearDesk(said: String, given: DeskAsk? = null) {
+        deskSaid = said
+        deskAnswer = ""
+        deskPlan = null
+        deskSeconds = 0f
+        val now = desk ?: return deskReplies("Your desk has not been fetched yet. It needs the network once.")
+        if (given == null && DeskCommands.wantsBrief(said)) return briefDesk()
+        if (now.jobs.isEmpty()) return deskReplies(now.plain())
+        val ask = given ?: run {
+            if (!gemmaReady) return deskReplies("The large model is not on this phone yet, so the desk cannot take instructions. Tap what is proposed for a job to do it.")
+            deskBusy = "Working out what you mean, on this phone…"
+            val lines = now.lines()
+            val read = withContext(modelWork) { runCatching { structurer.deskAsk(said, lines, now.roleName) }.getOrNull() }
+            gemmaBackend = structurer.backend
+            deskSeconds = structurer.lastSeconds
+            read ?: return deskReplies("The model could not make that out. Try saying it another way.")
+        }
+        if (ask.action.startsWith("brief")) {
+            deskBusy = null
+            return briefDesk()
+        }
+        if (ask.action.isBlank() || ask.action.startsWith("question")) return answerDesk(said, now)
+        val (picked, why) = DeskCommands.pick(ask, said, now)
+        val (number, job) = picked ?: return deskReplies(why ?: "Say which one, by its number.")
+        // Who this job may go to is the office's to say, not guessed: its technicians, and the people it
+        // lets this person pass the job to. A newer server sends both along with the desk; an older one
+        // is asked now.
+        val token = account.token
+        val giving = ask.action.startsWith("assign") || ask.action.startsWith("do")
+        val reading = ask.action.startsWith("read")
+        var technicians = now.technicians
+        var sendTo = job.sendTo
+        var detail: JSONObject? = null
+        if ((technicians == null && giving && now.mayDirect) || sendTo == null || reading) {
+            deskBusy = "Asking the office about job $number…"
+            if (technicians == null && giving && now.mayDirect) technicians = online { api.technicians(token) }.getOrNull()?.let(Desk::people)
+            detail = online { api.issue(token, job.id) }.getOrNull()
+            if (sendTo == null) sendTo = detail?.optJSONArray("send_to")?.let(Desk::people)
+        }
+        deskBusy = null
+        when (val plan = DeskCommands.plan(ask, said, now, number, job, technicians.orEmpty(), sendTo.orEmpty())) {
+            is DeskPlan.Act -> {
+                deskPlan = plan
+                val fixed = plan.kind == "fixed"
+                deskAnswer = plan.words + if (fixed) ". Tap Take the photo; it is sent only after you have seen it." else ". Nothing is sent until you tap Do it."
+                if (deskSpeaks) voice.say(plan.words + if (fixed) ". Tap Take the photo." else ". Tap Do it.")
+            }
+            is DeskPlan.Read -> {
+                // More about one job, in the office's own words where it could be asked, else from the list.
+                val brief = detail?.optJSONObject("brief")
+                val more = listOfNotNull(
+                    brief?.optString("summary")?.takeIf { it.isNotBlank() }
+                        ?: (listOf(job.title, job.site, job.location).filter { it.isNotBlank() }.joinToString(", at ") + ". " + job.note).trim(),
+                    job.due.takeIf { it.isNotBlank() }?.let { "Due $it." },
+                    brief?.optString("standing")?.takeIf { it.isNotBlank() },
+                    job.letter?.let { "${it.from} wrote: ${it.text}" },
+                    "Next: ${job.next.label}",
+                ).joinToString(" ")
+                deskReplies("Job $number. $more")
+            }
+            DeskPlan.Brief -> briefDesk()
+            DeskPlan.Question -> answerDesk(said, now)
+            is DeskPlan.Refused -> deskReplies(plan.why)
+        }
+    }
+
+    private suspend fun answerDesk(question: String, now: Desk) {
+        deskBusy = "Thinking, on this phone…"
+        val lines = now.lines()
+        val said = withContext(modelWork) { runCatching { structurer.deskAnswer(question, lines, now.roleName) }.getOrNull() }
+        gemmaBackend = structurer.backend
+        if (said != null) deskSeconds = structurer.lastSeconds
+        deskReplies(said ?: "The model could not answer that. Try asking it another way.")
+    }
+
+    /** Carries out the action the person has just agreed to: it goes to the office, which checks it again. */
+    fun doDeskPlan() {
+        val plan = deskPlan ?: return
+        if (plan.kind == "fixed") {
+            // The office takes a repair only with its picture: the camera comes first.
+            deskPlan = null
+            repairPlan = plan
+            voice.hush()
+            screen = Screen.Capture(jobId = plan.job.id)
+            return
+        }
+        if (deskBusy != null) return
+        deskBusy = "Sending it to the office…"
+        val token = account.token
+        scope.launch {
+            val done = online {
+                when (plan.kind) {
+                    "assign" -> api.assign(token, plan.job.id, plan.to?.id.orEmpty(), plan.dueOn, plan.text)
+                    "send" -> api.send(token, plan.job.id, plan.to?.id.orEmpty(), plan.text)
+                    else -> api.settle(token, plan.job.id, back = plan.kind == "back", note = plan.text)
+                }
+            }
+            deskBusy = null
+            done.onSuccess {
+                deskPlan = null
+                haptics.filled()
+                deskReplies("Done: ${plan.words}.")
+                refreshDesk(aloud = false)
+            }.onFailure { deskReplies("The office did not take it: ${why(it)}") }
+        }
+    }
+
+    fun dropDeskPlan() {
+        deskPlan = null
+        deskAnswer = "Nothing was sent."
+    }
+
+    /** Where the camera puts the picture of a repair for one job. */
+    fun repairFile(jobId: String): File = File(cacheDir, "repair-$jobId.jpg")
+
+    /**
+     * The camera has taken the picture of a repair. Before anything is sent, the picture the issue was
+     * reported with is fetched from the office and the model on this phone compares the two.
+     */
+    fun repairShown(jobId: String) {
+        val plan = repairPlan?.takeIf { it.job.id == jobId } ?: return
+        val photo = repairFile(jobId)
+        repair = Repair(plan.number, plan.job, photo, plan.text, checking = gemmaReady)
+        deskAnswer = ""
+        if (!gemmaReady) return
+        scope.launch {
+            val before = File(cacheDir, "repair-$jobId-before.jpg")
+            val fetched = withContext(Dispatchers.IO) { api.issuePhoto(account.token, jobId, before) }
+            if (!fetched) {
+                repair = repair?.takeIf { it.job.id == jobId }?.copy(checking = false)
+                return@launch
+            }
+            repair = repair?.takeIf { it.job.id == jobId }?.copy(before = before)
+            val result = withContext(modelWork) { runCatching { structurer.verifyFix(plan.job.title, before, photo) }.getOrNull() }
+            gemmaBackend = structurer.backend
+            val checked = repair?.takeIf { it.job.id == jobId && it.photo == photo } ?: return@launch
+            repair = checked.copy(checking = false, check = result?.first ?: Check.NONE, seen = result?.second.orEmpty())
+            if (deskSpeaks) voice.say(
+                when (result?.first) {
+                    Check.MATCH -> "The two pictures were compared: the problem is no longer visible. Tap Send to the office."
+                    Check.MISMATCH -> "The two pictures were compared: the problem may still be there. Take another picture, or send it as it is."
+                    else -> "The two pictures could not be told apart for certain. Send it if the repair is done."
+                }
+            )
+        }
+    }
+
+    /** Takes the repair picture again. */
+    fun retakeRepair() {
+        val waiting = repair ?: return
+        repair = null
+        screen = Screen.Capture(jobId = waiting.job.id)
+    }
+
+    fun dropRepair() {
+        repair = null
+        repairPlan = null
+        deskAnswer = "Nothing was sent."
+    }
+
+    /** Sends the repair to the office with what the phone's model made of the two pictures, for whoever checks it. */
+    fun sendRepair() {
+        val shown = repair ?: return
+        if (deskBusy != null) return
+        deskBusy = "Sending the repair to the office…"
+        val verdict = when (shown.check) {
+            Check.MATCH -> "Checked on the phone: the problem is no longer visible in the second picture."
+            Check.MISMATCH -> "Checked on the phone: the problem may still be visible in the second picture."
+            Check.UNSURE -> "Checked on the phone: the two pictures could not be told apart for certain."
+            else -> ""
+        }
+        val note = listOf(shown.note, verdict).filter { it.isNotBlank() }.joinToString(" ")
+        val token = account.token
+        scope.launch {
+            val done = online { api.fixed(token, shown.job.id, shown.photo, note) }
+            deskBusy = null
+            done.onSuccess {
+                repair = null
+                repairPlan = null
+                haptics.filled()
+                deskReplies("Done: job ${shown.number} is marked fixed and waits for its check.")
+                refreshDesk(aloud = false)
+            }.onFailure { deskReplies("The office did not take it: ${why(it)}") }
+        }
     }
 
     // ---------------------------------------------------------------- fetching the models
@@ -1314,6 +2426,18 @@ class AppState(
 
         /** Below this loudness (of 32768) a recording holds no voice. A silent microphone read 5; speech at arm's length reads some hundreds. */
         private const val QUIET = 80.0
+
+        /** The setting that holds whose walk the one in hand is, by their DeskLess ID. */
+        private const val WALK_OWNER = "walkOwner"
+
+        /** Where a field's value is a person's own, which the model does not write over. */
+        private val OWN_WORDS = setOf(Source.TYPED, Source.ASKED, Source.TOLD)
+
+        /** A spoken answer: the loudness (0 to 1) that counts as a voice, how long to wait for one, the pause that ends it, and the longest it may run. */
+        private const val ANSWER_LEVEL = 0.03f
+        private const val ANSWER_WAIT_MS = 5_000L
+        private const val ANSWER_PAUSE_MS = 1_500L
+        private const val ANSWER_LIMIT_MS = 12_000L
 
         /** How issues with no type yet are named in filters and group headings. */
         const val UNSORTED = "Not sorted yet"

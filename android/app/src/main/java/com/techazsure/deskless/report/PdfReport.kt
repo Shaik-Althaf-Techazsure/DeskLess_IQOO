@@ -16,6 +16,8 @@ import android.text.TextUtils
 import com.techazsure.deskless.capture.Geo
 import com.techazsure.deskless.capture.decodeSampled
 import com.techazsure.deskless.structure.Expiry
+import com.techazsure.deskless.structure.Field
+import com.techazsure.deskless.structure.Source
 import com.techazsure.deskless.data.Check
 import com.techazsure.deskless.data.Inspection
 import com.techazsure.deskless.data.Issue
@@ -369,6 +371,16 @@ object PdfReport {
             val stamped = issue.stamp?.let(Readings::describe).orEmpty().joinToString(" · ")
                 .replaceFirstChar { it.uppercase(Locale.ENGLISH) }
             val measured = issue.readings.joinToString(" · ", transform = Readings::describe)
+            // Where each field's value came from, so a reader can tell what was said from what the model judged.
+            val filledFrom = listOf(
+                Triple("Issue", Field.TITLE, issue.title),
+                Triple("Location", Field.LOCATION, issue.location),
+                Triple("Severity", Field.SEVERITY, issue.severity.label),
+                Triple(template.ownerLabel, Field.OWNER, issue.owner),
+                Triple("Due", Field.DUE, issue.dueDate),
+            ).mapNotNull { (name, field, value) ->
+                Source.of(issue.sources[field])?.takeIf { value.isNotBlank() }?.let { "$name: ${it.inReport}" }
+            }.joinToString(" · ")
             val fields = listOfNotNull(
                 "Location" to issue.location,
                 template.ownerLabel to issue.owner,
@@ -380,6 +392,7 @@ object PdfReport {
                 measured.takeIf { it.isNotEmpty() }?.let { "Measured" to it },
                 expiry?.let { "Expiry" to it },
                 verdict?.let { "AI check" to it },
+                filledFrom.takeIf { it.isNotEmpty() }?.let { "Filled from" to it },
             ).map { (label, value) ->
                 // An empty field is spelt out in grey, so a reader sees it was not said rather than lost.
                 label to if (value.isBlank()) layout("Not stated", missingPaint, textW - LABEL_W, 2)

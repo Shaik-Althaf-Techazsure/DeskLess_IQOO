@@ -13,8 +13,11 @@ from .db import Base
 
 # The kinds of account in a company, with the middle part of their unique ID. The platform's
 # administrator is not an account: there is one, named in the server's settings.
-ROLES = {"md": "MD", "manager": "MGR", "inspector": "INS", "technical": "TEC"}
-ROLE_NAMES = {"md": "Managing Director", "manager": "Manager", "inspector": "Inspector", "technical": "Technical"}
+ROLES = {"md": "MD", "manager": "MGR", "inspector": "INS", "technical": "TEC", "member": "USR"}
+ROLE_NAMES = {"md": "Managing Director", "manager": "Manager", "inspector": "Inspector", "technical": "Technical", "member": "User"}
+#: Someone who uses a place and works for nobody in it: a resident, a student, a visitor, a member of
+#: staff. They belong to no company, need nobody's approval, and send what they notice to the place.
+MEMBER = "member"
 #: Those who have people answering to them, and so hand out a code to sign up with.
 LEADS = ("md", "manager")
 
@@ -57,6 +60,12 @@ class Company(Base):
     #: The report type the company's walks start with: one that comes with the app, or one of its own.
     #: Empty leaves the choice to each person.
     report_type: Mapped[str | None] = mapped_column(String(20), nullable=True, default="")
+    #: The kind of place it looks after, as the people who use it look for it: "apartment", "college",
+    #: "office" and so on. Empty until the managing director says.
+    kind: Mapped[str | None] = mapped_column(String(20), nullable=True, default="")
+    #: Whether the people who use the place may send it what they notice. Off until the managing
+    #: director opens the door; only then is the company's name shown to them.
+    open_door: Mapped[bool | None] = mapped_column(Boolean, nullable=True, default=False)
 
 
 class ReportType(Base):
@@ -236,6 +245,8 @@ class Issue(Base):
     fixed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     closed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     closed_by: Mapped[str] = mapped_column(String(120), default="")
+    #: For what a user of the place sent in: "issue", "report" or "enquiry". Empty for what was found on a walk.
+    raised_as: Mapped[str | None] = mapped_column(String(12), nullable=True, default="")
 
 
 class Event(Base):

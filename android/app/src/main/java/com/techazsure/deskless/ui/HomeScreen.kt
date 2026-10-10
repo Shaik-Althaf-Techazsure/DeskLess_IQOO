@@ -58,6 +58,7 @@ import androidx.compose.material.icons.rounded.Place
 import androidx.compose.material.icons.rounded.RestartAlt
 import androidx.compose.material.icons.rounded.Sensors
 import androidx.compose.material.icons.rounded.SettingsInputAntenna
+import androidx.compose.material.icons.rounded.SupportAgent
 import androidx.compose.material.icons.rounded.SwapHoriz
 import androidx.compose.material.icons.rounded.Videocam
 import androidx.compose.material3.AlertDialog
@@ -306,11 +307,23 @@ fun HomeScreen(state: AppState) {
             item(key = "hero") { Hero(state, onNew = { confirmNew = true }, onChangeType = { pickTemplate = true }) }
             // A question about the walk, asked aloud and answered on the phone; and push to talk with
             // the linked phones, which needs no internet either.
+            // What waits for this person at the office: said aloud when opened, and answered by voice.
+            item(key = "desk") {
+                val waiting = state.desk?.waiting?.size ?: 0
+                BrandButton(
+                    text = if (waiting > 0) "My desk · $waiting waiting" else "My desk",
+                    onClick = { state.openDesk() },
+                    icon = Icons.Rounded.SupportAgent,
+                    kind = if (waiting > 0) ButtonKind.Primary else ButtonKind.Secondary,
+                    height = 50.dp,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
             item(key = "ask") {
                 Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     if (state.issues.isNotEmpty()) {
                         BrandButton(
-                            text = "Ask the walk",
+                            text = "Ask or tell",
                             onClick = { state.screen = Screen.Ask },
                             icon = Icons.Rounded.Mic,
                             kind = ButtonKind.Secondary,

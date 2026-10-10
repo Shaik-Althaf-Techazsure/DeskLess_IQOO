@@ -234,7 +234,7 @@ def public(account: Account, lead: Account | None = None) -> dict:
         "email": account.email,
         "phone": account.phone,
         "organisation": account.organisation,
-        "aadhaar": security.masked(account.aadhaar_last4),
+        "aadhaar": security.masked(account.aadhaar_last4) if account.aadhaar_last4 else "",
         "status": account.status,
         "reports_to": lead.name if lead else "",
         "invite_code": security.shown_invite(account.invite_code),

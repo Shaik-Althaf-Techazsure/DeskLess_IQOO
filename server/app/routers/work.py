@@ -5,6 +5,7 @@ technician, the repair shown with a picture, the check that closes it, and the n
 
 import json
 from collections import Counter, defaultdict
+from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from uuid import uuid4
@@ -63,6 +64,11 @@ def _due(text: str) -> date | None:
         return datetime.strptime(text.strip(), "%d %b %Y").date()
     except ValueError:
         return None
+
+
+def due_words(issue: Issue) -> str:
+    """An issue's deadline in words: its day once it has one, otherwise as the inspector said it."""
+    return issue.due_on.strftime("%d %b %Y").lstrip("0") if issue.due_on else issue.due_text or ""
 
 
 def _keep_picture(raw: bytes | None, name: str) -> str:
@@ -311,6 +317,8 @@ def _issue_row(issue: Issue, names: dict[str, str], day: date) -> dict:
         "lon": issue.lon,
         "captured_at": when(issue.captured_at),
         "reported_by": names.get(issue.author_id, ""),
+        # "issue", "report" or "enquiry" when a user of the place sent it in; empty for what a walk found.
+        "raised_as": issue.raised_as or "",
         "has_photo": bool(issue.photo),
         "status": issue.status,
         "assigned_to": issue.assigned_to,
@@ -460,7 +468,7 @@ def assign(
     issue.assigned_by = lead.name
     issue.assigned_at = now()
     issue.status = ASSIGNED
-    due = issue.due_on.strftime("%d %b %Y").lstrip("0") if issue.due_on else issue.due_text
+    due = due_words(issue)
     note(db, "assigned", lead.name, f"{lead.name} gave it to {technician.name}" + (f", due {due}" if due else ""), **_about(issue))
     # Giving it out answers whoever sent it to this person; a word with it waits on the technician.
     dealt_with(db, actor, issue)
@@ -505,6 +513,9 @@ def send(
     to = None if body.to == "admin" else db.get(Account, body.to)
     dealt_with(db, actor, issue)
     message = _say(db, actor, issue, to, words)
+    if issue.raised_as == "enquiry" and issue.status == OPEN and to is not None and to.id == issue.author_id:
+        # A question from a user of the place is settled by its answer.
+        issue.status, issue.closed_at, issue.closed_by = CLOSED, now(), actor.name
     shown = words if len(words) <= 160 else words[:159].rstrip() + "…"
     note(
         db, "sent", actor.name, f"{actor.name} sent it to {message.to_name}: “{shown}”",
@@ -655,13 +666,52 @@ def _top(counts: dict[str, Counter], limit: int = 8) -> list[dict]:
     return sorted(rows, key=lambda row: (-row["open"], -row["total"], row["name"]))[:limit]
 
 
+def asker(db: Session, actor: Actor) -> dict:
+    """The person asking, as their own first screen names them."""
+    if actor.is_admin:
+        return {"role": "admin", "role_name": "Administrator", "name": "Administrator", "email": actor.admin, "organisation": "All companies"}
+    return profile(db, actor.account) | {"id": actor.account.id}
+
+
+@dataclass(frozen=True)
+class Tray:
+    """
+    What the assistant lays before one person, worked out the same way for whichever first screen asks,
+    a dashboard's or a phone's: the issues in view, the desk that ranks them, what needs the person
+    first with the next step for each, a line for each of the most pressing issues in view, and the
+    messages that still wait on them.
+    """
+
+    found: list[Issue]
+    by_id: dict[str, Issue]
+    desk: Desk
+    needs_me: list[dict]
+    triage: list[dict]
+    sent_to_me: list[Message]
+
+    def inbox(self, limit: int = 6) -> list[dict]:
+        """The newest of the messages that wait on the person, as a page is given them."""
+        return [_message_row(message, self.by_id[message.issue_id], self.desk) for message in self.sent_to_me[:limit]]
+
+
+def tray_for(db: Session, actor: Actor) -> Tray:
+    """Reads what is in this person's view and has the assistant sort it for them."""
+    found = list(db.scalars(select(Issue).where(sees_issues(db, actor))))
+    desk = Desk(db, actor, found)
+    needs_me, triage = desk.queue(found)
+    by_id = {issue.id: issue for issue in found}
+    sent_to_me = [message for message in _waiting(db, actor) if message.issue_id in by_id]
+    return Tray(found, by_id, desk, needs_me, triage, sent_to_me)
+
+
 @router.get("/dashboard")
 def dashboard(actor: Actor = Depends(current_actor), db: Session = Depends(get_db)) -> dict:
     """
     Everything a dashboard's first screen shows, worked out over what the person may see: a managing
     director's whole company, a manager's team, an inspector's own reports, a technician's own jobs.
     """
-    found = list(db.scalars(select(Issue).where(sees_issues(db, actor))))
+    tray = tray_for(db, actor)
+    found = tray.found
     sent = list(db.scalars(select(Report).where(sees_reports(db, actor))))
     day = today()
     week_ago = now() - timedelta(days=7)
@@ -742,10 +792,7 @@ def dashboard(actor: Actor = Depends(current_actor), db: Session = Depends(get_d
 
     # The assistant's part: what needs this person first, with the next step for each; a line for each
     # of the most pressing issues in view; what has been sent to them; and how loaded each technician is.
-    desk = Desk(db, actor, found)
-    needs_me, triage = desk.queue(found)
-    by_id = {issue.id: issue for issue in found}
-    sent_to_me = [message for message in _waiting(db, actor) if message.issue_id in by_id]
+    desk, needs_me, triage, sent_to_me = tray.desk, tray.needs_me, tray.triage, tray.sent_to_me
     band_of = {issue.id: desk.priority(issue)["band"] for issue in unsettled}
     bands = Counter(band_of.values())
     # The assistant's own rounds: whether they are on for this person's company, and what they have done.
@@ -765,9 +812,7 @@ def dashboard(actor: Actor = Depends(current_actor), db: Session = Depends(get_d
     # the same answer, so keeping that page live costs one question each time, not three.
     whole = {"companies": every_company(actor.admin, db), "system": server_health(actor.admin, db)} if actor.is_admin else {}
     return whole | {
-        "me": {"role": "admin", "role_name": "Administrator", "name": "Administrator", "email": actor.admin, "organisation": "All companies"}
-        if actor.is_admin
-        else profile(db, actor.account) | {"id": actor.account.id},
+        "me": asker(db, actor),
         "may_direct": may_direct(actor),
         "today": day.isoformat(),
         "tiles": tiles,
@@ -786,7 +831,7 @@ def dashboard(actor: Actor = Depends(current_actor), db: Session = Depends(get_d
         "autopilot": rounds,
         "queue": needs_me,
         "triage": triage,
-        "inbox": [_message_row(message, by_id[message.issue_id], desk) for message in sent_to_me[:6]],
+        "inbox": tray.inbox(),
         "load": desk.load() if may_direct(actor) else [],
         "activity": [
             {"id": event.id, "at": when(event.at), "kind": event.kind, "text": event.text, "issue_id": event.issue_id, "about": titles.get(event.issue_id, "")}

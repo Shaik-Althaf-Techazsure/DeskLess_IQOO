@@ -111,9 +111,14 @@ private enum class AccountStep { Welcome, SignUp, Code, Waiting, SignIn, Forgot 
 @Composable
 fun AccountFlow(state: AppState) {
     // A sign-up that was already sent is picked up where it was left.
-    var step by rememberSaveable { mutableStateOf(if (state.pending != null) AccountStep.Waiting else AccountStep.Welcome) }
+    // Someone signing in beside the person in use goes straight to the sign-in form.
+    var step by rememberSaveable {
+        mutableStateOf(if (state.profile != null) AccountStep.SignIn else if (state.pending != null) AccountStep.Waiting else AccountStep.Welcome)
+    }
     var knownId by rememberSaveable { mutableStateOf("") }
     BackHandler(enabled = step != AccountStep.Welcome) { step = if (step == AccountStep.Forgot) AccountStep.SignIn else AccountStep.Welcome }
+    // Back from the first of these screens returns the phone to whoever was using it.
+    BackHandler(enabled = step == AccountStep.Welcome && state.profile != null) { state.addingAccount = false }
 
     Box(
         modifier = Modifier
@@ -281,10 +286,14 @@ private fun Welcome(state: AppState, onSignIn: () -> Unit, onSignUp: () -> Unit)
         Spacer(Modifier.weight(1f))
         LogoMark(Modifier.size(92.dp))
         Spacer(Modifier.height(18.dp))
-        Text("DeskLess", style = MaterialTheme.typography.displaySmall, color = Chalk)
+        Text(if (state.userOnly) "DeskLess User" else "DeskLess", style = MaterialTheme.typography.displaySmall, color = Chalk)
         Spacer(Modifier.height(6.dp))
         Text(
-            text = "Inspection reports from a photo and your voice, made on the phone. For any kind of place.",
+            text = if (state.userOnly) {
+                "Tell the people who look after your building, campus or office what you notice, or ask them something. Say it: the phone puts it into words and sends it."
+            } else {
+                "Inspection reports from a photo and your voice, made on the phone. For any kind of place."
+            },
             style = MaterialTheme.typography.bodyLarge,
             color = Fog,
             textAlign = TextAlign.Center,
@@ -293,9 +302,17 @@ private fun Welcome(state: AppState, onSignIn: () -> Unit, onSignUp: () -> Unit)
         BrandButton("Sign in", onClick = onSignIn, icon = Icons.AutoMirrored.Rounded.Login, modifier = Modifier.fillMaxWidth())
         Spacer(Modifier.height(12.dp))
         BrandButton("Create an account", onClick = onSignUp, icon = Icons.Rounded.PersonAdd, kind = ButtonKind.Secondary, modifier = Modifier.fillMaxWidth())
+        state.profile?.let { person ->
+            Spacer(Modifier.height(12.dp))
+            TextButton(onClick = { state.addingAccount = false }) { Text("Back to ${person.name}", color = SafetyYellow) }
+        }
         Spacer(Modifier.height(18.dp))
         Text(
-            text = "Reports are made with no network. They are sent to your office when the phone has one.",
+            text = if (state.userOnly) {
+                "It is put into words on this phone, with no network. It is sent to the place when the phone has one."
+            } else {
+                "Reports are made with no network. They are sent to your office when the phone has one."
+            },
             style = MaterialTheme.typography.bodySmall,
             color = Fog,
             textAlign = TextAlign.Center,
@@ -331,7 +348,8 @@ private fun Welcome(state: AppState, onSignIn: () -> Unit, onSignUp: () -> Unit)
 private fun SignUp(state: AppState, onBack: () -> Unit, onSent: () -> Unit) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    var role by rememberSaveable { mutableStateOf("inspector") }
+    // The edition for people who use a place signs up nobody else.
+    var role by rememberSaveable { mutableStateOf(if (state.userOnly) Person.USER else "inspector") }
     var name by rememberSaveable { mutableStateOf("") }
     var email by rememberSaveable { mutableStateOf("") }
     var phone by rememberSaveable { mutableStateOf("") }
@@ -344,6 +362,8 @@ private fun SignUp(state: AppState, onBack: () -> Unit, onSent: () -> Unit) {
     var again by rememberSaveable { mutableStateOf("") }
     var problem by remember { mutableStateOf<String?>(null) }
     var busy by remember { mutableStateOf(false) }
+    // Someone who uses a place works for nobody in it: no photo, no code to join with, no Aadhaar number.
+    val user = role == Person.USER
 
     // The photo for the account: taken now with the phone's camera, or chosen from its pictures.
     val photo = remember { File(context.filesDir, "signup-photo.jpg") }
@@ -386,25 +406,31 @@ private fun SignUp(state: AppState, onBack: () -> Unit, onSent: () -> Unit) {
     }
 
     fun firstMistake(): String? = when {
-        photoVersion == 0 -> "Add a photo of yourself."
+        !user && photoVersion == 0 -> "Add a photo of yourself."
         name.trim().length < 2 -> "Enter your full name."
         role == "md" && organisation.trim().length < 2 -> "Enter your company's name."
-        role != "md" && !Checks.invite(invite) -> "Enter the 8-character code from the person you report to."
+        !user && role != "md" && !Checks.invite(invite) -> "Enter the 8-character code from the person you report to."
         !Checks.email(email) -> "That email address does not look right."
-        !Checks.mobile(phone) -> "Enter a 10-digit mobile number."
-        !Checks.aadhaar(aadhaar) -> "That Aadhaar number is not valid. Check the 12 digits."
+        user && phone.isNotBlank() && !Checks.mobile(phone) -> "Enter a 10-digit mobile number, or leave it empty."
+        !user && !Checks.mobile(phone) -> "Enter a 10-digit mobile number."
+        !user && !Checks.aadhaar(aadhaar) -> "That Aadhaar number is not valid. Check the 12 digits."
         password.length < Checks.MIN_PASSWORD -> "Choose a password of at least ${Checks.MIN_PASSWORD} characters."
         password != again -> "The two passwords are not the same."
         else -> null
     }
 
-    Page("CREATE ACCOUNT", "Your details go to the person you report to, who approves the account and so gives you your DeskLess ID.", onBack) {
-        Row(modifier = Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+    val about = if (user) {
+        "A name, an email address and a password are all it takes. A code is emailed to confirm the address is yours, and your DeskLess ID follows at once."
+    } else {
+        "Your details go to the person you report to, who approves the account and so gives you your DeskLess ID."
+    }
+    Page("CREATE ACCOUNT", about, onBack) {
+        if (!state.userOnly) Row(modifier = Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Person.ROLES.forEach { (key, label, _) -> Pill(label, selected = role == key, onClick = { role = key }) }
         }
         Text(Person.ROLES.first { it.first == role }.third, style = MaterialTheme.typography.bodySmall, color = Fog)
 
-        Row(horizontalArrangement = Arrangement.spacedBy(16.dp), verticalAlignment = Alignment.CenterVertically) {
+        if (!user) Row(horizontalArrangement = Arrangement.spacedBy(16.dp), verticalAlignment = Alignment.CenterVertically) {
             Box(
                 modifier = Modifier
                     .size(96.dp)
@@ -445,8 +471,17 @@ private fun SignUp(state: AppState, onBack: () -> Unit, onSent: () -> Unit) {
 
         Field("Full name", name, { name = it }, "As on your ID", capitals = KeyboardCapitalization.Words)
         Field("Email", email, { email = it.trim() }, "you@example.com", keyboard = KeyboardType.Email, help = "A code is sent here to confirm it is yours.")
-        Field("Mobile number", phone, { typed -> phone = typed.filter { it.isDigit() || it == '+' }.take(13) }, "10 digits", keyboard = KeyboardType.Phone)
-        if (role == "md") {
+        Field(
+            label = "Mobile number",
+            value = phone,
+            onChange = { typed -> phone = typed.filter { it.isDigit() || it == '+' }.take(13) },
+            placeholder = if (user) "10 digits, or leave it empty" else "10 digits",
+            keyboard = KeyboardType.Phone,
+            help = if (user) "Not needed. A place you write to may ring you back on it." else null,
+        )
+        if (user) {
+            // Nothing to join: the place is chosen each time something is sent.
+        } else if (role == "md") {
             Field(
                 label = "Company name",
                 value = organisation,
@@ -470,7 +505,7 @@ private fun SignUp(state: AppState, onBack: () -> Unit, onSent: () -> Unit) {
                 },
             )
         }
-        Field(
+        if (!user) Field(
             label = "Aadhaar number",
             value = aadhaar,
             onChange = { typed -> aadhaar = typed.filter(Char::isDigit).take(12) },
@@ -493,7 +528,7 @@ private fun SignUp(state: AppState, onBack: () -> Unit, onSent: () -> Unit) {
                 if (problem == null) {
                     busy = true
                     scope.launch {
-                        problem = state.signUp(
+                        problem = if (user) state.signUpUser(name.trim(), email.trim(), phone, password) else state.signUp(
                             mapOf(
                                 "role" to role, "name" to name.trim(), "email" to email.trim(), "phone" to phone,
                                 "organisation" to if (role == "md") organisation.trim() else "",
@@ -680,7 +715,7 @@ private fun SignIn(state: AppState, knownId: String, onBack: () -> Unit, onForgo
     var busy by remember { mutableStateOf(false) }
 
     Page("SIGN IN", "Use the DeskLess ID you were given when your account was approved.", onBack) {
-        Field("DeskLess ID", id, { id = plain(it, 20) }, "DL-INS-0001", capitals = KeyboardCapitalization.Characters, shown = InCapitals)
+        Field("DeskLess ID", id, { id = plain(it, 20) }, if (state.userOnly) "DL-USR-0001" else "DL-INS-0001", capitals = KeyboardCapitalization.Characters, shown = InCapitals)
         Field("Password", password, { password = it }, secret = true, last = true)
         Problem(problem)
         BrandButton(

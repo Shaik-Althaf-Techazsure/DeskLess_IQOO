@@ -1,11 +1,12 @@
 """The assistant's own rounds, and what the numbers say."""
 
 import time
-from datetime import date, timedelta
+from datetime import timedelta
 
 from app import autopilot
 from app.db import SessionLocal
 from app.models import Issue, Message, now
+from app.service import today
 
 from .conftest import issue, photo, send_report
 
@@ -73,7 +74,9 @@ def test_a_late_job_and_an_unchecked_repair_are_chased(client, mailbox, company)
     send_report(client, company.inspector.headers, issues=[issue("a1"), issue("a2", title="Loose cable"), issue("a3", title="Broken tap")])
     lead = company.manager.headers
     beam, cable, tap = (the_issue(client, lead, title) for title in ("Cracked beam", "Loose cable", "Broken tap"))
-    day = lambda back: (date.today() - timedelta(days=back)).isoformat()  # noqa: E731
+    # Counted from the day as the server has it, where the company works: a test machine in another
+    # time zone is on another date for some hours of each night.
+    day = lambda back: (today() - timedelta(days=back)).isoformat()  # noqa: E731
     client.post(f"/api/issues/{beam['id']}/assign", json={"to": company.technical.id, "due_on": day(1)}, headers=lead)
     client.post(f"/api/issues/{cable['id']}/assign", json={"to": company.technical.id, "due_on": day(4)}, headers=lead)
     client.post(f"/api/issues/{tap['id']}/assign", json={"to": company.technical.id}, headers=lead)

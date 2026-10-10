@@ -11,9 +11,9 @@ from sqlalchemy.orm import Session
 from .. import mailer, security
 from ..config import settings
 from ..db import get_db
-from ..models import APPROVED, EMAIL_PENDING, LEADS, PENDING_APPROVAL, REJECTED, ROLE_NAMES, ROLES, Account, now
+from ..models import APPROVED, EMAIL_PENDING, LEADS, MEMBER, PENDING_APPROVAL, REJECTED, ROLE_NAMES, ROLES, Account, now
 from ..pictures import save_photo
-from ..service import approver_words, get_mailer, lead_of, send_code, use_code
+from ..service import approver_words, get_mailer, lead_of, next_unique_id, send_code, use_code
 
 router = APIRouter(prefix="/api/signup", tags=["signup"])
 
@@ -49,6 +49,15 @@ def _lead(db: Session, role: str, typed: str) -> Account:
     return lead
 
 
+def forget_unfinished(db: Session, email: str) -> None:
+    """A sign-up at this address that never got past the code is dropped, so it can simply be started again."""
+    for stale in db.scalars(select(Account).where(Account.email == email, Account.status == EMAIL_PENDING)):
+        if stale.photo:
+            (settings().media_dir / stale.photo).unlink(missing_ok=True)
+        db.delete(stale)
+    db.flush()
+
+
 @router.get("/invite")
 def invite(code: str, role: str = "inspector", db: Session = Depends(get_db)) -> dict:
     """Whose code this is, so the form can show which company and person the newcomer is about to join."""
@@ -80,7 +89,8 @@ async def sign_up(
     name = " ".join(name.split())
     email = email.strip().lower()
     organisation = " ".join(organisation.split())
-    if role not in ROLES:
+    if role not in ROLES or role == MEMBER:
+        # A user of a place signs up with the short form, which asks for no Aadhaar number and no photo.
         raise HTTPException(422, "Choose Managing Director, Manager, Inspector or Technical.")
     if len(name) < 2 or len(name) > 120:
         raise HTTPException(422, "Enter your full name.")
@@ -117,10 +127,7 @@ async def sign_up(
     if db.scalars(select(Account).where(Account.aadhaar_fingerprint == fingerprint, Account.status.in_(live))).first():
         raise HTTPException(409, "An account with this Aadhaar number already exists.")
     # A sign-up that never got past the code is simply started again.
-    for stale in db.scalars(select(Account).where(Account.email == email, Account.status == EMAIL_PENDING)):
-        (settings().media_dir / stale.photo).unlink(missing_ok=True)
-        db.delete(stale)
-    db.flush()
+    forget_unfinished(db, email)
 
     ticket = secrets.token_urlsafe(24)
     account = Account(
@@ -169,6 +176,19 @@ def verify(body: Verify, db: Session = Depends(get_db), post: mailer.Mailer = De
     """Confirms the email address with the code. The sign-up then waits for the person above."""
     account = _pending(db, body.email)
     use_code(db, account, "signup", body.code)
+    if account.role == MEMBER:
+        # A user of a place works for nobody in it, so there is nobody to approve them: the address is
+        # theirs, and that is enough.
+        account.unique_id = next_unique_id(db, MEMBER)
+        account.status = APPROVED
+        account.email_verified_at = account.decided_at = now()
+        account.decided_by = "Email address confirmed"
+        db.commit()
+        try:
+            post.send(account.email, *mailer.approved_email(account.name, account.unique_id, ROLE_NAMES[MEMBER]))
+        except mailer.MailError:
+            pass
+        return {"status": account.status, "unique_id": account.unique_id}
     account.status = PENDING_APPROVAL
     account.email_verified_at = now()
     db.commit()

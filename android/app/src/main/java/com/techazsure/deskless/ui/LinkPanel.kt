@@ -111,6 +111,8 @@ fun LinkPanel(state: AppState, onScan: () -> Unit) {
                 }
                 TextButton(onClick = { state.signOut() }) { Text("Sign out", color = Fog) }
             }
+            // The other people signed in on this phone, and the way to add one.
+            AccountSwitcher(state)
             if (person.organisation.isNotBlank() || person.reportsTo.isNotBlank()) {
                 Text(
                     text = listOfNotNull(

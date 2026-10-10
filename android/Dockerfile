@@ -58,9 +58,13 @@ ARG SERVER_URL=""
 
 # -PphoneOnly leaves out the emulator's x86_64 libraries, which halves the APK.
 # Downloaded dependencies stay in a build cache, so a rebuild after an edit does not fetch them again.
+# The same code is then built a second time with -PuserApp: the edition for the people who use a place,
+# under its own name. Both have one package name and key, so a phone holds one of the two.
 RUN --mount=type=cache,target=/root/.gradle \
     gradle --no-daemon testDebugUnitTest assembleDebug -PphoneOnly ${SERVER_URL:+-PserverUrl=$SERVER_URL} \
- && cp app/build/outputs/apk/debug/app-debug.apk /DeskLess.apk
+ && cp app/build/outputs/apk/debug/app-debug.apk /DeskLess.apk \
+ && gradle --no-daemon assembleDebug -PphoneOnly -PuserApp ${SERVER_URL:+-PserverUrl=$SERVER_URL} \
+ && cp app/build/outputs/apk/debug/app-debug.apk /DeskLess-User.apk
 
 
 FROM caddy:2-alpine
@@ -68,8 +72,9 @@ FROM caddy:2-alpine
 COPY docker/Caddyfile /etc/caddy/Caddyfile
 COPY docker/site /srv
 COPY --from=build /DeskLess.apk /srv/DeskLess.apk
+COPY --from=build /DeskLess-User.apk /srv/DeskLess-User.apk
 
 EXPOSE 80
 
-# With a folder mounted at /out, the APK is also copied there for Office Kit file transfer.
-CMD ["sh", "-c", "[ -d /out ] && cp /srv/DeskLess.apk /out/; exec caddy run --config /etc/caddy/Caddyfile --adapter caddyfile"]
+# With a folder mounted at /out, both APKs are also copied there for Office Kit file transfer.
+CMD ["sh", "-c", "[ -d /out ] && cp /srv/DeskLess.apk /srv/DeskLess-User.apk /out/; exec caddy run --config /etc/caddy/Caddyfile --adapter caddyfile"]

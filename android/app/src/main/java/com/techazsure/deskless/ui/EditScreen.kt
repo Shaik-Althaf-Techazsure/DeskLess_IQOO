@@ -113,7 +113,10 @@ import com.techazsure.deskless.AppState
 import com.techazsure.deskless.Screen
 import com.techazsure.deskless.capture.WavRecorder
 import com.techazsure.deskless.data.Issue
+import com.techazsure.deskless.data.Readings
 import com.techazsure.deskless.data.Severity
+import com.techazsure.deskless.structure.Field
+import com.techazsure.deskless.structure.Source
 import com.techazsure.deskless.ui.theme.Chalk
 import com.techazsure.deskless.ui.theme.Coal
 import com.techazsure.deskless.ui.theme.Fog
@@ -131,6 +134,14 @@ fun EditScreen(state: AppState, issue: Issue) {
     var confirmDelete by remember { mutableStateOf(false) }
     val number = state.issues.indexOfFirst { it.id == issue.id } + 1
     BackHandler { state.screen = Screen.Home }
+    // Leaving an issue ends any question the phone was asking about it, and the phone learns from the
+    // fields as they were left: who was given the work and what the place is called.
+    DisposableEffect(issue.id) {
+        onDispose {
+            state.cancelAskBack()
+            state.learn(issue.id)
+        }
+    }
 
     Column(
         modifier = Modifier
@@ -212,6 +223,7 @@ fun EditScreen(state: AppState, issue: Issue) {
                 verticalArrangement = Arrangement.spacedBy(14.dp),
             ) {
                 VoiceCard(state, issue)
+                AskBackCard(state, issue)
                 CheckCard(state, issue)
                 ReadingsCard(state, issue)
                 EntryCard(state, issue)
@@ -308,6 +320,8 @@ private fun VoiceCard(state: AppState, issue: Issue) {
 
     fun startRecording() {
         stopPlayback()
+        // A question the phone is asking gives way: the two cannot share the microphone.
+        state.cancelAskBack()
         if (recorder.start(state.fileOf(fileName))) {
             seconds = 0
             levels.clear()
@@ -396,12 +410,16 @@ private fun VoiceCard(state: AppState, issue: Issue) {
             modifier = Modifier.padding(18.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            Text(
-                text = "VOICE NOTE",
-                style = MaterialTheme.typography.labelSmall,
-                color = Fog,
-                modifier = Modifier.fillMaxWidth(),
-            )
+            Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    text = "VOICE NOTE",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = Fog,
+                    modifier = Modifier.weight(1f),
+                )
+                // The language the note is spoken in; it is written down in English whichever it is.
+                LanguageChip(state)
+            }
             Spacer(Modifier.height(10.dp))
 
             MicButton(recording = recording, level = levels.lastOrNull() ?: 0f, hasNote = issue.voiceFile != null, onClick = { toggle() })
@@ -465,7 +483,7 @@ private fun VoiceCard(state: AppState, issue: Issue) {
                             Text("DESCRIBE IT ALOUD", style = MaterialTheme.typography.headlineSmall, color = Chalk)
                             Spacer(Modifier.height(4.dp))
                             Text(
-                                text = "Hindi, English or both. Say what is wrong, where it is, who should fix it and by when.",
+                                text = "Speak ${state.spoken.hint}. Say what is wrong, where it is, who should fix it and by when.",
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = Fog,
                                 textAlign = TextAlign.Center,
@@ -957,17 +975,21 @@ private fun EntryCard(state: AppState, issue: Issue) {
                     }
                 }
                 Text(
-                    text = "The AI fills these from your note and photo. Tap any field to correct it.",
+                    text = "The AI fills these from your note and photo, and each says where it came from: HEARD is in your " +
+                        "note, AI'S JUDGEMENT is the model's own call. A name or a date nobody said is kept out. Tap any field to correct it.",
                     style = MaterialTheme.typography.bodySmall,
                     color = Fog,
                 )
             }
-            EntryField(Icons.Rounded.ReportProblem, "Issue", issue.title, "What is wrong") { text ->
-                state.edit(issue.id) { it.copy(title = text) }
+            EntryField(Icons.Rounded.ReportProblem, "Issue", issue.title, "What is wrong", source = state.sourceOf(issue, Field.TITLE)) { text ->
+                state.typed(issue.id, Field.TITLE) { it.copy(title = text) }
             }
             // The type the issue is sorted and filtered by; the AI picks one and a tap changes it.
             Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                Text("TYPE", style = MaterialTheme.typography.labelSmall, color = Fog)
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Text("TYPE", style = MaterialTheme.typography.labelSmall, color = Fog)
+                    state.sourceOf(issue, Field.CATEGORY)?.takeIf { issue.category.isNotBlank() }?.let { SourceTag(it) }
+                }
                 Row(
                     modifier = Modifier.horizontalScroll(rememberScrollState()),
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -977,23 +999,48 @@ private fun EntryCard(state: AppState, issue: Issue) {
                             text = category,
                             selected = issue.category == category,
                             onClick = {
-                                state.edit(issue.id) { it.copy(category = if (it.category == category) "" else category) }
+                                state.typed(issue.id, Field.CATEGORY) { it.copy(category = if (it.category == category) "" else category) }
                             },
                         )
                     }
                 }
             }
-            EntryField(Icons.Rounded.Place, "Location", issue.location, "Where in the place") { text ->
-                state.edit(issue.id) { it.copy(location = text) }
+            val locationFrom = state.sourceOf(issue, Field.LOCATION)
+            EntryField(Icons.Rounded.Place, "Location", issue.location, "Where in the place", source = locationFrom) { text ->
+                state.typed(issue.id, Field.LOCATION) { it.copy(location = text) }
             }
-            SeverityPicker(issue.severity) { severity -> state.edit(issue.id) { it.copy(severity = severity) } }
+            issue.held[Field.LOCATION]?.let { offered ->
+                HeldLine("location", offered, onUse = { state.acceptHeld(issue.id, Field.LOCATION) }, onDrop = { state.dropHeld(issue.id, Field.LOCATION) })
+            }
+            // Until somebody says where it is, the places this phone has met on this site are one tap away.
+            state.memoryChanged
+            if (issue.location.isBlank() || locationFrom == Source.PHONE) {
+                KnownChips("KNOWN PLACES", state.placesToOffer()) { place ->
+                    state.typed(issue.id, Field.LOCATION) { it.copy(location = Readings.location(it.place, place, Readings.aim(it.stamp?.pitch))) }
+                }
+            }
+            SeverityPicker(issue.severity, state.sourceOf(issue, Field.SEVERITY)) { severity ->
+                state.typed(issue.id, Field.SEVERITY) { it.copy(severity = severity) }
+            }
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                EntryField(Icons.Rounded.Person, state.inspection.template.ownerLabel, issue.owner, "Who fixes it", Modifier.weight(1f)) { text ->
-                    state.edit(issue.id) { it.copy(owner = text) }
+                EntryField(
+                    Icons.Rounded.Person, state.inspection.template.ownerLabel, issue.owner, "Who fixes it", Modifier.weight(1f),
+                    source = state.sourceOf(issue, Field.OWNER),
+                ) { text ->
+                    state.typed(issue.id, Field.OWNER) { it.copy(owner = text) }
                 }
-                EntryField(Icons.Rounded.Event, "Due", issue.dueDate, "By when", Modifier.weight(1f)) { text ->
-                    state.edit(issue.id) { it.copy(dueDate = text) }
+                EntryField(Icons.Rounded.Event, "Due", issue.dueDate, "By when", Modifier.weight(1f), source = state.sourceOf(issue, Field.DUE)) { text ->
+                    state.typed(issue.id, Field.DUE) { it.copy(dueDate = text) }
                 }
+            }
+            issue.held[Field.OWNER]?.let { offered ->
+                HeldLine(state.inspection.template.ownerLabel.lowercase(), offered, onUse = { state.acceptHeld(issue.id, Field.OWNER) }, onDrop = { state.dropHeld(issue.id, Field.OWNER) })
+            }
+            issue.held[Field.DUE]?.let { offered ->
+                HeldLine("deadline", offered, onUse = { state.acceptHeld(issue.id, Field.DUE) }, onDrop = { state.dropHeld(issue.id, Field.DUE) })
+            }
+            if (issue.owner.isBlank()) {
+                KnownChips("KNOWN HERE", state.peopleToOffer()) { name -> state.typed(issue.id, Field.OWNER) { it.copy(owner = name) } }
             }
             EntryField(Icons.Rounded.EditNote, "Note", issue.note, "What you said, in English", singleLine = false) { text ->
                 state.edit(issue.id) { it.copy(note = text) }
@@ -1014,6 +1061,7 @@ private fun EntryField(
     placeholder: String,
     modifier: Modifier = Modifier,
     singleLine: Boolean = true,
+    source: Source? = null,
     onValueChange: (String) -> Unit,
 ) {
     var focused by remember { mutableStateOf(false) }
@@ -1032,7 +1080,9 @@ private fun EntryField(
     Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(6.dp)) {
         Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
             Icon(icon, contentDescription = null, tint = Fog, modifier = Modifier.size(15.dp))
-            Text(label.uppercase(), style = MaterialTheme.typography.labelSmall, color = Fog)
+            Text(label.uppercase(), style = MaterialTheme.typography.labelSmall, color = Fog, maxLines = 1)
+            // Where the value came from stays beside the name; the yellow "AI" only flashes as it is written.
+            if (source != null && value.isNotBlank() && filled.value <= 0.02f) SourceTag(source)
             if (filled.value > 0.02f) {
                 Text(
                     text = "AI",
@@ -1048,8 +1098,11 @@ private fun EntryField(
         BasicTextField(
             value = value,
             onValueChange = {
-                typed = it
-                onValueChange(it)
+                // Only a real change counts as the person's own: moving the cursor is not one.
+                if (it != value) {
+                    typed = it
+                    onValueChange(it)
+                }
             },
             singleLine = singleLine,
             minLines = if (singleLine) 1 else 3,
@@ -1076,9 +1129,12 @@ private fun EntryField(
 }
 
 @Composable
-private fun SeverityPicker(selected: Severity, onSelect: (Severity) -> Unit) {
+private fun SeverityPicker(selected: Severity, source: Source?, onSelect: (Severity) -> Unit) {
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        Text("SEVERITY", style = MaterialTheme.typography.labelSmall, color = Fog)
+        Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text("SEVERITY", style = MaterialTheme.typography.labelSmall, color = Fog)
+            source?.let { SourceTag(it) }
+        }
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Severity.entries.forEach { severity ->
                 val on = severity == selected

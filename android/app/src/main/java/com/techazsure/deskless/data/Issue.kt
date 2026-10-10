@@ -67,6 +67,15 @@ data class Issue(
     val readings: List<Reading> = emptyList(),
     /** The place or asset whose NFC tag the phone was tapped on; blank when none. */
     val place: String = "",
+    /**
+     * Where each field's value came from, by field name ("owner") and source key ("heard", "asked",
+     * "typed"…): whether it was said, seen, asked for, or is the model's own judgement.
+     */
+    val sources: Map<String, String> = emptyMap(),
+    /** What the model offered for a field that nobody said, by field name; kept out of the report until accepted. */
+    val held: Map<String, String> = emptyMap(),
+    /** True once the phone has asked aloud for what the note left out, so it asks once and not again. */
+    val asked: Boolean = false,
 ) {
     /** True once a follow-up picture exists and the model or the inspector says the problem is gone. */
     val resolved: Boolean
@@ -149,6 +158,12 @@ class IssueStore(context: Context) {
         .put("stamp", issue.stamp?.let { toJson(it) } ?: JSONObject.NULL)
         .put("readings", JSONArray().apply { issue.readings.forEach { put(toJson(it)) } })
         .put("place", issue.place)
+        .put("sources", JSONObject(issue.sources))
+        .put("held", JSONObject(issue.held))
+        .put("asked", issue.asked)
+
+    private fun words(json: JSONObject?): Map<String, String> =
+        json?.keys()?.asSequence()?.associateWith { json.optString(it) }.orEmpty()
 
     private fun toJson(stamp: Stamp) = JSONObject()
         .put("heading", stamp.heading?.toDouble() ?: JSONObject.NULL)
@@ -213,5 +228,8 @@ class IssueStore(context: Context) {
         stamp = json.optJSONObject("stamp")?.let(::stampFrom),
         readings = readingsFrom(json.optJSONArray("readings")),
         place = json.optString("place"),
+        sources = words(json.optJSONObject("sources")),
+        held = words(json.optJSONObject("held")),
+        asked = json.optBoolean("asked"),
     )
 }

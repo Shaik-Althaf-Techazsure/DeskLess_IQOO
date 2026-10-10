@@ -37,6 +37,7 @@ import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.FolderOpen
+import androidx.compose.material.icons.rounded.Speed
 import androidx.compose.material.icons.rounded.Translate
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -105,8 +106,8 @@ fun ModelsScreen(state: AppState) {
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             Text(
-                text = "Both models run on this phone, so nothing you photograph or say leaves it. " +
-                    "They are too large to ship inside the app, so the app downloads them once and keeps them here.",
+                text = "Both models run on this phone: what you photograph and say is turned into the report here, with no " +
+                    "network. They are too large to ship inside the app, so the app downloads them once and keeps them here.",
                 style = MaterialTheme.typography.bodyLarge,
                 color = Fog,
             )
@@ -116,6 +117,12 @@ fun ModelsScreen(state: AppState) {
                 detail = "Whisper small with Silero VAD · 360 MB",
                 ready = state.speechReady,
             )
+            // The language the notes are spoken in: Hindi with English, or one of five other Indian languages.
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text("You speak:", style = MaterialTheme.typography.bodyMedium, color = Fog)
+                LanguageChip(state)
+                Text("written down in English", style = MaterialTheme.typography.bodySmall, color = Fog, modifier = Modifier.weight(1f))
+            }
             ModelCard(
                 icon = Icons.Rounded.AutoAwesome,
                 name = "Note and photo to report fields",
@@ -125,7 +132,11 @@ fun ModelsScreen(state: AppState) {
 
             FetchCard(state.modelFetch)
 
+            MeasureCard(state)
+
             ProofCard(state)
+
+            MemoryCard(state)
 
             Surface(shape = RoundedCornerShape(20.dp), color = Coal, border = BorderStroke(1.dp, Line.copy(alpha = 0.6f))) {
                 Column(modifier = Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -319,7 +330,7 @@ private fun ProofCard(state: AppState) {
             )
             ProofLine(
                 icon = Icons.Rounded.CloudOff,
-                text = "Speech, pictures and reports are stored only in this app's own storage, until you save or share one.",
+                text = "Speech and pictures are worked on only in this app's own storage. A report leaves the phone when you save or share it, and when it is sent to your company's server.",
                 good = true,
             )
             if (seconds != null) {
@@ -389,5 +400,34 @@ private fun HowTo(number: Int, text: String) {
             Text("$number", style = MaterialTheme.typography.labelMedium, color = Ink)
         }
         Text(text, style = MaterialTheme.typography.bodyMedium, color = Chalk, modifier = Modifier.weight(1f))
+    }
+}
+
+/** The way in to the app's own measurements on this phone, with the last result in one line. */
+@Composable
+private fun MeasureCard(state: AppState) {
+    val card = state.scorecard
+    Surface(
+        onClick = { state.screen = Screen.Scorecard },
+        shape = RoundedCornerShape(20.dp),
+        color = Coal,
+        border = BorderStroke(1.dp, SafetyYellow.copy(alpha = 0.45f)),
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Row(modifier = Modifier.padding(16.dp), horizontalArrangement = Arrangement.spacedBy(14.dp), verticalAlignment = Alignment.CenterVertically) {
+            Box(modifier = Modifier.size(46.dp).background(SafetyYellow.copy(alpha = 0.16f), CircleShape), contentAlignment = Alignment.Center) {
+                Icon(Icons.Rounded.Speed, contentDescription = null, tint = SafetyYellow, modifier = Modifier.size(24.dp))
+            }
+            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text("Measured on this phone", style = MaterialTheme.typography.titleMedium, color = Chalk)
+                Text(
+                    text = if (card == null || card.notes == 0) "Twenty fixed notes: how many fields come out right, how fast, and what it costs the battery."
+                    else "Last run: ${(card.fieldsRight * 100).toInt()}% of fields right over ${card.notes} notes, %.1f s a note.".format(card.fieldSeconds + (card.speechSeconds ?: 0f)),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = Fog,
+                )
+            }
+            Text("OPEN", style = MaterialTheme.typography.labelSmall, color = SafetyYellow)
+        }
     }
 }

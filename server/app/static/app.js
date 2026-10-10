@@ -741,10 +741,11 @@ function needsYou() {
       }
       list.replaceChildren(...d.queue.map((entry, at) => {
         const step = entry.next;
-        const acts = step.kind === "assign" || step.kind === "send";
+        // A step whose words are this person's own to give, such as the answer to a user's question, opens the issue.
+        const acts = (step.kind === "assign" || step.kind === "send") && !!step.text;
         const go = acts
           ? twice(el("button", { class: "primary small" }), step.label, async () => { note(await doStep(entry.id, step)); refresh(); })
-          : el("button", { class: "primary small", text: step.kind === "fix" ? "Open the job" : "Open to check", onclick: (event) => { event.stopPropagation(); openIssue(entry.id); } });
+          : el("button", { class: "primary small", text: step.kind === "fix" ? "Open the job" : step.kind === "send" ? "Open to answer" : "Open to check", onclick: (event) => { event.stopPropagation(); openIssue(entry.id); } });
         const node = el("div", { class: "need", style: `--i:${at}` },
           scoreRing(entry.score, entry.band),
           el("div", { class: "grow" },
@@ -1525,6 +1526,7 @@ function reports(rows) {
             chip(count(row.issues, "issue")),
             row.open_issues ? chip(row.open_issues + " not closed", "warn") : row.issues ? chip("All closed", "good") : null,
             verdict ? el("span", { class: "chip " + verdict[0], text: verdict[1], title: row.verdict_reason }) : null,
+            row.template === "PUBLIC" ? chip("Sent in by a user of the place", "role") : null,
             row.in_progress ? chip(row.has_pdf ? "Changed since the report was built" : "Walk going on, no report built yet", "warn") : null,
             row.signed ? chip("Signed with fingerprint", "good") : null),
           verdict && row.verdict !== "GENUINE" && row.verdict_reason ? el("div", { class: "meta", style: "margin-top:8px", text: row.verdict_reason }) : null),
@@ -1577,7 +1579,8 @@ function issueCard(issue) {
       el("div", { class: "meta", text: [issue.site, issue.location].filter(Boolean).join(" · ") }),
       el("div", { class: "tags" },
         chip(SEVERITY[issue.severity] || issue.severity, issue.severity), statusChip(issue),
-        issue.category ? chip(issue.category) : null, issue.overdue ? chip("Overdue", "overdue") : null),
+        issue.category ? chip(issue.category) : null, issue.overdue ? chip("Overdue", "overdue") : null,
+        issue.raised_as ? chip(issue.raised_as === "enquiry" ? "Question from a user" : "Sent in by a user", "role") : null),
       issue.status === "closed" ? null : el("div", { class: "meta why", text: "AI: " + issue.priority.why.slice(0, 2).join(" · ") })),
     el("div", { class: "side" },
       issue.status === "closed" ? null : el("div", { class: "rank" }, bandChip(issue.priority), scoreRing(issue.priority.score, issue.priority.band)),
@@ -1722,7 +1725,7 @@ function briefBox(issue, typed = false) {
   const step = brief.next;
   const summary = el("p", { class: "sum" });
   if (typed) typeOut(summary, brief.summary); else summary.textContent = brief.summary;
-  const acts = step.kind === "assign" || step.kind === "send";
+  const acts = (step.kind === "assign" || step.kind === "send") && !!step.text;
   const run = async () => {
     note(await doStep(issue.id, step));
     await openIssue(issue.id);
@@ -1789,6 +1792,39 @@ function talkBox(issue) {
 // DeskLess is not for one trade. The app comes with a type for many kinds of place and a general one for
 // any place; a company whose place is none of those makes its own here, and its phones pick it up.
 
+// The door a place opens to the people who use it: residents, students, visitors, staff. What they send
+// from the app becomes an issue of the company and goes to one of its inspectors.
+function doorCard() {
+  const title = "The people who use the place";
+  const box = el("div", { class: "card kind" }, el("div", { class: "head" }, el("h4", { text: title })), el("p", { class: "hint", text: "Looking…" }));
+  const draw = (door) => {
+    const kind = el("select", { disabled: !door.may_set },
+      el("option", { value: "", text: "Choose the kind of place" }), ...door.kinds.map((one) => el("option", { value: one.key, text: one.name })));
+    kind.value = door.kind;
+    const change = async (open) => {
+      try {
+        const now = await post("/company/door", { open, kind: kind.value });
+        if (open !== door.open) note(now.open ? `${door.name} is now open to the people who use it. They find it in the DeskLess app under its kind of place.` : `${door.name} no longer takes what its users send in.`);
+        draw({ ...door, ...now });
+      } catch (error) {
+        note(error.message, true);
+        kind.value = door.kind;
+      }
+    };
+    const button = el("button", { class: door.open ? "small danger" : "primary", text: door.open ? "Stop taking it" : "Open to the people who use the place", disabled: !door.may_set, onclick: () => change(!door.open) });
+    kind.onchange = () => { if (door.open) change(true); };
+    box.replaceChildren(
+      el("div", { class: "head" }, el("h4", { text: title }), chip(door.open ? "Open" : "Closed", door.open ? "closed" : "")),
+      el("p", { text: "Residents, students, visitors and staff can tell you what they notice, or ask a question, from the DeskLess app. What they send becomes an issue here and goes to one of your inspectors. Nobody outside your company sees it." }),
+      el("div", { class: "pairs" },
+        el("div", {}, el("label", { text: "Kind of place" }), kind),
+        el("div", {}, el("label", { text: door.open ? `${door.sent_in} sent in so far` : "Closed: your company is not shown to anyone" }), button)),
+      door.may_set ? null : el("p", { class: "hint", text: "Set by your managing director." }));
+  };
+  get("/company/door").then(draw).catch((error) => box.replaceChildren(el("div", { class: "head" }, el("h4", { text: title })), el("p", { class: "hint", text: error.message })));
+  return box;
+}
+
 function typesView(data) {
   heading("Report types", "DeskLess works for any kind of place. Say which type your walks start with, or make one of your own: the phones pick it up by themselves, with no new version of the app.");
   const titles = Object.fromEntries([...data.built_in, ...data.own].map((one) => [one.key, one.title]));
@@ -1851,6 +1887,7 @@ function typesView(data) {
   }
 
   return [el("div", { class: "board" },
+    doorCard(),
     el("div", { class: "card kind" },
       el("div", { class: "head" }, el("h4", { text: "The type a new walk starts with" })),
       usual,
@@ -1891,7 +1928,7 @@ async function openIssue(id) {
     : null;
   const details = facts([
     ["Place", issue.site], ["Where", issue.location], ["Type", issue.category],
-    ["Reported", `${issue.reported_by} · ${when(issue.captured_at)}`],
+    ["Reported", `${issue.reported_by}${issue.raised_as ? ", a user of the place" : ""} · ${when(issue.captured_at)}`],
     ["Named in the note", issue.owner], ["Due", due],
     ["With", issue.assigned_to_name ? `${issue.assigned_to_name} · given by ${issue.assigned_by}, ${when(issue.assigned_at)}` : ""],
     ["Repair", issue.fixed_at ? [when(issue.fixed_at), issue.fix_note].filter(Boolean).join(" · ") : ""],

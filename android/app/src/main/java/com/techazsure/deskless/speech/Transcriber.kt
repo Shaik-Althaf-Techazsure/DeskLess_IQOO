@@ -15,21 +15,47 @@ import java.nio.ByteBuffer
 import java.nio.ByteOrder
 
 /**
- * Hindi-English speech to English text, on the phone: Whisper small through sherpa-onnx, task "translate".
- * Whisper only reads 30 seconds at a time, so longer notes are first cut at pauses by Silero VAD.
+ * Speech in Hindi-English or another Indian language to English text, on the phone: Whisper small through
+ * sherpa-onnx, task "translate". Whisper only reads 30 seconds at a time, so longer notes are first cut at
+ * pauses by Silero VAD.
  */
 class Transcriber(private val models: ModelStore) {
     private var recognizer: OfflineRecognizer? = null
 
+    /** The language the loaded recognizer listens for; it is fixed when the recognizer is made. */
+    private var loadedFor = ""
+
+    /** How long the last note took to turn into text, not counting the one-off loading of the model. */
+    @Volatile
+    var lastSeconds = 0f
+        private set
+
     val ready: Boolean
         get() = models.speechReady
 
-    /** Blocking and slow (seconds); call it off the main thread. One call at a time. */
+    /**
+     * [language] is the speech model's code for the language spoken ("hi", "kn"…), or blank to have it
+     * detected. Blocking and slow (seconds); call it off the main thread. One call at a time.
+     */
     @Synchronized
-    fun toEnglish(wav: File): String {
+    fun toEnglish(wav: File, language: String = "hi"): String {
         val samples = readSamples(wav)
         if (samples.size < WavRecorder.SAMPLE_RATE / 4) return ""
-        val recognizer = recognizer ?: load().also { recognizer = it }
+        // Another language needs another recognizer; making one takes a second or two.
+        if (recognizer != null && loadedFor != language) release()
+        val recognizer = recognizer ?: load(language).also {
+            recognizer = it
+            loadedFor = language
+        }
+        val started = System.nanoTime()
+        try {
+            return heard(recognizer, samples)
+        } finally {
+            lastSeconds = (System.nanoTime() - started) / 1e9f
+        }
+    }
+
+    private fun heard(recognizer: OfflineRecognizer, samples: FloatArray): String {
 
         if (samples.size <= DIRECT_LIMIT) return decode(recognizer, samples)
 
@@ -73,14 +99,14 @@ class Transcriber(private val models: ModelStore) {
         recognizer = null
     }
 
-    private fun load() = OfflineRecognizer(
+    private fun load(language: String) = OfflineRecognizer(
         config = OfflineRecognizerConfig(
             featConfig = FeatureConfig(sampleRate = WavRecorder.SAMPLE_RATE, featureDim = 80),
             modelConfig = OfflineModelConfig(
                 whisper = OfflineWhisperModelConfig(
                     encoder = path(ModelStore.WHISPER_ENCODER),
                     decoder = path(ModelStore.WHISPER_DECODER),
-                    language = "hi",
+                    language = language,
                     task = "translate",
                 ),
                 tokens = path(ModelStore.WHISPER_TOKENS),

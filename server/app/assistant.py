@@ -23,7 +23,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from .config import settings
-from .models import APPROVED, ASSIGNED, CLOSED, FIXED, LEADS, OPEN, ROLE_NAMES, Account, Brief, Event, Issue, Message, now
+from .models import APPROVED, ASSIGNED, CLOSED, FIXED, LEADS, MEMBER, OPEN, ROLE_NAMES, Account, Brief, Event, Issue, Message, now
 from .service import Actor, aware, today
 
 #: Where an issue starts on the scale of 0 to 100, by the severity the phone's model gave it.
@@ -173,6 +173,7 @@ class Desk:
         self.moment = now()
         ids = [issue.id for issue in issues]
         self.companies = {issue.company_id for issue in issues if issue.company_id}
+        self.authors = {issue.author_id for issue in issues}
         self.sent_back = set(db.scalars(select(Event.issue_id).where(Event.kind == "reopened", Event.issue_id.in_(ids)))) if ids else set()
         self.alike: Counter = Counter()
         if self.companies:
@@ -197,6 +198,11 @@ class Desk:
             self._people = {person.id: person for person in found}
             if self.me is not None:
                 self._people.setdefault(self.me.id, self.me)
+            # Whoever sent an issue in from outside: a user of the place, who is in no company.
+            outside = self.authors - self._people.keys()
+            if outside:
+                for person in self.db.scalars(select(Account).where(Account.id.in_(outside), Account.role == MEMBER, Account.status == APPROVED)):
+                    self._people[person.id] = person
         return self._people
 
     @property
@@ -240,7 +246,14 @@ class Desk:
     def lead_for(self, issue: Issue) -> Account | None:
         """Who gives this issue out: the manager of whoever raised it, or failing that the managing director."""
         author = self.people.get(issue.author_id)
-        if author is not None:
+        if issue.raised_as:
+            # Sent in by a user of the place: it is given out by whoever leads the person told of it first.
+            first = next((message for message in self.messages[issue.id] if message.rule == "public"), None)
+            told = self.people.get(first.to_id) if first is not None else None
+            lead = None if told is None else told if told.role in LEADS else self.people.get(told.reports_to)
+            if lead is not None:
+                return lead
+        elif author is not None:
             lead = author if author.role in LEADS else self.people.get(author.reports_to)
             if lead is not None:
                 return lead
@@ -338,6 +351,8 @@ class Desk:
         holder = holder.name if holder else "a technician"
         if issue.status == OPEN:
             author = names.get(issue.author_id)
+            if issue.raised_as:
+                return f"Sent in {_ago(issue.captured_at, self.moment)}{' by ' + author.name + ',' if author else ' by'} a user of the place; nobody has it yet."
             return f"Raised {_ago(issue.captured_at, self.moment)}{' by ' + author.name if author else ''}; nobody has it yet."
         if issue.status == ASSIGNED:
             late = (self.day - issue.due_on).days if issue.due_on else 0
@@ -355,6 +370,8 @@ class Desk:
         kind = f"{issue.category.lower()} issue" if issue.category else "issue"
         where = f" at {_place(issue)}" if _place(issue) else ""
         parts = [f"{SEVERITY_WORD.get(issue.severity, 'Medium')} {kind}{where}: {_title(issue).rstrip('.')}."]
+        if issue.raised_as == "enquiry":
+            parts = [f"A user of the place asks{where}: {_title(issue)}"]
         note = _sentence(issue.note or "", 200)
         if note and note.rstrip(".").lower() != _title(issue).rstrip(".").lower():
             parts.append(note if note[-1] in ".!?…" else note + ".")
@@ -395,6 +412,10 @@ class Desk:
             if issue.status == FIXED:
                 return {"kind": "check", "label": "Compare the two pictures, then close it or send it back"}
             if issue.status == OPEN:
+                asker = people.get(issue.author_id) if issue.raised_as == "enquiry" else None
+                if asker is not None:
+                    # A question is answered, not repaired, and the words are this person's to give.
+                    return send(asker, f"Answer {asker.name}", "")
                 could = self.who_could(issue) if could is None else could
                 if could:
                     best = could[0]
@@ -417,6 +438,20 @@ class Desk:
                 return send(holder, f"Ask {holder.name} when it will be done", f"{_first(holder.name)}, this is {_days(late)} past its day: {_title(issue).rstrip('.')}{' at ' + _place(issue) if _place(issue) else ''}. What is holding it, and when will it be done?")
             return answer() or wait(f"With {holder.name if holder else 'a technician'}{', due ' + _date(issue.due_on) if issue.due_on else ''}.")
 
+        brought = next((message for message in self.messages[issue.id] if message.rule == "public"), None) if issue.raised_as else None
+        if me is not None and brought is not None and brought.to_id == me.id and issue.status == OPEN:
+            # Sent in by a user of the place and brought to this person first. A question is theirs to
+            # answer. Anything else is theirs to pass up to whoever gives out work, and stays so until
+            # they have: a word of thanks to the sender does not take it off their hands.
+            asker = people.get(issue.author_id)
+            if issue.raised_as == "enquiry":
+                if asker is not None and waits_on_me is not None:
+                    return send(asker, f"Answer {asker.name}", "")
+            else:
+                above = self.lead_for(issue)
+                passed_up = above is not None and any(self._mine(message) and message.to_id == above.id for message in self.messages[issue.id])
+                if above is not None and above.id != me.id and not passed_up:
+                    return send(above, f"Send it to {above.name} to give out", f"{_first(above.name)}, a user of the place sent this in: {self.summary(issue)} Please give it to a technician.")
         reply = answer()
         if reply is not None:
             return reply
@@ -459,6 +494,11 @@ class Desk:
     def replies(self, issue: Issue) -> list[str]:
         """A few ready answers for this person, to send as they are or to start from."""
         role = self.actor.role
+        if role == MEMBER:
+            return ["Thank you.", "It is still not put right.", "Here is more on it: "]
+        if issue.raised_as and role != "technical" and issue.status in (OPEN, ASSIGNED):
+            # Ready words for the user of the place who sent it in.
+            return ["Thank you for telling us. Someone will look at it today.", "Could you say exactly where it is, or send a picture?", "This is known already and is being put right.", self.standing(issue)]
         if role == "technical":
             return ["I have seen it and will start on it today.", "I need a clearer picture or more detail before I can start.", "I cannot take this one. Please give it to someone else."]
         if role == "inspector":

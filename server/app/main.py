@@ -16,11 +16,11 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
 from sqlalchemy import text
 
-from . import autopilot, metrics, writer
+from . import autopilot, changes, metrics, writer
 from .config import settings
 from .db import SessionLocal, init_db
 from .mailer import Mailer
-from .routers import admin, auth, people, signup, work, types
+from .routers import admin, auth, desk, door, people, signup, work, types
 
 STATIC = Path(__file__).parent / "static"
 
@@ -75,6 +75,32 @@ class Counted:
             await self.app(scope, receive, noting)
         finally:
             metrics.record(scope["path"], answer["status"], (time.perf_counter() - began) * 1000)
+
+
+class Noticed:
+    """
+    Notices every answer that may have changed what the server holds: one to a request of the API that
+    was more than a question and was not refused. A phone waiting to hear that its desk has changed
+    watches that count, and reads the desk again only when it has moved.
+    """
+
+    _QUESTIONS = ("GET", "HEAD", "OPTIONS")
+
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http" or scope["method"] in self._QUESTIONS or not scope["path"].startswith("/api/"):
+            await self.app(scope, receive, send)
+            return
+
+        async def noting(message):
+            # By the time an answer starts, whatever the request wrote is in the database.
+            if message["type"] == "http.response.start" and message["status"] < 400:
+                changes.bump()
+            await send(message)
+
+        await self.app(scope, receive, noting)
 
 
 class Squeezed:
@@ -146,8 +172,9 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="DeskLess", version="2.0", lifespan=lifespan, docs_url="/api/docs", redoc_url=None, openapi_url="/api/openapi.json")
 app.state.mailer = Mailer()
-# Counted sits inside UnderItsPath, so it sees each path as the routes do, without the site's prefix.
+# Counted and Noticed sit inside UnderItsPath, so they see each path as the routes do, without the site's prefix.
 app.add_middleware(Squeezed)
+app.add_middleware(Noticed)
 app.add_middleware(Counted)
 app.add_middleware(UnderItsPath, base=settings().base_path)
 app.include_router(signup.router)
@@ -155,6 +182,8 @@ app.include_router(auth.router)
 app.include_router(admin.router)
 app.include_router(people.router)
 app.include_router(work.router)
+app.include_router(desk.router)
+app.include_router(door.router)
 app.include_router(types.router)
 
 

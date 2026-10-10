@@ -25,13 +25,13 @@ docker compose up --build
 
 | Address | What you get |
 |---|---|
-| **http://localhost:8700** | The Android app: an install page with the APK that was just built from `android/` |
+| **http://localhost:8700** | The Android app: an install page with the two APKs that were just built from `android/`: DeskLess for an organisation's own people, and DeskLess User for the people who use the place |
 | **http://localhost:8800** | The home page: what DeskLess is and how it works, with the film, the pitch deck and screens of the app and the dashboards. **Sign in** and **Sign up** are in its top bar. |
 | **http://localhost:8800/dashboard** | The sign-in page of the dashboards: administrator, managing director, manager, inspector, technical |
 | **http://localhost:8825** | A test mailbox that catches every email the server sends (opens on this computer only) |
 | **http://localhost:8600** | The web prototype. Tap **Load the sample walk-through** to see a finished report |
 
-The APK is also written to `apk/DeskLess.apk` next to `docker-compose.yml`.
+The APKs are also written to `apk/DeskLess.apk` and `apk/DeskLess-User.apk` next to `docker-compose.yml`.
 
 A native Android app cannot run inside a container, because it needs the phone's camera, microphone and GPU. So Docker compiles the app, runs its unit tests and serves the result; the app itself runs on the phone. To get it there, open `http://<this computer's IP>:8700` on the phone (same Wi-Fi or hotspot), or send `apk/DeskLess.apk` with iQOO Office Kit file transfer.
 
@@ -45,7 +45,7 @@ The first build downloads a JDK, the Android SDK, Gradle and the app's libraries
 
 To stop: `Ctrl+C`, or `docker compose down`. The prototype's data stays in Docker volumes; `docker compose down -v` deletes it.
 
-Every push also runs the same build on GitHub Actions (`.github/workflows/build.yml`) and attaches the APK to the run as an artifact.
+Every push also runs the same build on GitHub Actions (`.github/workflows/build.yml`) and attaches both APKs to the run as an artifact.
 
 ---
 
@@ -56,10 +56,11 @@ Every push also runs the same build on GitHub Actions (`.github/workflows/build.
 | Step | What happens | With |
 |---|---|---|
 | 1. Capture | Take a photo of the issue, or film a clip of up to 20 seconds, and record a voice note. | CameraX, `AudioRecord` (16 kHz WAV) |
-| 2. Speech to English text | The note is transcribed on the phone. Hindi or mixed speech comes out in English. Long notes are split at pauses first. | Whisper `small` through sherpa-onnx, Silero VAD |
-| 3. Structure | The note and the picture become issue, location, severity, owner and due date. A spoken deadline such as "Monday" becomes a date. | Gemma 4 E2B through LiteRT-LM, on the phone's GPU with a CPU fallback |
+| 2. Speech to English text | The note is transcribed on the phone. Hindi or mixed speech comes out in English; so does Kannada, Tamil, Telugu, Marathi or Bengali, chosen on the voice card. Long notes are split at pauses first. | Whisper `small` through sherpa-onnx, Silero VAD |
+| 3. Structure | The note and the picture become issue, location, severity, owner and due date. A spoken deadline such as "Monday" becomes a date. A name, a place or a date that nobody said is kept out, and each field says where it came from. | Gemma 4 E2B through LiteRT-LM, on the phone's GPU with a CPU fallback; the checking is plain code |
+| 3a. Ask back | When the note leaves out where, who or by when, the phone asks one question aloud, listens, and fills those fields from the answer. | Android text to speech, Whisper, Gemma 4 E2B |
 | 4. AI check | The model says what it sees in the picture and whether that matches the note. The inspector can retake the picture or confirm it. | Gemma 4 E2B |
-| 5. Review | Every field can be edited. Fields filled by a model are marked. | Jetpack Compose |
+| 5. Review | Every field can be edited, by hand or by a spoken instruction that is shown before it is carried out. Fields filled by a model are marked. | Jetpack Compose |
 | 6. Report | An English PDF: counts by severity and type, then one entry per issue with its picture. | Android `PdfDocument` |
 | 7. Hand-off | Save to `Documents/DeskLess`, share, send to a laptop with iQOO Office Kit file transfer, or pass it to another phone running DeskLess, directly or through relay phones. | Share sheet, Office Kit, Nearby Connections |
 | 8. To the office | The finished report is sent to the company's server by itself, at once or when the phone next has a network. There its issues are given to technicians, fixed and checked, and each role follows them on a dashboard. | The DeskLess server, see [Accounts, roles and dashboards](#accounts-roles-and-dashboards) |
@@ -97,11 +98,104 @@ With no internet and no mobile signal, people on the same site still need to tal
 
 It is a walkie-talkie in how it is used, not a radio set. A phone has no long-range radio that an app may transmit on; what DeskLess uses is the phone's Bluetooth and Wi-Fi. So the phones have to be within that reach of each other, some tens of metres, or have DeskLess phones in between; and DeskLess has to be open on them.
 
-### Ask DeskLess
+### Ask or tell
 
-After a walk, the report can be asked. **Ask about this walk** on the first screen opens a microphone: ask aloud, in Hindi, English or both, "What should be fixed first?" or "Which issues are still open, and who has them?", and the phone answers in a sentence or two and reads the answer out. Whisper turns the question into English text and Gemma answers it, both on the phone, from the issues of this walk alone: no network takes part, and nothing of the question or the answer leaves the phone. A question can also be typed.
+After a walk, the report can be asked, and told what to change. **Ask or tell** on the first screen opens a microphone: ask aloud, in Hindi, English or both, "What should be fixed first?" or "Which issues are still open, and who has them?", and the phone answers in a sentence or two and reads the answer out. Whisper turns the question into English text and Gemma answers it, both on the phone, from the issues of this walk alone: no network takes part. A question can also be typed.
 
 The model is told to use only the issues it is given and to say so when they do not hold the answer; asked for the budget of the repairs, it answered that the walk does not show it. A recording with no voice in it is not handed to the speech model at all, because a speech model given silence makes a sentence up. Each answer says how long the phone took and that the model can be wrong.
+
+**An instruction is carried out, after it has been shown.** "Mark issue 3 high, give it to Suresh, due Friday" becomes a list on the screen: *Severity: Medium → High*, *Owner: not set → Suresh*, *Due: not set → 16 Oct 2026*, with **Do it** and **Cancel** under it. Nothing changes before **Do it**, and **Put it back** undoes it afterwards. "Show the open ones", "open issue 2" and "new issue" work the same way without the list, since they change nothing.
+
+What the model does here is small on purpose. It fills a form: which of a few actions, which issues, which values. Everything else is plain code that can be read and tested (`structure/Commands.kt`): the issue numbers a person said outright are taken from their words, not from the model; an issue that does not exist is refused; the date is worked out by the app; and a value the model gives that was not in what was said is left out and named. On the first try on an emulator the model added a type nobody had asked for; it was dropped, and the three changes that were asked for were listed.
+
+### My desk: the office speaks, and is answered by voice
+
+The report does not end at the office. Whoever it then waits on (the manager who gives it out, the technician who repairs it, the person who checks the repair) opens **My desk** on their own phone and is told, aloud, what waits for them: "Arjun, one job is waiting for you. Job 1 is an exposed live wire at Tower B, basement, critical; repair it and mark it fixed with a photo by 12 October." They answer the same way:
+
+| Said to the desk | What happens, after it has been shown and **Do it** tapped |
+|---|---|
+| "Give the first one to Arjun by Monday" | The issue goes to that technician with that day. The office tells them. |
+| "Do job 2" | What the office proposes for that job is carried out as it stands. |
+| "Tell the manager I will start on it today" | The words go to the manager, on the issue. |
+| "I fixed the first one, taped the wire" | The camera opens for the repair. The phone fetches the picture the issue was reported with, its model compares the two, and both go to the office with the note and what the model made of them. |
+| "Close job 5" / "Send job 5 back, still dripping" | The repair is accepted, or goes back to the technician with what is wrong. |
+| "Read me the second one" / "What is most urgent?" | It is read out, or answered, from the desk alone. |
+
+Who does what here is kept apart on purpose:
+
+- **The server decides what is on a desk**, in what order, and what step to propose: the same rules that fill each role's console on the web (see [The assistant](#the-assistant)).
+- **The model on the phone words and understands**: it turns the list into a spoken briefing, and what is said into a form (which action, which job, who, by when, what words).
+- **Plain code on the phone checks the form** (`structure/DeskCommands.kt`): a job number a person said is taken from their words; a person is looked up in the list the office allows, using only the words of the name that were really said, so a name the model adds cannot choose anybody; a role may only do what it may do; a message nobody spoke is not sent.
+- **The server checks it all again** when the action arrives, as it does for the web page.
+
+**The server hands it on.** A report goes up from the phone of whoever found the problem; the server ranks it and puts it on the desk of whoever it now waits on; and that person's phone is told at once. The phone does not ask over and over: it asks one question that the server answers the moment that person's desk changes (`GET /api/desk/wait`), then asks again. A new arrival is announced in a line, by voice, while the app is open. With the app closed nothing is announced: that needs a push service, which this build does not use. The desk as it was last fetched can be read with no network; acting on it needs one.
+
+**One phone, several people.** A phone shared on a site is handed from a manager to a technician and back. Each signs in once; after that a tap on their name at the top of the desk makes the phone theirs, with no password, and their desk is fetched and read out. A walk in hand stays with the person who began it and is not sent under another name. Anyone holding the unlocked phone can make that tap: it is meant for a phone a team shares, not for keeping colleagues out.
+
+### For the people who use the place
+
+An inspector walks a place a few times a month. The people who use it are there every day: the residents of an apartment block, the students and staff of a college, the people who work in an office. DeskLess gives them a side of their own, in the same app and in an edition built only for them, **DeskLess User**.
+
+They sign up with a name, an email address and a password. There is no Aadhaar number, no photo and nobody to approve them: the code sent to the email address is enough. They choose the kind of place, then the place, tap the microphone and say it in their own words.
+
+| The person says | The phone |
+|---|---|
+| "Water is leaking on the stairs near the lift on the third floor since morning" | Puts it into a short entry on the phone and reads it back: "I have this as an issue for Orchid Residency: Water leaking on stairs near lift. Where: stairs near the lift on the third floor. Marked medium. Say send it, or tell me what to change." Then it listens. |
+| "Make it high" | Changes it, reads it back, and listens again. |
+| "It is the lift in block C, not block B" | The model changes that part and nothing else; it is read back again. |
+| "Is the cafeteria open on Sunday?" | Makes it a question to be answered, not a repair to be given out. |
+| "Send it" | Sends it, and says who at the place now has it. |
+| "Forget it" | Drops it. Nothing was sent. |
+
+The work is split as everywhere else in DeskLess:
+
+- **The model on the phone words it**: a title, a summary in the person's own voice, and its reading of whether this is an issue, a report of something that happened or a question, where it is, how serious, and what kind.
+- **Plain code decides what of that is kept** (`structure/UserAsks.kt`): a place is kept only if its words are in what the person said; a kind, a severity or a type the app does not know is not taken; a question is never more than low; a summary written about the person ("The person is asking…") is dropped for their own words.
+- **"Send it", "forget it", "no" and "make it high" need no model**, and are understood only when the sentence is made of nothing but such words: "it is on the right side of the gate" is not a yes, and "the class was cancelled" does not drop the entry.
+- **Nothing is sent until the person says so**, or presses Send. The entry can also be changed by typing or by tapping its kind and severity, and a photo can be added.
+
+**Where it goes.** A place takes nothing in, and is named to nobody, until its managing director opens it on the dashboard (**Report types**, then **The people who use the place**) and says what kind of place it is. What a user sends becomes an issue of that place and goes, with the sender's words, to one of the place's inspectors: the one with the least already waiting. It is on that inspector's desk at once, and their phone announces it (see [My desk](#my-desk-the-office-speaks-and-is-answered-by-voice)). Nobody at another place sees it, and within the place nobody below the managing director sees it until it is sent to them. From there it is worked like anything found on a walk: passed to whoever gives out work, given to a technician, repaired and shown with a photo, checked and closed. Thanking the sender does not take it off the inspector's desk; passing it up does. A question is answered, not assigned, and its answer closes it.
+
+**What comes back.** The sender's screen lists everything they sent with where each stands: "With Kavya Nair. Nobody has taken it up yet.", "Given to Imran Sheikh to put right, by 12 Oct.", "Repaired, checked and closed." An answer from the place, and each step, is said aloud when it comes, while the app is open; the phone looks every few seconds. The sender can add a word, typed or spoken, and it goes to whoever at the place wrote last. With no network, what was told and agreed waits on the phone and goes by itself when the network is back.
+
+**Two editions from one code.** Built as usual, the app is for an organisation's own people, and a user who signs in to it gets the user's screen. Built with `-PuserApp` it is **DeskLess User**: it carries that name on the phone, offers only the user's sign-up, shows only the user's screen, and tells an inspector or a manager who tries to sign in to use the other app. Both have one package name and one key, so a phone holds one of the two and installing one takes the place of the other. `docker compose up --build` makes both.
+
+**Three places to show it with.** On the server, `python -m app.demo` makes an apartment block, a college and an office park, each with a managing director, a manager, an inspector and a technician who are already approved, opens each to its users, and prints the twelve DeskLess IDs with the one password they share (see [On a real server](#on-a-real-server)). They are stand-ins and say so: their email addresses cannot receive mail and their Aadhaar numbers are from the range kept for testing.
+
+### The phone asks back
+
+A spoken note often leaves out where the problem is, who should deal with it, or by when. When the model has filled an issue and one of those is still missing, the phone asks, aloud, one question for whatever is missing ("Who should deal with it, and by when?"), listens until the answer stops, and fills those fields from it. The answer is added to the note, so the report shows where the words came from. It asks once per issue; **Ask me** on the issue asks again, and a switch on the same card stops it asking by itself.
+
+Only the fields that were asked about are touched, and only with what the answer says: the answer goes through the same guard as a note.
+
+### Nothing made up: where each field came from
+
+A model of this size will now and then write a name or a day that nobody spoke. So nothing it writes goes straight into the report. A place, a person or a deadline is written only if its words are in the note (or, for a place, in what the picture shows). Otherwise it is kept aside under the field, *Kept out: the AI offered "Ramesh" as the owner, but it is not in your note*, with **Use it** for when it is right after all. A title, a severity and a type are the model's to judge, and are marked as such.
+
+Every field then carries a small tag saying where its value came from, on the screen and in a *Filled from* line in the PDF:
+
+| Tag | Meaning |
+|---|---|
+| HEARD | The words are in the note |
+| SEEN | Read from the picture |
+| PHONE | From the phone itself: its position, its sensors or a tapped tag |
+| KNOWN NAME | Heard, and spelt as a name this phone has met before |
+| ASKED | From the answer when the phone asked back |
+| BY VOICE | Set by a spoken instruction |
+| AI'S JUDGEMENT | The model's own call, not said in so many words |
+| YOU | Typed or picked by hand |
+
+What a person typed, answered or set by voice is theirs: the model does not write over it when the fields are filled again.
+
+### What the phone learns
+
+As issues are filed, the phone learns who gets given work and what the places on a site are called, from the fields as the inspector leaves them. It uses that in three ways, none of which involves the model: a name heard a little wrong ("Ravi Kumaar") is spelt the way it is known; a name the inspector once corrected is corrected by the phone the next time it is heard the same wrong way; and a first name that only one known person carries is written in full. Known people and places are also offered under an empty field, one tap to fill. The list is on the AI screen, where a tap forgets a name. It is one small file in the app's own storage.
+
+### Measured on the phone
+
+**Measured on this phone**, on the AI screen, runs twenty fixed notes of the kind an inspector speaks, each with the answers a careful reader would give, through the same models and the same guard as a real note, and marks the result: the share of report fields that came out right, by field; how many names, places or dates were made up; the seconds a note takes, speech and fields apart; and what the run cost the battery by the phone's own gauge. With **Spoken aloud first**, the phone's own voice says each note into a sound file and the speech model listens to it, so the whole chain is measured. The last run is kept, and **Share the numbers** gives it as a few lines of text.
+
+It is our own small test, not a published benchmark, and it says so on the screen. Its use is that it gives the same twenty notes after every change. The first run, of five notes on an emulator, got 24 of 25 fields right and showed a real fault: the model shortened "in two days" to "Two days", which the app did not turn into a date. It does now.
 
 ### The phone as an instrument
 
@@ -174,6 +268,11 @@ Phones exchange their public keys the first time they connect after linking, und
 ### Not measured yet
 
 - Accuracy on mixed Hindi-English speech.
+- **The user's side with a real voice, on a real phone, against the live server.** On the Android emulator against the server in Docker on the same computer: a user signed up with the short form and the emailed code and had an ID at once; a typed sentence became an entry in 15 seconds on the emulator's processor, with the title, the place in the building and the type right; "Make it high" and then "Send it", given as typed stand-ins for the voice while the phone was listening, changed it and sent it; it was at the top of the right inspector's desk, marked high, with the step "send it to the manager to give out"; the inspector's answer was on the user's screen within 14 seconds; and a typed question was sent, answered and closed. The emulator has no microphone and no sound, so nobody has yet said anything to it or heard it answer. Still to be done: a person speaking in a noisy hall (where the phone, listening by itself after it has spoken, may take the room's talk for an answer: the speaker button at the top stops it listening by itself), the model on a Pixel 9a (it has never run there), a photo added to an entry, an entry told with no network and sent later, and all of it against the live server.
+- **My desk on real phones and on the live server.** On the Android emulator against the server in Docker on the same computer, one phone held a managing director and a technician: an instruction gave an issue to the technician with a day and a note; a tap made the phone the technician's and the briefing was read for him; "I fixed the first one" opened the camera, the reported picture was fetched and the two were compared on the phone, and the repair reached the server; back as the managing director, "Close job 5" closed it. With that phone open on the technician's desk, an issue given out on the server was on the phone 0.6 seconds later. Instructions were typed there, not spoken, and the pictures were the emulator's test room (so the comparison says nothing about real repairs). Two real phones, a spoken instruction in a noisy place, and the whole of it against the live server are still to be done.
+- **Asking back, spoken instructions, the guard, the phone's memory and the measurements, on a real phone.** All five were written and tried on the Android emulator, which has no microphone: a typed instruction became three listed changes that were made and then put back; the phone asked its question aloud and listened, and a typed stand-in for the spoken answer filled owner and deadline; a kept-out name was shown and taken with one tap; and a five-note measurement ran with the phone's own voice. A person answering the question aloud, an instruction spoken and not typed, and the twenty-note run on the iQOO 15 are still to be done, so there are no phone figures for accuracy, speed or battery here yet.
+- Speech in Kannada, Tamil, Telugu, Marathi and Bengali. The switch works: with each of two other settings an English test clip was still written down correctly. No speech in those languages has been tried, and Whisper `small` is known to be weaker in them than in Hindi.
+- The test's own limits: its notes are in English, clearly worded, read by a synthetic voice, and carry no picture. It measures the models on clean input, not a person on a noisy site.
 - The accounts, the dashboards and the sending of reports on a real phone and a real server. They were tried with the Android emulator and the server in Docker on one computer: the sign-up form with a team code, sign-in, a report built on the emulator arriving on the manager's dashboard with its pictures, and the dashboards in a desktop browser at desktop and phone width. Email was sent only to the test mailbox.
 - Speed of the picture check on a video issue (three stills) on the phone.
 - The walkie-talkie between real phones: how far it reaches, how quickly a message crosses on Bluetooth alone, how it sounds, and whether the phones' battery managers let the link run. Between two emulators a 3-second message (13 KB) arrived and was listed within seconds, and the sender's screen went to "heard".
@@ -226,12 +325,17 @@ android/
 ├── docker/                   install page and web server settings
 └── app/src/main/java/com/techazsure/deskless/
     ├── capture/              photos, video stills, WAV recorder, position, sensors, instruments, NFC tags
-    ├── speech/               speech to English text
-    ├── structure/            Gemma structuring, due dates, expiry dates, rule-based fallback
+    ├── speech/               speech to English text, the languages it listens for
+    ├── structure/            Gemma structuring, the guard on what it writes, the phone's memory of names,
+    │                         spoken instructions, asking back, due dates, expiry dates, rule-based fallback
+    ├── bench/                the twenty fixed notes, their marking and the scorecard
     ├── models/               model import and checks
     ├── report/               PDF report, report pack, saved reports, hand-off, fingerprint sign-off, AI review
     ├── link/                 QR pairing, phone-to-phone link, relay and sealed reports, spoken confirmation
-    ├── account/              sign-up and sign-in, fingerprint unlock, sending the walk and its report to the server
+    ├── account/              sign-up and sign-in, several people on one phone, fingerprint unlock, sending the walk
+    │                         and its report to the server, the desk fetched from it, what a user sent and what came back
+    ├── UserSide.kt           the side of someone who uses a place: tell it, hear it back, change it, send it
+    ├── Edition.kt            which of the two editions this build is
     ├── data/                 issues and their readings, their storage, report types
     └── ui/                   screens and theme
 ```
@@ -248,6 +352,8 @@ Nobody uses the app without an account, and every account is approved by the per
 | Manager | The managing director's company code | The managing director | `DL-MGR-0001` | Gives issues to technicians, checks their repairs, approves their own team. |
 | Inspector | Their manager's team code | Their manager | `DL-INS-0001` | Walks the site and makes the reports, in the app. |
 | Technical | Their manager's team code | Their manager | `DL-TEC-0001` | Fixes the issues given to them and shows each repair with a photo. |
+
+A fifth kind of account belongs to no company. A **User** (`DL-USR-0001`) is someone who uses a place: a resident, a student, a visitor, a member of staff. They sign up with a name, an email address and a password, are approved by confirming the emailed code, and send what they notice to any place that has opened itself to its users (see [For the people who use the place](#for-the-people-who-use-the-place)). They see what they sent and what was answered, and nothing else.
 
 The administrator is not an account: there is one, named in the server's settings. The administrator approves each managing director, which creates the company, and may decide any other sign-up. A managing director may decide any sign-up in their company. In a company with no managers, inspectors and technicians can join with the managing director's code.
 
@@ -461,7 +567,15 @@ sudo bash deploy/setup.sh ai
 
 It reads the machine's free memory and stops if there is less than 1.5 GB, since the model takes about 1 GB while it works and other sites may live on the same machine. Otherwise it adds `COMPOSE_PROFILES=ai` to `.env`, starts the `ai` service (two processor threads and at most 2 GB of memory, set by `AI_THREADS` and `AI_MEMORY`), and waits until the model answers. Only the server can reach the model; nothing is published. Without it the assistant works the same, with summaries put together from each issue's own fields.
 
-**The app** has to be built for that address. With Docker: `APP_SERVER_URL=https://www.shaikalthaf.in/competitions/iqoo` in `.env` (or just `PUBLIC_URL`, which it falls back to). With Gradle: `./gradlew assembleDebug -PphoneOnly -PserverUrl=https://www.shaikalthaf.in/competitions/iqoo`. On GitHub, set the repository variable `APP_SERVER_URL` (Settings, Secrets and variables, Actions, Variables) and the APK that every push builds signs in there. The address can also be typed on the app's first screen.
+**Three places to show it with**, on the server:
+
+```bash
+sudo docker compose -f docker-compose.server.yml exec server python -m app.demo
+```
+
+It makes, once, an apartment block, a college and an office park, each with a managing director, a manager, an inspector and a technician who are already approved, opens each to the people who use it, and prints the twelve DeskLess IDs with the one password they share. Run again, it makes nobody twice and gives all twelve a new password. Nothing else on the server is touched. They are stand-ins: their addresses end in a domain that cannot receive mail, and their Aadhaar numbers are from the range kept for testing. `python -m app.demo off` in the same place closes the three places to users and shuts the twelve accounts.
+
+**The app** has to be built for that address. With Docker: `APP_SERVER_URL=https://www.shaikalthaf.in/competitions/iqoo` in `.env` (or just `PUBLIC_URL`, which it falls back to). With Gradle: `./gradlew assembleDebug -PphoneOnly -PserverUrl=https://www.shaikalthaf.in/competitions/iqoo`, and the same with `-PuserApp` added for the edition handed to the people who use a place. On GitHub, set the repository variable `APP_SERVER_URL` (Settings, Secrets and variables, Actions, Variables) and the APK that every push builds signs in there. The address can also be typed on the app's first screen.
 
 ### API
 
@@ -486,9 +600,16 @@ It reads the machine's free memory and stops if there is less than 1.5 GB, since
 | `POST /api/company/autopilot` | The managing director switches the assistant's own rounds on or off for their company |
 | `GET /api/report-types`, `POST /api/report-types`, `DELETE /api/report-types/{key}` | The report types that come with the app and the company's own; a managing director or manager makes one; the managing director removes one |
 | `POST /api/company/report-type` | The managing director says which report type the company's walks start with |
+| `POST /api/signup/user` | The short sign-up of someone who uses a place: name, email address, password. The emailed code, once confirmed, gives the ID at once |
+| `GET /api/places` | The places that take what their users send in, and the kinds they are |
+| `GET /api/company/door`, `POST /api/company/door` | Whether the asker's company is open to its users and what kind of place it is; the managing director opens or shuts it |
+| `POST /api/requests`, `GET /api/requests` | A user sends in an issue, a report or a question, with a photo if they have one (multipart): it becomes an issue of the place and goes to one of its inspectors. Everything the user has sent, with where each stands, what was said, and a `mark` that changes when anything does |
+| `POST /api/requests/{id}/say`, `/heard` | The user adds a word, which goes to whoever at the place wrote last; what the place wrote has been read out to them |
 | `POST /api/issues/{id}/fixed` | The technician marks it fixed, with a photo of the repair (multipart) |
 | `POST /api/issues/{id}/close`, `/reopen` | Accept a repair and close the issue; send it back |
 | `GET /api/dashboard` | Everything the signed-in person's console shows: numbers, the fortnight, who is online, what happened lately, what needs them first with the proposed step, the triage lines, and what was sent to them |
+| `GET /api/desk` | A phone's desk, and nothing more: the issues that need the person asking, each with the proposed step, its place, note, deadline in words and whom it may be sent to; the most pressing of the rest in view; what was sent to them; their technicians, for those who give out work; and a `mark` of the whole |
+| `GET /api/desk/wait?mark=…&seconds=…` | Waits until that person's desk is no longer the one the mark stands for, and says so at once; after `seconds` (1 to 30) with nothing new it says that instead. This is how a phone hears of something new within a second or two. While it waits the server holds neither a database connection nor a thread for it |
 | `GET /api/health` | Status |
 
 FastAPI and SQLAlchemy on PostgreSQL, in `server/`; the dashboard is one page of plain HTML, CSS and JavaScript in `server/app/static/`, with no build step, and so are the home page and the sign-up page beside it. The assistant's rules are in `server/app/assistant.py` and the part that speaks to the model in `server/app/writer.py`. The tests run the account flow, the roles, the work on an issue, the assistant's ranks and proposals, an issue passed from the administrator down to the technician and answered, and each refusal:

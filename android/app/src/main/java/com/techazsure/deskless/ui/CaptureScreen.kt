@@ -116,7 +116,7 @@ private var extrasAsked = false
 private enum class Torch { Auto, On, Off }
 
 @Composable
-fun CaptureScreen(state: AppState, lifecycleOwner: LifecycleOwner, retakeId: String? = null, fix: Boolean = false) {
+fun CaptureScreen(state: AppState, lifecycleOwner: LifecycleOwner, retakeId: String? = null, fix: Boolean = false, jobId: String? = null) {
     val context = LocalContext.current
     var granted by remember {
         mutableStateOf(
@@ -138,7 +138,7 @@ fun CaptureScreen(state: AppState, lifecycleOwner: LifecycleOwner, retakeId: Str
         state.watchPosition(true)
         onDispose { state.watchPosition(false) }
     }
-    val leave = { state.screen = if (retakeId != null) Screen.Edit(retakeId) else Screen.Home }
+    val leave = { state.screen = if (jobId != null) Screen.MyDesk else if (retakeId != null) Screen.Edit(retakeId) else Screen.Home }
     LaunchedEffect(Unit) { if (!granted) askCamera.launch(Manifest.permission.CAMERA) }
     LaunchedEffect(granted) {
         val wanted = buildList {
@@ -153,7 +153,8 @@ fun CaptureScreen(state: AppState, lifecycleOwner: LifecycleOwner, retakeId: Str
     BackHandler { leave() }
 
     if (granted) {
-        Viewfinder(state, lifecycleOwner, retakeId, fix, leave)
+        // A job from the office is photographed as a repair: no stamp, no choice of mode.
+        Viewfinder(state, lifecycleOwner, retakeId, fix || jobId != null, jobId, leave)
     } else {
         Column(
             modifier = Modifier
@@ -179,7 +180,7 @@ fun CaptureScreen(state: AppState, lifecycleOwner: LifecycleOwner, retakeId: Str
 }
 
 @Composable
-private fun Viewfinder(state: AppState, lifecycleOwner: LifecycleOwner, retakeId: String?, fix: Boolean, leave: () -> Unit) {
+private fun Viewfinder(state: AppState, lifecycleOwner: LifecycleOwner, retakeId: String?, fix: Boolean, jobId: String?, leave: () -> Unit) {
     val context = LocalContext.current
     val haptics = LocalHapticFeedback.current
     val scope = rememberCoroutineScope()
@@ -297,7 +298,7 @@ private fun Viewfinder(state: AppState, lifecycleOwner: LifecycleOwner, retakeId
         val stamp = stampNow()
         val id = retakeId ?: state.newIssueId()
         // A retake or a repair picture gets a new file name so an old picture cannot be shown from a cache.
-        val file = state.fileOf(
+        val file = if (jobId != null) state.repairFile(jobId) else state.fileOf(
             when {
                 retakeId == null -> "photo_$id.jpg"
                 fix -> "fix_${id}_${System.currentTimeMillis()}.jpg"
@@ -311,6 +312,12 @@ private fun Viewfinder(state: AppState, lifecycleOwner: LifecycleOwner, retakeId
                 override fun onImageSaved(outputFileResults: ImageCapture.OutputFileResults) {
                     scope.launch {
                         withContext(Dispatchers.IO) { normalizeJpeg(file) }
+                        if (jobId != null) {
+                            // The repair of a job from the office: it goes back to the desk, which sends it.
+                            state.repairShown(jobId)
+                            state.screen = Screen.MyDesk
+                            return@launch
+                        }
                         when {
                             retakeId == null -> state.addIssue(id, file.name, stamp)
                             fix -> state.addFixPhoto(id, file.name)
@@ -461,7 +468,7 @@ private fun Viewfinder(state: AppState, lifecycleOwner: LifecycleOwner, retakeId
                 )
                 val number = if (retakeId != null) state.issues.indexOfFirst { it.id == retakeId } + 1 else state.issues.size + 1
                 Text(
-                    text = listOf(state.inspection.site, "Issue $number").filter { it.isNotBlank() }.joinToString(" · "),
+                    text = if (jobId != null) "A job from the office" else listOf(state.inspection.site, "Issue $number").filter { it.isNotBlank() }.joinToString(" · "),
                     style = MaterialTheme.typography.bodySmall,
                     color = Color.White.copy(alpha = 0.8f),
                 )
@@ -550,7 +557,7 @@ private fun Viewfinder(state: AppState, lifecycleOwner: LifecycleOwner, retakeId
             }
 
             // A retake replaces a photo, so it offers no choice of mode.
-            if (retakeId == null && recording == null && !saving) {
+            if (retakeId == null && jobId == null && recording == null && !saving) {
                 Row(
                     modifier = Modifier
                         .background(Color.Black.copy(alpha = 0.5f), RoundedCornerShape(50))

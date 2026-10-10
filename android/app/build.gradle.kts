@@ -22,6 +22,14 @@ android {
         // the default is the developer's computer as an emulator sees it. It can be changed in the app.
         manifestPlaceholders["serverUrl"] = (project.findProperty("serverUrl") as String?) ?: "http://10.0.2.2:8800"
 
+        // Two editions come out of the same code. The usual one is for the people of an organisation:
+        // inspectors, technicians, managers. Build with -PuserApp for the one handed to the people who
+        // use a place (residents, students, visitors): it carries its own name on the phone and shows
+        // only their side. Both have the same package name and key, so one installs over the other.
+        val userApp = project.hasProperty("userApp")
+        manifestPlaceholders["edition"] = if (userApp) "user" else "staff"
+        manifestPlaceholders["appName"] = if (userApp) "DeskLess User" else "DeskLess"
+
         // The phone is arm64; x86_64 is kept so the same build runs on the PC emulator.
         // Build with -PphoneOnly for an installer without the emulator's libraries (about half the size).
         ndk {

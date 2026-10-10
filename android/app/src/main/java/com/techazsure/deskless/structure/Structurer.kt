@@ -32,6 +32,20 @@ data class Fields(
     val category: String = "",
     /** An expiry date read off a pack in the picture, as printed; only asked for in medication audits. */
     val expiry: String = "",
+    /** The deadline as the model copied it from the note ("Monday"), before [dueDate] was worked out from it. */
+    val dueSaid: String = "",
+)
+
+/** What the model made of a spoken instruction, as it gave it; [Commands] checks every part before anything is done. */
+data class Command(
+    val action: String,
+    val issues: List<Int> = emptyList(),
+    val severity: String = "",
+    val owner: String = "",
+    val due: String = "",
+    val location: String = "",
+    val category: String = "",
+    val show: String = "",
 )
 
 /**
@@ -70,6 +84,62 @@ class Structurer(private val models: ModelStore, private val cacheRoot: File) {
             val reply = converse(instructions(shown.size, template, measured), shown, said, maxTokens = 280)
             parse(reply, checked = shown.isNotEmpty(), categories = template.categories)
         }
+    }
+
+    /**
+     * Reads the inspector's spoken [answer] to a [question] the app asked about an issue, and gives back
+     * only the place, the person and the deadline the answer names. The caller checks each value against
+     * the answer before using it.
+     */
+    @Synchronized
+    fun followUp(question: String, answer: String, template: Template): Fields = withFallback {
+        val system = listOf(
+            "${template.reporter.replaceFirstChar { it.uppercase(Locale.ENGLISH) }} was asked a follow-up question about one problem and answered aloud. Take from the answer only what it says.",
+            "Reply with a single JSON object and nothing else, with exactly these keys:",
+            "\"location\": where the problem is, as the answer says, or \"\".",
+            "\"owner\": the person, team or department the answer says must deal with it, or \"\".",
+            "\"due_date\": the deadline exactly as the answer says it, such as \"Monday\", \"tomorrow\" or \"15 October\", or \"\".",
+            "If the answer does not say one of them, or says it is not known, use \"\". Never invent a name, place or date.",
+        ).joinToString("\n")
+        parse(converse(system, emptyList(), "Question: $question\nAnswer: $answer", maxTokens = 120), checked = false)
+    }
+
+    /**
+     * Turns a spoken instruction about the walk into one of the few things the app can do. [issues] is
+     * one line per issue. The model only picks the action and copies the values out of [said]; whether
+     * the issue exists, whether each value was really said and what the change comes to is the caller's
+     * to check, and nothing is changed until the person agrees.
+     */
+    @Synchronized
+    fun command(said: String, issues: String, template: Template): Command = withFallback {
+        val types = template.categories.joinToString(", ") { "\"$it\"" }
+        val system = listOf(
+            "You turn a spoken instruction about the walk-round of ${template.reporter} into one action for the app. You are given one line per issue and the instruction.",
+            "Reply with a single JSON object and nothing else, with exactly these keys:",
+            "\"action\": \"change\" to edit issues, \"show\" to list only some issues, \"open\" to open one issue, \"question\" if the instruction asks something and changes nothing.",
+            "\"issues\": the numbers of the issues the instruction is about, as a list such as [3] or [1, 4]. If it names them by what or where they are, give the numbers of the issues in the list that fit. [] if it names none.",
+            "\"severity\": the new severity if the instruction sets one, one of \"Low\", \"Medium\", \"High\", \"Critical\"; otherwise \"\".",
+            "\"owner\": the person or team the instruction gives the issues to, exactly as said; otherwise \"\".",
+            "\"due_date\": the new deadline exactly as said, such as \"Friday\" or \"tomorrow\"; otherwise \"\".",
+            "\"location\": the new location if the instruction sets one; otherwise \"\".",
+            "\"category\": the new type if the instruction sets one, one of $types; otherwise \"\".",
+            "\"show\": for the action \"show\" only, which issues to list: one of \"all\", \"open\", \"fixed\", \"needs a look\", \"critical\", \"high\", \"medium\", \"low\"; otherwise \"\".",
+            "Copy only what the instruction says. Never invent a name, place or date, and leave a key \"\" when the instruction does not set it.",
+        ).joinToString("\n")
+        val json = jsonIn(converse(system, emptyList(), "$issues\n\nInstruction: $said", maxTokens = 150))
+        fun text(key: String): String = json.optString(key).trim().takeUnless { it.lowercase(Locale.ENGLISH) in EMPTY_WORDS }.orEmpty()
+        val numbers = json.optJSONArray("issues")?.let { list -> (0 until list.length()).mapNotNull { list.optString(it).trim().toIntOrNull() } }
+            ?: listOfNotNull(json.optString("issues").trim().toIntOrNull())
+        Command(
+            action = text("action").lowercase(Locale.ENGLISH),
+            issues = numbers,
+            severity = text("severity"),
+            owner = text("owner"),
+            due = text("due_date"),
+            location = text("location"),
+            category = text("category"),
+            show = text("show").lowercase(Locale.ENGLISH),
+        )
     }
 
     /**
@@ -164,6 +234,69 @@ class Structurer(private val models: ModelStore, private val cacheRoot: File) {
         require(said.length > 3) { "The answer came back empty." }
         said
     }
+
+    /**
+     * Words the spoken briefing on what waits at the office. [jobs] is one numbered line per job, already
+     * in the order the office ranks them: which jobs and in what order is not the model's to decide.
+     * [waiting] is how many of them need this person.
+     */
+    @Synchronized
+    fun deskBrief(jobs: String, name: String, role: String, waiting: Int): String = withFallback {
+        val system = listOf(
+            "You are the voice of the DeskLess app, telling $name, who works as $role, what waits for them at work. You are given the jobs, numbered, most pressing first.",
+            "Reply with a single JSON object and nothing else, with exactly this key:",
+            "\"briefing\": what to say aloud, in at most four short sentences. Greet $name by name, say that $waiting ${if (waiting == 1) "job needs" else "jobs need"} them, then take the first one or two in order: its number, what it is, where, and what there is to do about it.",
+            "Use only the facts given, in the order given. Do not invent names, places, dates or advice on how to repair anything, and add no closing remark.",
+        ).joinToString("\n")
+        val said = jsonIn(converse(system, emptyList(), jobs, maxTokens = 190)).optString("briefing").trim()
+        require(said.length > 20) { "The briefing came back empty." }
+        said
+    }
+
+    /**
+     * Turns something said about the work waiting at the office into a form: which of a few actions, which
+     * job, who, by when, with what words. [jobs] is one numbered line per job. [DeskCommands] checks every
+     * part of the form, and nothing is done until the person agrees.
+     */
+    @Synchronized
+    fun deskAsk(said: String, jobs: String, role: String): DeskAsk = withFallback {
+        val system = listOf(
+            "You turn what a person who works as $role says to the DeskLess app, about the jobs waiting for them, into one action. You are given the jobs, numbered, and what was said.",
+            "Reply with a single JSON object and nothing else, with exactly these keys:",
+            "\"action\": \"do\" to carry out what is suggested for a job as it stands (\"do it\", \"go ahead with the first one\"); \"assign\" to give a job to a technician; \"send\" to pass a job to someone with a message, or to answer someone; \"fixed\" when the speaker says they have repaired a job; \"close\" to accept a repair and close a job; \"back\" to send a repair back as not good enough; \"read\" to hear more about one job; \"brief\" to hear the list of what is waiting; \"question\" for anything else that asks something.",
+            "\"jobs\": the numbers of the jobs meant, as a list such as [1]. If a job is named by what or where it is, give its number from the list. [] if none is named.",
+            "\"person\": the person or role it is to be given or sent to, exactly as said; otherwise \"\".",
+            "\"due_date\": a deadline exactly as said, such as \"Friday\" or \"tomorrow\"; otherwise \"\".",
+            "\"message\": the words to pass on, exactly as said, without the name of the person they are for; otherwise \"\".",
+            "Copy only what was said. Never invent a name, a date or a message, and leave a key \"\" when it was not said.",
+        ).joinToString("\n")
+        val json = jsonIn(converse(system, emptyList(), "$jobs\n\nSaid: $said", maxTokens = 150))
+        fun text(key: String): String = json.optString(key).trim().takeUnless { it.lowercase(Locale.ENGLISH) in EMPTY_WORDS }.orEmpty()
+        val numbers = json.optJSONArray("jobs")?.let { list -> (0 until list.length()).mapNotNull { list.optString(it).trim().toIntOrNull() } }
+            ?: listOfNotNull(json.optString("jobs").trim().toIntOrNull())
+        DeskAsk(action = text("action").lowercase(Locale.ENGLISH), jobs = numbers, person = text("person"), due = text("due_date"), message = text("message"))
+    }
+
+    /** Answers a question about the work waiting at the office from the numbered [jobs] alone, briefly enough to be said aloud. */
+    @Synchronized
+    fun deskAnswer(question: String, jobs: String, role: String): String = withFallback {
+        val system = listOf(
+            "You answer a question from a person who works as $role about the jobs waiting for them. You are given one numbered line per job, most pressing first.",
+            "Reply with a single JSON object and nothing else, with exactly this key:",
+            "\"answer\": the answer in one to three short sentences, as you would say it aloud. Name the job numbers you mean.",
+            "Use only the jobs given. If they do not hold the answer, say that the desk does not show it. Do not invent names, places or dates, and give no advice on how to repair anything.",
+        ).joinToString("\n")
+        val said = jsonIn(converse(system, emptyList(), "$jobs\n\nQuestion: $question", maxTokens = 170)).optString("answer").trim()
+        require(said.length > 3) { "The answer came back empty." }
+        said
+    }
+
+    /**
+     * One question to the model under the brief [system], answered as a JSON object. For forms whose
+     * wording and checking are kept beside what they are for (see [UserAsks]).
+     */
+    @Synchronized
+    fun form(system: String, text: String, maxTokens: Int = 240): JSONObject = withFallback { jsonIn(converse(system, emptyList(), text, maxTokens)) }
 
     private fun <T> withFallback(work: () -> T): T =
         try {
@@ -314,6 +447,7 @@ class Structurer(private val models: ModelStore, private val cacheRoot: File) {
                 severity = Severity.entries.firstOrNull { it.label.equals(text("severity"), ignoreCase = true) },
                 owner = text("owner"),
                 dueDate = DueDates.resolve(text("due_date")),
+                dueSaid = text("due_date"),
                 seen = if (checked) text("photo_shows") else "",
                 check = when {
                     !checked -> Check.NONE

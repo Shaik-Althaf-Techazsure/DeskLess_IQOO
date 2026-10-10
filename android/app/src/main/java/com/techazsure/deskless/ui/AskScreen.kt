@@ -30,7 +30,9 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.automirrored.rounded.Send
+import androidx.compose.material.icons.automirrored.rounded.Undo
 import androidx.compose.material.icons.automirrored.rounded.VolumeUp
+import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Mic
 import androidx.compose.material.icons.rounded.Stop
 import androidx.compose.material3.MaterialTheme
@@ -56,6 +58,7 @@ import androidx.core.content.ContextCompat
 import com.techazsure.deskless.AppState
 import com.techazsure.deskless.Screen
 import com.techazsure.deskless.capture.WavRecorder
+import com.techazsure.deskless.structure.Plan
 import com.techazsure.deskless.ui.theme.Chalk
 import com.techazsure.deskless.ui.theme.Coal
 import com.techazsure.deskless.ui.theme.Fog
@@ -63,6 +66,7 @@ import com.techazsure.deskless.ui.theme.GoGreen
 import com.techazsure.deskless.ui.theme.Ink
 import com.techazsure.deskless.ui.theme.Line
 import com.techazsure.deskless.ui.theme.SafetyYellow
+import com.techazsure.deskless.ui.theme.SeverityMedium
 import com.techazsure.deskless.ui.theme.SignalRed
 import com.techazsure.deskless.ui.theme.Steel
 import kotlinx.coroutines.delay
@@ -71,8 +75,10 @@ import kotlinx.coroutines.delay
 private const val QUESTION_SECONDS = 15
 
 /**
- * Ask about the walk, aloud or in writing, and hear the answer. The question is turned into text and
- * answered by the models on this phone, from the issues of this walk alone: no network takes part.
+ * Ask about the walk or tell the app what to do with it, aloud or in writing. A question is answered by
+ * the models on this phone from the issues of this walk alone. An instruction ("mark issue 3 critical,
+ * give it to Ravi, due Friday") is turned into a list of changes that is shown first and made only when
+ * the person agrees. No network takes part in either.
  */
 @Composable
 fun AskScreen(state: AppState) {
@@ -136,7 +142,8 @@ fun AskScreen(state: AppState) {
         ) {
             RoundIconButton(icon = Icons.AutoMirrored.Rounded.ArrowBack, label = "Back", onClick = { state.screen = Screen.Home }, container = Steel)
             Spacer(Modifier.width(14.dp))
-            Text("ASK DESKLESS", style = MaterialTheme.typography.headlineSmall, color = Chalk)
+            Text("ASK OR TELL", style = MaterialTheme.typography.headlineSmall, color = Chalk, modifier = Modifier.weight(1f))
+            LanguageChip(state)
         }
 
         Column(
@@ -148,8 +155,9 @@ fun AskScreen(state: AppState) {
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             Text(
-                text = "Ask about this walk, aloud or in writing. The answer is worked out on this phone from the " +
-                    "${state.issues.size} issue${if (state.issues.size == 1) "" else "s"} of the walk, with no network.",
+                text = "Ask about this walk, or tell DeskLess what to change, aloud or in writing. It is worked out on this " +
+                    "phone from the ${state.issues.size} issue${if (state.issues.size == 1) "" else "s"} of the walk, with no " +
+                    "network, and nothing is changed before you have seen it.",
                 style = MaterialTheme.typography.bodyLarge,
                 color = Fog,
                 modifier = Modifier.fillMaxWidth(),
@@ -158,7 +166,7 @@ fun AskScreen(state: AppState) {
             val beat = if (recording) pulse(0.9f, 1.08f, 600) else 1f
             RoundIconButton(
                 icon = if (recording) Icons.Rounded.Stop else Icons.Rounded.Mic,
-                label = if (recording) "Stop and ask" else "Ask aloud",
+                label = if (recording) "Stop and send" else "Speak",
                 onClick = { toggle() },
                 container = if (recording) SignalRed else SafetyYellow,
                 content = Ink,
@@ -173,10 +181,10 @@ fun AskScreen(state: AppState) {
             )
             Text(
                 text = when {
-                    recording -> "Listening… tap when you have asked."
+                    recording -> "Listening… tap when you have said it."
                     busy != null -> busy
                     !state.speechReady -> "Speech is not on this phone yet: type the question below."
-                    else -> "Tap and ask, in Hindi, English or both."
+                    else -> "Tap and speak: ${state.spoken.hint}."
                 },
                 style = MaterialTheme.typography.titleMedium,
                 color = if (recording) SignalRed else Chalk,
@@ -186,7 +194,7 @@ fun AskScreen(state: AppState) {
             if (state.askQuestion.isNotBlank()) {
                 Surface(shape = RoundedCornerShape(20.dp), color = Coal, border = BorderStroke(1.dp, GoGreen.copy(alpha = 0.45f)), modifier = Modifier.fillMaxWidth()) {
                     Column(modifier = Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Text("YOU ASKED", style = MaterialTheme.typography.labelSmall, color = Fog)
+                        Text("YOU SAID", style = MaterialTheme.typography.labelSmall, color = Fog)
                         Text(state.askQuestion, style = MaterialTheme.typography.bodyLarge, color = Chalk)
                         Spacer(Modifier.size(2.dp))
                         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -206,9 +214,20 @@ fun AskScreen(state: AppState) {
                             style = MaterialTheme.typography.titleMedium,
                             color = if (busy != null) Fog else Chalk,
                         )
+                        state.plan?.takeIf { busy == null }?.let { PlanCard(state, it) }
+                        if (busy == null && state.canUndo) {
+                            BrandButton(
+                                text = "Put it back",
+                                onClick = { state.undoPlan() },
+                                icon = Icons.AutoMirrored.Rounded.Undo,
+                                kind = ButtonKind.Secondary,
+                                height = 44.dp,
+                                modifier = Modifier.fillMaxWidth(),
+                            )
+                        }
                         if (busy == null && state.askSeconds > 0f) {
                             Text(
-                                text = "Answered in %.1f s on this phone".format(state.askSeconds) + (state.gemmaBackend?.let { "'s $it" } ?: "") + ". The model can be wrong: check against the issues.",
+                                text = "Worked out in %.1f s on this phone".format(state.askSeconds) + (state.gemmaBackend?.let { "'s $it" } ?: "") + ". The model can be wrong: check against the issues.",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = Fog,
                             )
@@ -219,7 +238,12 @@ fun AskScreen(state: AppState) {
 
             Column(modifier = Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text("TRY", style = MaterialTheme.typography.labelSmall, color = Fog)
-                listOf("What should be fixed first?", "Which issues are still open, and who has them?", "Is anything here a danger to people?").forEach { question ->
+                listOf(
+                    "What should be fixed first?",
+                    "Which issues are still open, and who has them?",
+                    "Mark issue 1 critical and due tomorrow",
+                    "Show the open ones",
+                ).forEach { question ->
                     Surface(
                         onClick = { if (busy == null && !recording) state.ask(question) },
                         shape = RoundedCornerShape(14.dp),
@@ -242,7 +266,7 @@ fun AskScreen(state: AppState) {
             OutlinedTextField(
                 value = typed,
                 onValueChange = { typed = it.take(200) },
-                placeholder = { Text("Or type a question", color = Fog) },
+                placeholder = { Text("Or type it", color = Fog) },
                 singleLine = true,
                 shape = RoundedCornerShape(16.dp),
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
@@ -256,12 +280,49 @@ fun AskScreen(state: AppState) {
             )
             RoundIconButton(
                 icon = Icons.AutoMirrored.Rounded.Send,
-                label = "Ask",
+                label = "Send",
                 onClick = { send() },
                 container = SafetyYellow,
                 content = Ink,
                 size = 52.dp,
             )
+        }
+    }
+}
+
+/**
+ * What a spoken instruction will change, before it changes anything: each change with what stands now and
+ * what it will become, what was asked for and left out, and the two buttons.
+ */
+@Composable
+private fun PlanCard(state: AppState, plan: Plan.Changes) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        plan.list.forEach { change ->
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(Steel, RoundedCornerShape(12.dp))
+                    .padding(horizontal = 12.dp, vertical = 9.dp),
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text("${change.number}", style = MaterialTheme.typography.titleMedium, color = Ink, modifier = Modifier.background(SafetyYellow, CircleShape).padding(horizontal = 9.dp, vertical = 2.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(change.label.uppercase(), style = MaterialTheme.typography.labelSmall, color = Fog)
+                    Text(
+                        text = (change.from.ifBlank { "not set" }) + "  →  " + change.to,
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = Chalk,
+                    )
+                }
+            }
+        }
+        plan.leftOut.forEach { why ->
+            Text("Left out: $why", style = MaterialTheme.typography.bodySmall, color = SeverityMedium)
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            BrandButton(text = "Do it", onClick = { state.doPlan() }, icon = Icons.Rounded.Check, height = 48.dp, modifier = Modifier.weight(1f))
+            BrandButton(text = "Cancel", onClick = { state.dropPlan() }, kind = ButtonKind.Secondary, height = 48.dp, modifier = Modifier.weight(1f))
         }
     }
 }

@@ -39,15 +39,19 @@ jobs:
       - name: Build the app image
         run: docker build --build-arg SERVER_URL="${{ vars.APP_SERVER_URL }}" --tag deskless-app android
 
-      - name: Take the APK out of the image
+      # Two editions of the same code: the usual one, and the one for the people who use a place.
+      - name: Take the APKs out of the image
         run: |
           container=$(docker create deskless-app)
           docker cp "$container:/srv/DeskLess.apk" DeskLess.apk
+          docker cp "$container:/srv/DeskLess-User.apk" DeskLess-User.apk
           docker rm "$container"
-          ls -lh DeskLess.apk
+          ls -lh DeskLess.apk DeskLess-User.apk
 
       - uses: actions/upload-artifact@v7
         with:
           name: DeskLess-apk
-          path: DeskLess.apk
+          path: |
+            DeskLess.apk
+            DeskLess-User.apk
           if-no-files-found: error
