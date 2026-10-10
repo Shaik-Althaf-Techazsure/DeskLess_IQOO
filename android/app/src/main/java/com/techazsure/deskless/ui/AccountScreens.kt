@@ -703,50 +703,115 @@ private fun SignIn(state: AppState, knownId: String, onBack: () -> Unit, onForgo
     }
 }
 
+/**
+ * A forgotten password, in three steps: a code is emailed to the address the account was made with, the
+ * code is checked, and only then is the new password chosen.
+ */
 @Composable
 private fun Forgot(state: AppState, knownId: String, onBack: () -> Unit) {
     val scope = rememberCoroutineScope()
     var id by rememberSaveable { mutableStateOf(knownId) }
-    var sent by rememberSaveable { mutableStateOf(false) }
+    // 1: who is asking. 2: the code from the email. 3: the new password. 4: done.
+    var step by rememberSaveable { mutableStateOf(1) }
     var code by rememberSaveable { mutableStateOf("") }
+    var ticket by rememberSaveable { mutableStateOf("") }
     var password by rememberSaveable { mutableStateOf("") }
+    var again by rememberSaveable { mutableStateOf("") }
     var problem by remember { mutableStateOf<String?>(null) }
-    var done by remember { mutableStateOf(false) }
+    var said by remember { mutableStateOf<String?>(null) }
     var busy by remember { mutableStateOf(false) }
 
-    Page("NEW PASSWORD", "A code is emailed to the address your account was made with. With it you choose a new password.", onBack) {
-        Field("DeskLess ID", id, { id = plain(it, 20) }, "DL-INS-0001", capitals = KeyboardCapitalization.Characters, shown = InCapitals, last = !sent)
-        if (sent) {
-            Field("Code from the email", code, { typed -> code = typed.filter(Char::isDigit).take(6) }, "6 digits", keyboard = KeyboardType.Number)
-            Field("New password", password, { password = it }, "At least ${Checks.MIN_PASSWORD} characters", secret = true, last = true)
+    fun work(job: suspend () -> Unit) {
+        busy = true
+        said = null
+        scope.launch {
+            job()
+            busy = false
         }
-        Problem(problem)
-        if (done) {
-            Text("Your password is changed. Sign in with the new one.", style = MaterialTheme.typography.bodyLarge, color = GoGreen)
-            BrandButton("Back to sign in", onClick = onBack, modifier = Modifier.fillMaxWidth())
-        } else {
-            BrandButton(
-                text = when {
-                    busy -> "One moment…"
-                    sent -> "Change password"
-                    else -> "Email me a code"
-                },
-                enabled = !busy && id.isNotBlank() && (!sent || (code.length == 6 && password.length >= Checks.MIN_PASSWORD)),
-                modifier = Modifier.fillMaxWidth(),
-                onClick = {
-                    busy = true
-                    scope.launch {
-                        if (!sent) {
+    }
+
+    val about = when (step) {
+        1 -> "Step 1 of 3. Type your DeskLess ID, or the email address of your account. A code is emailed to that address."
+        2 -> "Step 2 of 3. Type the 6-digit code from the email. It works for ten minutes."
+        3 -> "Step 3 of 3. The code is confirmed. Choose your new password."
+        else -> "Your password is changed."
+    }
+    Page("FORGOT PASSWORD", about, onBack) {
+        when (step) {
+            1 -> {
+                Field(
+                    "DeskLess ID or email", id,
+                    { typed -> id = typed.filter { it.isLetterOrDigit() || it in "-@._+" }.take(120) },
+                    "DL-INS-0001", last = true,
+                )
+                Problem(problem)
+                BrandButton(
+                    text = if (busy) "Sending…" else "Email me a code",
+                    enabled = !busy && id.isNotBlank(),
+                    modifier = Modifier.fillMaxWidth(),
+                    onClick = {
+                        work {
                             problem = state.forgotPassword(id)
-                            if (problem == null) sent = true
-                        } else {
-                            problem = state.resetPassword(id, code, password)
-                            if (problem == null) done = true
+                            if (problem == null) step = 2
                         }
-                        busy = false
-                    }
-                },
-            )
+                    },
+                )
+            }
+            2 -> {
+                Field("Code from the email", code, { typed -> code = typed.filter(Char::isDigit).take(6) }, "6 digits", keyboard = KeyboardType.Number, last = true)
+                Problem(problem)
+                said?.let { Text(it, style = MaterialTheme.typography.bodyMedium, color = GoGreen) }
+                BrandButton(
+                    text = if (busy) "Checking…" else "Check the code",
+                    enabled = !busy && code.length == 6,
+                    modifier = Modifier.fillMaxWidth(),
+                    onClick = {
+                        work {
+                            val (pass, trouble) = state.checkResetCode(id, code)
+                            problem = trouble
+                            if (pass != null) {
+                                ticket = pass
+                                step = 3
+                            }
+                        }
+                    },
+                )
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                    TextButton(onClick = { step = 1; code = ""; problem = null }, enabled = !busy) { Text("Change the ID") }
+                    TextButton(
+                        enabled = !busy,
+                        onClick = {
+                            work {
+                                problem = state.forgotPassword(id)
+                                if (problem == null) {
+                                    code = ""
+                                    said = "A new code is on its way. The earlier one no longer works."
+                                }
+                            }
+                        },
+                    ) { Text("Send the code again") }
+                }
+            }
+            3 -> {
+                Field("New password", password, { password = it }, "At least ${Checks.MIN_PASSWORD} characters", secret = true)
+                Field("New password, once more", again, { again = it }, secret = true, last = true)
+                Problem(problem ?: if (again.isNotEmpty() && again != password) "The two passwords are not the same yet." else null)
+                BrandButton(
+                    text = if (busy) "Changing…" else "Change password",
+                    enabled = !busy && password.length >= Checks.MIN_PASSWORD && again == password,
+                    modifier = Modifier.fillMaxWidth(),
+                    onClick = {
+                        work {
+                            problem = state.resetPassword(ticket, password)
+                            if (problem == null) step = 4
+                        }
+                    },
+                )
+            }
+            else -> {
+                Text("Sign in with the new one.", style = MaterialTheme.typography.bodyLarge, color = GoGreen)
+                BrandButton("Back to sign in", onClick = onBack, modifier = Modifier.fillMaxWidth())
+            }
         }
     }
 }

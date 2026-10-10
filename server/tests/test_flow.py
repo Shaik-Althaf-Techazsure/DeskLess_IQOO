@@ -189,6 +189,43 @@ def test_a_forgotten_password_is_reset_with_a_code(client, mailbox, admin):
     assert client.post("/api/login", json={"unique_id": unique_id, "password": "correct horse battery"}).status_code == 401
 
 
+def test_a_forgotten_password_takes_three_steps_code_sent_code_checked_new_password(client, mailbox, admin):
+    unique_id = approved(client, mailbox, admin)
+    new = "a brand new password"
+    # Nothing is changed by someone who has no checked code.
+    assert client.post("/api/password/reset", json={"ticket": "made.up.pass", "password": new}).status_code == 400
+    assert client.post("/api/password/reset", json={"password": new}).status_code == 400
+
+    # 1. The code is sent. The email address will do for someone who has forgotten the ID as well.
+    assert client.post("/api/password/forgot", json={"unique_id": " Asha@Example.test "}).json()["sent"] is True
+    subject, _ = mailbox.last_to("asha@example.test")
+    assert subject.endswith("is your DeskLess password reset code")
+    code = mailbox.code_for("asha@example.test")
+
+    # 2. The code is checked. A wrong one is told so, and counted; the right one gives the pass.
+    wrong = client.post("/api/password/verify", json={"unique_id": unique_id, "code": "000000" if code != "000000" else "111111"})
+    assert wrong.status_code == 400 and wrong.json()["detail"] == "That is not the code. 4 tries left."
+    assert client.post("/api/password/verify", json={"unique_id": "DL-MD-9999", "code": code}).status_code == 400
+    checked = client.post("/api/password/verify", json={"unique_id": "asha@example.test", "code": code})
+    assert checked.status_code == 200 and checked.json()["verified"] is True and checked.json()["unique_id"] == unique_id
+    ticket = checked.json()["ticket"]
+    # Checking used the code up: it does not work a second time, nor on the way older builds of the app send it.
+    assert client.post("/api/password/verify", json={"unique_id": unique_id, "code": code}).status_code == 400
+    assert client.post("/api/password/reset", json={"unique_id": unique_id, "code": code, "password": new}).status_code == 400
+    # Checking alone changes nothing.
+    assert client.post("/api/login", json={"unique_id": unique_id, "password": "correct horse battery"}).status_code == 200
+
+    # 3. The new password is chosen with the pass.
+    assert client.post("/api/password/reset", json={"ticket": ticket, "password": "short"}).status_code == 422
+    assert client.post("/api/password/reset", json={"ticket": ticket, "password": new}).json() == {"changed": True}
+    assert client.post("/api/login", json={"unique_id": unique_id, "password": new}).status_code == 200
+    assert client.post("/api/login", json={"unique_id": unique_id, "password": "correct horse battery"}).status_code == 401
+    # The pass was for one change: it cannot set the password again.
+    again = client.post("/api/password/reset", json={"ticket": ticket, "password": "yet another password"})
+    assert again.status_code == 400 and "already changed" in again.json()["detail"]
+    assert client.post("/api/login", json={"unique_id": unique_id, "password": new}).status_code == 200
+
+
 def test_the_admin_pages_need_the_administrator(client, mailbox, admin):
     unique_id = approved(client, mailbox, admin)
     assert client.get("/api/admin/accounts").status_code == 401

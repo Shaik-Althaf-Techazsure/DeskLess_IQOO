@@ -42,8 +42,13 @@ class Api(private val server: () -> String) {
 
     fun forgot(uniqueId: String): JSONObject = post("/api/password/forgot", JSONObject().put("unique_id", uniqueId))
 
-    fun reset(uniqueId: String, code: String, password: String): JSONObject =
-        post("/api/password/reset", JSONObject().put("unique_id", uniqueId).put("code", code).put("password", password))
+    /** Checks the emailed code. A right one is used up and answered with the pass to choose a new password with. */
+    fun verifyReset(uniqueId: String, code: String): JSONObject =
+        post("/api/password/verify", JSONObject().put("unique_id", uniqueId).put("code", code))
+
+    /** Sets the new password with the pass a checked code gave. */
+    fun reset(ticket: String, password: String): JSONObject =
+        post("/api/password/reset", JSONObject().put("ticket", ticket).put("password", password))
 
     /** The signed-in person's details as the server has them now. Asking also tells the server the phone is in use. */
     fun me(token: String): JSONObject = call("GET", "/api/me", token)

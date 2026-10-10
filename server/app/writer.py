@@ -109,7 +109,8 @@ def worth_writing(issue: Issue) -> bool:
 def prompt_for(issue: Issue) -> str:
     """What the model is shown to summarise an issue: the issue as the phone told it, and nothing else."""
     lines = [
-        "You help a maintenance team. Below is one issue found during a site inspection.",
+        "You help the team that looks after a place: a building site, a campus, an office, an apartment block, a mall or a hospital. "
+        "Below is one issue found there during an inspection.",
         "",
         f"Issue: {issue.title or 'Untitled'}",
         f"Place: {', '.join(part for part in (issue.site, issue.location) if part) or 'not stated'}",
@@ -132,7 +133,7 @@ def prompt_for(issue: Issue) -> str:
 
 def prompt_for_talk(issue: Issue, thread: list[Message]) -> str:
     """What the model is shown to say what the messages come to: the messages, and only the issue's title."""
-    lines = [f"People in a maintenance team wrote these messages to each other about one issue: {issue.title or 'Untitled'}.", "", "The messages, oldest first:"]
+    lines = [f"People who look after a place wrote these messages to each other about one issue: {issue.title or 'Untitled'}.", "", "The messages, oldest first:"]
     for message in thread[-8:]:
         role = "Administrator" if message.author_role == "admin" else ROLE_NAMES.get(message.author_role, "")
         lines.append(f"- {message.author}{' (' + role + ')' if role else ''} to {message.to_name}: {' '.join(message.text.split())[:500]}")

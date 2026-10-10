@@ -58,7 +58,12 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.AccountBalance
+import androidx.compose.material.icons.rounded.Apartment
 import androidx.compose.material.icons.rounded.Construction
+import androidx.compose.material.icons.rounded.LocalHospital
+import androidx.compose.material.icons.rounded.School
+import androidx.compose.material.icons.rounded.Storefront
 import androidx.compose.material.icons.rounded.Description
 import androidx.compose.material.icons.rounded.ErrorOutline
 import androidx.compose.material.icons.rounded.Groups
@@ -225,6 +230,11 @@ fun SeverityPill(severity: Severity, modifier: Modifier = Modifier) {
 
 fun templateIcon(template: Template?): ImageVector = when (template) {
     Template.SITE -> Icons.Rounded.Construction
+    Template.CAMPUS -> Icons.Rounded.School
+    Template.OFFICE -> Icons.Rounded.AccountBalance
+    Template.RESIDENTIAL -> Icons.Rounded.Apartment
+    Template.RETAIL -> Icons.Rounded.Storefront
+    Template.HOSPITAL -> Icons.Rounded.LocalHospital
     Template.MEDICATION -> Icons.Rounded.Medication
     Template.COMMUNITY -> Icons.Rounded.Groups
     null -> Icons.Rounded.Description

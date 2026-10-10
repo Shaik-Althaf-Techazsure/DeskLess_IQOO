@@ -896,6 +896,101 @@ $("signin-form").onsubmit = async (event) => {
   }
 };
 $("signout").onclick = signOut;
+
+// A forgotten password, in three steps on the sign-in card: a code is emailed to the address the account
+// was made with, the code is checked, and only then is the new password chosen.
+function forgotPassword() {
+  const box = $("forgot");
+  let id = $("id").value.trim();
+  let pass = "";
+  const error = el("div", { class: "error" });
+  const ask = (path, body) => api(path, { body, signingIn: true }).then((response) => response.json());
+  const back = () => {
+    box.hidden = true;
+    box.replaceChildren();
+    $("signin-own").hidden = false;
+  };
+  const draw = (title, about, ...parts) => {
+    error.textContent = "";
+    box.replaceChildren(el("h2", { text: title }), el("p", { class: "hint", text: about }), ...parts.filter(Boolean), error,
+      el("button", { type: "button", class: "quiet wide", text: "Back to sign in", onclick: back }));
+  };
+  const run = async (button, work) => {
+    button.disabled = true;
+    error.textContent = "";
+    try {
+      await work();
+    } catch (problem) {
+      error.textContent = problem.message;
+    }
+    button.disabled = false;
+  };
+
+  function who() {
+    const typed = el("input", { autocomplete: "username", spellcheck: "false", placeholder: "DL-MGR-0001, or your email address", value: id, required: true });
+    const send = el("button", { class: "primary wide", text: "Email me a code" });
+    const form = el("form", {}, el("label", { text: "DeskLess ID or email" }), typed, send);
+    form.onsubmit = (event) => {
+      event.preventDefault();
+      run(send, async () => {
+        id = typed.value.trim();
+        await ask("/password/forgot", { unique_id: id });
+        code();
+      });
+    };
+    draw("Forgot password", "Step 1 of 3. A code is emailed to the address your account was made with.", form,
+      el("p", { class: "hint small", text: "The administrator's password is set on the server and is not changed here." }));
+    typed.focus();
+  }
+
+  function code(said = "") {
+    const typed = el("input", { inputmode: "numeric", autocomplete: "one-time-code", maxlength: 6, placeholder: "6 digits", required: true });
+    const check = el("button", { class: "primary wide", text: "Check the code" });
+    const again = el("button", { type: "button", class: "quiet wide", text: "Send the code again" });
+    again.onclick = () => run(again, async () => {
+      await ask("/password/forgot", { unique_id: id });
+      code("A new code is on its way. The earlier one no longer works.");
+    });
+    const form = el("form", {}, el("label", { text: "Code from the email" }), typed, check);
+    form.onsubmit = (event) => {
+      event.preventDefault();
+      run(check, async () => {
+        pass = (await ask("/password/verify", { unique_id: id, code: typed.value.trim() })).ticket;
+        fresh();
+      });
+    };
+    draw("Check the code", "Step 2 of 3. Type the 6-digit code from the email. It works for ten minutes.", form,
+      said ? el("p", { class: "hint", text: said }) : null, again);
+    typed.focus();
+  }
+
+  function fresh() {
+    const one = el("input", { type: "password", autocomplete: "new-password", placeholder: "At least 8 characters", minlength: 8, required: true });
+    const two = el("input", { type: "password", autocomplete: "new-password", required: true });
+    const change = el("button", { class: "primary wide", text: "Change password" });
+    const form = el("form", {}, el("label", { text: "New password" }), one, el("label", { text: "New password, once more" }), two, change);
+    form.onsubmit = (event) => {
+      event.preventDefault();
+      if (one.value !== two.value) {
+        error.textContent = "The two passwords are not the same.";
+        return;
+      }
+      run(change, async () => {
+        await ask("/password/reset", { ticket: pass, password: one.value });
+        $("password").value = "";
+        box.replaceChildren(el("h2", { text: "Password changed" }), el("p", { class: "hint", text: "Sign in with your new password." }),
+          el("button", { type: "button", class: "primary wide", text: "Back to sign in", onclick: back }));
+      });
+    };
+    draw("New password", "Step 3 of 3. The code is confirmed. Choose your new password.", form);
+    one.focus();
+  }
+
+  $("signin-own").hidden = true;
+  box.hidden = false;
+  who();
+}
+$("forgot-open").onclick = forgotPassword;
 $("big").onclick = () => $("big").close();
 
 // The app opens this page with a link that works once, so the person does not sign in a second time.

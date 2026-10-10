@@ -88,20 +88,49 @@ def my_photo(account: Account = Depends(current_account)) -> FileResponse:
     return FileResponse(path, media_type="image/jpeg")
 
 
+# A forgotten password is replaced in three steps. A code is emailed to the address the account was made
+# with; the code is checked; and only then is a new password chosen. Checking the code uses it up and
+# gives a pass that is good for a few minutes and for one change of password.
+
+RESET_MINUTES = 10
+
+
+def _by_id_or_email(db: Session, typed: str) -> Account | None:
+    """The approved account with this DeskLess ID; or, for someone who has forgotten that too, with this email address."""
+    typed = typed.strip()
+    if "@" not in typed:
+        return _by_unique_id(db, typed)
+    found = list(db.scalars(select(Account).where(func.lower(Account.email) == typed.lower(), Account.status == APPROVED).limit(2)))
+    return found[0] if len(found) == 1 else None
+
+
+def _pass_mark(account: Account) -> str:
+    """Changes when the password does, so a pass cannot be used a second time."""
+    return security.keyed_hash(account.id, "reset-pass", account.password_hash)[:24]
+
+
 class Forgot(BaseModel):
     unique_id: str
 
 
-class Reset(BaseModel):
+class Verify(BaseModel):
     unique_id: str
     code: str
+
+
+class Reset(BaseModel):
     password: str
+    #: The pass given when the code was checked.
+    ticket: str = ""
+    #: Or, as earlier builds of the app send it, the ID and the code together with the new password.
+    unique_id: str = ""
+    code: str = ""
 
 
 @router.post("/password/forgot")
 def forgot(body: Forgot, db: Session = Depends(get_db), post: mailer.Mailer = Depends(get_mailer)) -> dict:
     """Emails a code to the address the account was made with. The answer is the same whether or not the ID exists."""
-    account = _by_unique_id(db, body.unique_id)
+    account = _by_id_or_email(db, body.unique_id)
     if account is not None:
         try:
             send_code(db, post, account, "reset")
@@ -112,14 +141,32 @@ def forgot(body: Forgot, db: Session = Depends(get_db), post: mailer.Mailer = De
     return {"sent": True, "code_minutes": settings().otp_minutes}
 
 
+@router.post("/password/verify")
+def verify(body: Verify, db: Session = Depends(get_db)) -> dict:
+    """Checks the emailed code. A right one is used up and exchanged for the pass to choose a new password with."""
+    account = _by_id_or_email(db, body.unique_id)
+    if account is None:
+        raise HTTPException(400, "That is not the code. Check the ID and the code, or ask for a new one.")
+    use_code(db, account, "reset", body.code)
+    ticket = security.make_token(f"{account.id}:{_pass_mark(account)}", "reset", timedelta(minutes=RESET_MINUTES))
+    return {"verified": True, "ticket": ticket, "minutes": RESET_MINUTES, "unique_id": account.unique_id}
+
+
 @router.post("/password/reset")
 def reset(body: Reset, db: Session = Depends(get_db)) -> dict:
+    """Sets the new password, for whoever holds the pass from a checked code."""
     if len(body.password) < MIN_PASSWORD:
         raise HTTPException(422, f"Choose a password of at least {MIN_PASSWORD} characters.")
-    account = _by_unique_id(db, body.unique_id)
-    if account is None:
-        raise HTTPException(400, "Ask for a new code.")
-    use_code(db, account, "reset", body.code)
+    if body.ticket:
+        holder, _, mark = (security.read_token(body.ticket, "reset") or "").partition(":")
+        account = db.get(Account, holder) if holder else None
+        if account is None or account.status != APPROVED or not security.same(mark, _pass_mark(account)):
+            raise HTTPException(400, "That took too long, or the password was already changed. Ask for a new code.")
+    else:
+        account = _by_unique_id(db, body.unique_id)
+        if account is None:
+            raise HTTPException(400, "Ask for a new code.")
+        use_code(db, account, "reset", body.code)
     account.password_hash = security.hash_password(body.password)
     account.failed_logins = 0
     account.locked_until = None

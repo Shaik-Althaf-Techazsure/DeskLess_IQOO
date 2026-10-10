@@ -419,8 +419,15 @@ class AppState(
 
     suspend fun forgotPassword(uniqueId: String): String? = online { api.forgot(uniqueId.trim()) }.fold({ null }, ::why)
 
-    suspend fun resetPassword(uniqueId: String, code: String, password: String): String? =
-        online { api.reset(uniqueId.trim(), code.trim(), password) }.fold({ null }, ::why)
+    /**
+     * Checks the code that was emailed for a forgotten password. Gives the pass to choose a new password
+     * with, or what to tell the person.
+     */
+    suspend fun checkResetCode(uniqueId: String, code: String): Pair<String?, String?> =
+        online { api.verifyReset(uniqueId.trim(), code.trim()).getString("ticket") }.fold({ it to null }, { null to why(it) })
+
+    suspend fun resetPassword(ticket: String, password: String): String? =
+        online { api.reset(ticket, password) }.fold({ null }, ::why)
 
     // ---------------------------------------------------------------- reports to the office
     //

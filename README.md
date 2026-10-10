@@ -1,6 +1,6 @@
 # DeskLess
 
-**Site inspection reports, without the desk.** Walk the site, photograph each issue and say what is wrong in your own mix of Hindi and English. DeskLess turns the voice note into English text, structures it (issue, location, severity, owner, due date) and builds a formatted English PDF report. The models run on the phone and a report is made with no network. When the phone has a network, the finished report goes to the company's server, where each role has its own dashboard.
+**Inspection reports, without the desk.** For anyone who walks a place and has to write up what is wrong with it: a construction project, a college, a government office, an apartment block, a mall, a hospital. Walk it, photograph each issue and say what is wrong in your own mix of Hindi and English. DeskLess turns the voice note into English text, structures it (issue, location, severity, owner, due date) and builds a formatted English PDF report. The models run on the phone and a report is made with no network. When the phone has a network, the finished report goes to the company's server, where each role has its own dashboard.
 
 Team **techazsure** · iQOO Hackathon 2026 Grand Finale · Productivity track
 
@@ -66,6 +66,23 @@ Every push also runs the same build on GitHub Actions (`.github/workflows/build.
 Fields the note did not mention are left empty and printed as "Not stated". The AI check is an opinion: when the inspector overrules it, the report says so.
 
 The same flow serves three kinds of report, chosen on the first screen: site inspection, medication audit and community issue. The choice sets the wording on screen, the issue types and the severity guide given to the model. Issues can be filtered and sorted, and every PDF built on the phone is kept in a reports list.
+
+### Not only construction sites
+
+The walk is the same wherever it is done: picture, voice, report. What differs is what counts as serious, how issues are sorted and what the people are called. A report type sets exactly that, and nothing else: the wording on screen, what the model on the phone is told about who is speaking and how to rate severity, the types an issue can be sorted into, and the title of the report. It is chosen on the first screen and can be changed at any time.
+
+| Report type | For | Issues are sorted into |
+|---|---|---|
+| Site inspection | Construction projects of any size, fit-outs and handovers | Structural, Electrical, Plumbing, Fire safety, Housekeeping, Security |
+| Campus inspection | Colleges and schools: classrooms, labs, hostels, canteens | Classrooms and furniture, Laboratories, Hostel and canteen, Electrical, Water and sanitation, Fire safety, Security |
+| Office inspection | Government and company offices: counters, records, access | Public counters and waiting, Records and storage, Electrical and IT, Water and sanitation, Accessibility, Fire safety, Security |
+| Apartment inspection | Apartment blocks and housing societies | Lifts, Water and plumbing, Electrical, Common areas, Parking, Fire safety, Security |
+| Mall inspection | Malls, shops and food courts | Escalators and lifts, Fire safety, Food court hygiene, Electrical, Housekeeping, Signage and access, Security |
+| Hospital round | Wards, corridors and plant rooms | Infection control, Medical gases and equipment, Electrical and backup power, Water and sanitation, Biomedical waste, Patient safety, Fire safety |
+| Medication audit | Pharmacy and ward stock, storage and labelling; reads the expiry date on a pack | Expired stock, Storage and cold chain, Labelling, Controlled drugs, Records, Hygiene |
+| Community issue | Roads, water, waste and public safety, for the local office | Roads, Water and drainage, Waste, Street lighting, Public safety, Welfare |
+
+The server and the dashboards make no difference between them: an issue is an issue, with its place, type and severity, and the assistant ranks, routes and chases a broken lift in an apartment block as it does a crack in a beam. Another kind of place is one more entry in `data/Template.kt`.
 
 ### Ask DeskLess
 
@@ -146,7 +163,7 @@ Phones exchange their public keys the first time they connect after linking, und
 - Accuracy on mixed Hindi-English speech.
 - The accounts, the dashboards and the sending of reports on a real phone and a real server. They were tried with the Android emulator and the server in Docker on one computer: the sign-up form with a team code, sign-in, a report built on the emulator arriving on the manager's dashboard with its pictures, and the dashboards in a desktop browser at desktop and phone width. Email was sent only to the test mailbox.
 - Speed of the picture check on a video issue (three stills) on the phone.
-- The medication audit and community issue report types: they were tried on screen only, and no issue has been run through the model under them.
+- The report types other than the site inspection. On an emulator, one typed note was run through the model under the hospital round ("The oxygen cylinder in ward three is not chained to the wall" came back as *Oxygen cylinder unsecured in ward three*, type Medical gases and equipment, High). The others were tried on screen only, and none has been used on the phone or in a real place of its kind.
 - How well a model of this size judges real site photos. This is why its verdict can always be overruled.
 - The sensor features on a real phone. They were written and tried on the Android emulator, where the capture stamp, the level, the noise and vibration meters, lift-to-talk, naming a tag (with a simulated tag) and the signed report work. Real NFC tags, the step counter, the torch, lens switching, the feel of the motor and how close the readings are to real instruments still have to be checked on the phone.
 - The speed of the phone link over Wi-Fi between two real phones. Between an iQOO 15 and a Pixel 9a, linking by QR code, connecting with no prompt, the report arriving and the spoken "Report sent" all worked, but that first run stayed on Bluetooth and a 1.9 MB report took over three minutes. The link was then changed so the two phones can move up to a direct Wi-Fi connection, and reports were made about a third of the size; that the phones do reach Wi-Fi speed has not been checked yet. Between two Android emulators the whole flow works, including a report sent while the other phone was closed going by itself once it opened, and the signature verifying on the receiving side.
@@ -229,7 +246,7 @@ The administrator is not an account: there is one, named in the server's setting
 | 4. Unique ID | Server | Approval gives the ID the person signs in with. It is emailed, and the waiting app shows it. A managing director or manager also gets the code to hand to their own people. |
 | 5. Sign in | App or dashboard | ID and password. The phone keeps the sign-in for 30 days, and the fingerprint unlocks the app each time it is opened. |
 
-A forgotten password is reset in the app with a code sent to the account's email address. Five wrong passwords lock the account for fifteen minutes.
+**Forgot password** is on the sign-in screen of the app and of the dashboard, and takes three steps: a six-digit code is emailed to the address the account was made with; the code is checked; and only then is the new password chosen, typed twice. The DeskLess ID or the account's email address starts it. Checking the code uses it up and gives a pass that is good for ten minutes and for one change of password, so nothing can be changed by someone who has not seen the email, and the same pass cannot set the password a second time. A wrong code is told so and counted (five tries), and the code can be sent again after a minute. Five wrong passwords lock the account for fifteen minutes; a new password lifts the lock. The administrator's password is a setting of the server and is not changed this way.
 
 ### From a report to a closed issue
 
@@ -428,7 +445,7 @@ It reads the machine's free memory and stops if there is less than 1.5 GB, since
 | `GET /api/signup/status` | How a sign-up is doing and who is to decide it, for the phone that made it |
 | `POST /api/login`, `POST /api/admin/login` | Sign in: a person with their unique ID, the administrator with their email address |
 | `GET /api/me`, `/api/me/photo` | The signed-in person's details and photo |
-| `POST /api/password/forgot`, `/api/password/reset` | Reset a forgotten password with an emailed code |
+| `POST /api/password/forgot`, `/api/password/verify`, `/api/password/reset` | A forgotten password: email a code, check it (which gives a pass for one change), set the new password |
 | `POST /api/web-link`, `/api/web-link/open` | A link that works once, with which the app opens the dashboard already signed in |
 | `GET /api/people`, `POST /api/people/{id}/approve`, `/reject` | The people below the one asking, the sign-ups waiting for them, and the deciding of those |
 | `POST /api/people/{id}/suspend`, `/reactivate` | Shut an approved account out, and let it back in |

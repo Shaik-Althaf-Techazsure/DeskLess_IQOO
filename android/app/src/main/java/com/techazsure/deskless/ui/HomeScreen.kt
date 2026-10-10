@@ -37,7 +37,9 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.Sort
@@ -690,12 +692,18 @@ private fun Hero(state: AppState, onNew: () -> Unit, onChangeType: () -> Unit) {
     }
 }
 
-/** The three kinds of report, as cards to choose from. */
+/** The kinds of report, one for each kind of place, as cards to choose from. */
 @Composable
 private fun TemplatePicker(current: Template, onPick: (Template) -> Unit, onDismiss: () -> Unit) {
     Dialog(onDismissRequest = onDismiss) {
         Surface(shape = RoundedCornerShape(28.dp), color = Coal, border = BorderStroke(1.dp, Line)) {
-            Column(modifier = Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            // More kinds of place than fit on a screen: the list scrolls.
+            Column(
+                modifier = Modifier
+                    .verticalScroll(rememberScrollState())
+                    .padding(18.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
                 Text("WHAT ARE YOU CHECKING?", style = MaterialTheme.typography.headlineSmall, color = Chalk)
                 Text(
                     text = "The steps stay the same: picture, voice, report. The type sets the wording, how the AI " +

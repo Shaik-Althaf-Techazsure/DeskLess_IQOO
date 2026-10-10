@@ -1,12 +1,15 @@
 """
 The DeskLess server: accounts (sign-up with a code by email, approval by the level above, sign-in with a
-unique ID), the reports the phones send, the work that follows from them, and a dashboard for each role.
+unique ID), the reports the phones send, the work that follows from them, a dashboard for each role, and
+the home page that shows what all of this is.
 """
 
 import gzip
 import hashlib
+import re
 import time
 from contextlib import asynccontextmanager
+from functools import lru_cache
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Request
@@ -37,6 +40,12 @@ class UnderItsPath:
         if self.base and scope["type"] == "http":
             path = scope["path"]
             under = path.lower().startswith(self.base.lower()) and path[len(self.base):len(self.base) + 1] in ("", "/")
+            if under and len(path) == len(self.base) and scope["method"] in ("GET", "HEAD"):
+                # The bare address without its last stroke. The home page asks for its files beside
+                # itself, so the browser has to stand inside the folder first.
+                asked = scope.get("query_string", b"").decode("latin-1")
+                await RedirectResponse(path + "/" + (f"?{asked}" if asked else ""))(scope, receive, send)
+                return
             if under:
                 scope = dict(scope, path=path[len(self.base):] or "/")
                 # The same path as the browser sent it; it is rebuilt from the one above when needed.
@@ -113,8 +122,16 @@ class Squeezed:
         await self.app(scope, receive, squeezing)
 
 
-# The dashboard is one page with its style and script beside it.
-_PAGE_FILES = {"app.css": "text/css", "app.js": "text/javascript"}
+# Each page has its style and script beside it: the dashboard, the home page and the sign-up page.
+_PAGE_FILES = {
+    "app.css": "text/css", "app.js": "text/javascript",
+    "home.css": "text/css", "home.js": "text/javascript",
+    "signup.css": "text/css", "signup.js": "text/javascript",
+}
+
+# What the home page shows: the film, the deck's slides, pictures of the app and of the dashboards.
+SITE = STATIC / "site"
+_SITE_KINDS = {".webp": "image/webp", ".jpg": "image/jpeg", ".png": "image/png", ".mp4": "video/mp4", ".pdf": "application/pdf"}
 
 
 @asynccontextmanager
@@ -161,31 +178,76 @@ def _mark() -> str:
     return mark.hexdigest()[:12]
 
 
+@lru_cache
+def _site() -> tuple[frozenset, str]:
+    """The names of the home page's pictures and film, and a mark that changes when any of them does."""
+    mark = hashlib.sha256()
+    names = sorted(file.name for file in SITE.iterdir() if file.suffix in _SITE_KINDS) if SITE.is_dir() else []
+    for name in names:
+        about = (SITE / name).stat()
+        mark.update(f"{name}:{about.st_size}:{int(about.st_mtime)};".encode())
+    return frozenset(names), mark.hexdigest()[:12]
+
+
+_SITE_FILE = re.compile(r'static/site/([\w.-]+)(?=")')
+
+_FOR_GOOD = "public, max-age=31536000, immutable"
+
+
+def _page(name: str) -> HTMLResponse:
+    """
+    A page as the browser gets it. It asks for its style, its script, its pictures and the API beside
+    itself, so it works under whatever path the server is given. The page itself is always asked for
+    afresh and is small; it names everything else by a mark, so the browser keeps those for good and
+    fetches them again only when the server has been updated.
+    """
+    page = (STATIC / name).read_text(encoding="utf-8")
+    mark = _mark()
+    for file in _PAGE_FILES:
+        page = page.replace(f"static/{file}", f"static/{file}?v={mark}")
+    page = _SITE_FILE.sub(lambda found: f"{found.group(0)}?v={_site()[1]}", page)
+    # Only what a shared link shows needs the whole address: chat apps fetch that picture from outside.
+    page = page.replace("{{public}}", settings().public_url)
+    return HTMLResponse(page, headers={"Cache-Control": "no-cache"})
+
+
+@app.get("/", include_in_schema=False)
+def home_page() -> HTMLResponse:
+    """The front door: what DeskLess is and how it works, with the film, the deck and the way in."""
+    return _page("home.html")
+
+
 @app.get("/dashboard", include_in_schema=False)
 def dashboard_page() -> HTMLResponse:
-    """
-    The one page everybody signs in on. It asks for its style, its script and the API beside itself, so
-    it works under whatever path the server is given. The page itself is always asked for afresh and is
-    tiny; it names its script and style by their mark, so the browser keeps those for good and fetches
-    them again only when the server has been updated.
-    """
-    page = (STATIC / "index.html").read_text(encoding="utf-8")
-    mark = _mark()
-    for name in _PAGE_FILES:
-        page = page.replace(f"static/{name}", f"static/{name}?v={mark}")
-    return HTMLResponse(page, headers={"Cache-Control": "no-cache"})
+    """The one page everybody signs in on."""
+    return _page("index.html")
+
+
+@app.get("/signup", include_in_schema=False)
+def signup_page() -> HTMLResponse:
+    """Signing up in a browser: the same form, code and wait as in the app."""
+    return _page("signup.html")
 
 
 @app.get("/static/{name}", include_in_schema=False)
 def page_file(name: str, v: str = "") -> FileResponse:
     if name not in _PAGE_FILES:
         raise HTTPException(404, "Not found.")
-    keep = "public, max-age=31536000, immutable" if v and v == _mark() else "no-cache"
+    keep = _FOR_GOOD if v and v == _mark() else "no-cache"
     return FileResponse(STATIC / name, media_type=_PAGE_FILES[name], headers={"Cache-Control": keep})
 
 
-@app.get("/", include_in_schema=False)
+@app.get("/static/site/{name}", include_in_schema=False)
+def site_file(name: str, v: str = "") -> FileResponse:
+    """A picture, the film or the deck. The film is sent in pieces when the browser asks for pieces."""
+    names, mark = _site()
+    if name not in names:
+        raise HTTPException(404, "Not found.")
+    keep = _FOR_GOOD if v and v == mark else "public, max-age=3600"
+    return FileResponse(SITE / name, media_type=_SITE_KINDS[Path(name).suffix], headers={"Cache-Control": keep})
+
+
 @app.get("/admin", include_in_schema=False)
 def to_the_dashboard() -> RedirectResponse:
-    """The bare address, and where the administrator's page used to be, lead to the dashboard."""
+    """Where the administrator's page used to be leads to the dashboard."""
     return RedirectResponse(f"{settings().base_path}/dashboard")

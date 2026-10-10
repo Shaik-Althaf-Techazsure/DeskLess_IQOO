@@ -52,6 +52,7 @@ label { display: block; font-size: 12px; letter-spacing: .08em; text-transform: 
 .signin-card { width: min(410px, 100%); padding: 26px; animation: rise .5s both; }
 .signin-card .stripes { margin: 18px -26px 20px; }
 .signin-card h2 { font-size: 22px; margin-bottom: 4px; }
+#forgot-open, #forgot button.quiet { margin-top: 10px; }
 
 /* ---------------------------------------------------------------- the frame: side bar, top bar, content */
 #shell { display: grid; grid-template-columns: 236px minmax(0, 1fr); min-height: 100vh; }
