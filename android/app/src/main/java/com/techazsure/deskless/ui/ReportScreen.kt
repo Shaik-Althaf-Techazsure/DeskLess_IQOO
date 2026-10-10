@@ -46,6 +46,8 @@ import androidx.compose.material.icons.rounded.Verified
 import androidx.compose.material.icons.rounded.OpenInNew
 import androidx.compose.material.icons.rounded.SaveAlt
 import androidx.compose.material.icons.rounded.Share
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -54,6 +56,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
@@ -76,6 +79,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.techazsure.deskless.AppState
 import com.techazsure.deskless.Screen
+import com.techazsure.deskless.link.Stage
 import androidx.compose.material.icons.rounded.Groups
 import com.techazsure.deskless.report.Handoff
 import com.techazsure.deskless.report.ReportPack
@@ -98,6 +102,59 @@ fun ReportScreen(state: AppState, file: File, fromLibrary: Boolean = false) {
     val context = LocalContext.current
     var savedTo by remember(file) { mutableStateOf<String?>(null) }
     var sendNote by remember(file) { mutableStateOf<String?>(null) }
+    var choosing by remember(file) { mutableStateOf(false) }
+    // A report that came from another phone counts as seen once it has been opened here.
+    LaunchedEffect(file) { state.markRead(file.name) }
+
+    // Which linked phones this report goes to. Each copy is sealed for its phone, so the choice is also
+    // the list of the only phones that will ever be able to open it.
+    if (choosing) {
+        val chosen = remember { mutableStateListOf<String>().apply { addAll(state.link.peers.filter { it.public.isNotBlank() }.map { it.id }) } }
+        AlertDialog(
+            onDismissRequest = { choosing = false },
+            title = { Text("Send to") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    state.link.peers.forEach { peer ->
+                        val met = peer.public.isNotBlank()
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Checkbox(
+                                checked = peer.id in chosen,
+                                enabled = met,
+                                onCheckedChange = { on -> if (on) chosen.add(peer.id) else chosen.remove(peer.id) },
+                            )
+                            Column {
+                                Text(peer.name, style = MaterialTheme.typography.bodyLarge)
+                                Text(
+                                    text = when {
+                                        !met -> "Not met since linking. Open DeskLess on both, side by side, once."
+                                        peer.id in state.link.connected -> "In range: goes straight across"
+                                        else -> "Not in range: carried sealed by phones that are, or waits"
+                                    },
+                                    style = MaterialTheme.typography.bodySmall,
+                                )
+                            }
+                        }
+                    }
+                    Spacer(Modifier.height(6.dp))
+                    Text(
+                        text = "Only the phones you tick can open it. A phone that carries it on the way cannot.",
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    enabled = chosen.isNotEmpty(),
+                    onClick = {
+                        sendNote = state.sendReport(file, chosen.toList())
+                        choosing = false
+                    },
+                ) { Text("Send") }
+            },
+            dismissButton = { TextButton(onClick = { choosing = false }) { Text("Cancel") } },
+        )
+    }
     val back = { state.screen = if (fromLibrary) Screen.Reports else Screen.Home }
     val entry = state.reports.firstOrNull { it.fileName == file.name }
     BackHandler { back() }
@@ -349,36 +406,54 @@ fun ReportScreen(state: AppState, file: File, fromLibrary: Boolean = false) {
                     kind = ButtonKind.Secondary,
                     modifier = Modifier.weight(1f),
                 )
-                // With a phone linked, Share sends straight to it: nobody is asked to accept on either
-                // side, and the phone says when it has gone. With none linked it is the usual share sheet.
-                val linked = state.link.peers.isNotEmpty()
+                // With phones linked, Share sends to the ones you choose: nobody is asked to accept on
+                // either side, and the phone says when it has gone. With one linked phone there is nothing
+                // to choose, and with none it is the usual share sheet.
+                val peers = state.link.peers
                 BrandButton(
                     text = "Share",
                     onClick = {
-                        if (linked) sendNote = state.sendReport(file) else context.startActivity(Handoff.shareIntent(context, file))
+                        when (peers.size) {
+                            0 -> context.startActivity(Handoff.shareIntent(context, file))
+                            1 -> sendNote = state.sendReport(file, listOf(peers[0].id))
+                            else -> choosing = true
+                        }
                     },
-                    icon = if (linked) Icons.Rounded.SendToMobile else Icons.Rounded.Share,
+                    icon = if (peers.isNotEmpty()) Icons.Rounded.SendToMobile else Icons.Rounded.Share,
                     kind = ButtonKind.Secondary,
                     modifier = Modifier.weight(1f),
                 )
             }
             if (state.link.peers.isNotEmpty()) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    // The line follows the report across: sending, waiting for the other phone, or gone.
-                    val queued = state.link.waiting.any { it.pack.name == "send-${file.nameWithoutExtension}.zip" }
+                // One line for each phone the report was sent to, following it on its way.
+                val onBluetooth = state.link.connected.any { state.link.fast[it] != true }
+                state.link.peers.forEach { peer ->
+                    val copy = state.link.stage(file.name, peer.id) ?: return@forEach
+                    val going = state.link.progress[copy.id]
                     Text(
-                        text = when {
-                            sendNote == null -> "Share sends to ${state.link.peers.joinToString(", ") { it.name }} with no prompt."
-                            state.link.inFlight > 0 -> "Sending…"
-                            queued -> "Waiting. It goes by itself when a linked phone is in range with DeskLess open."
-                            else -> "Sent. The other phone has it."
+                        text = peer.name + ": " + when {
+                            copy.stage == Stage.DELIVERED -> "delivered and opened"
+                            going != null -> "sending ${(going * 100).toInt()}%" +
+                                if (onBluetooth) " over Bluetooth. With Wi-Fi switched on on both phones it takes seconds." else ""
+                            copy.stage == Stage.HANDED -> "handed over"
+                            copy.stage == Stage.RELAYED -> "with a relay phone, sealed. Only ${peer.name} can open it."
+                            else -> "waiting. It goes by itself when that phone, or one that can carry it, is in range."
                         },
                         style = MaterialTheme.typography.bodySmall,
                         color = when {
-                            sendNote == null -> Fog
-                            state.link.inFlight == 0 && !queued -> GoGreen
+                            copy.stage == Stage.DELIVERED || copy.stage == Stage.HANDED -> GoGreen
                             else -> SafetyYellow
                         },
+                    )
+                }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        text = sendNote ?: when (state.link.peers.size) {
+                            1 -> "Share sends to ${state.link.peers[0].name} with no prompt."
+                            else -> "Share lets you choose which linked phones get it."
+                        },
+                        style = MaterialTheme.typography.bodySmall,
+                        color = if (sendNote != null) SafetyYellow else Fog,
                         modifier = Modifier.weight(1f),
                     )
                     TextButton(onClick = { context.startActivity(Handoff.shareIntent(context, file)) }) { Text("Another app") }

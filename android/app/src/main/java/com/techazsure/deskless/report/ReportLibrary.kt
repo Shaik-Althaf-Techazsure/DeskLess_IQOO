@@ -26,7 +26,14 @@ data class ReportEntry(
     val reviewReason: String = "",
     /** The name of the phone this report came from over the link; blank for a report built on this phone. */
     val from: String = "",
-)
+    /** When it arrived here, for a report from another phone; 0 for one built on this phone. */
+    val receivedAt: Long = 0,
+    /** True for a received report nobody has opened on this phone yet. */
+    val unread: Boolean = false,
+) {
+    /** When the report came to be on this phone: built here, or arrived. The reports list is ordered by it. */
+    val since: Long get() = maxOf(builtAt, receivedAt)
+}
 
 /** The PDFs built on this phone, with a small index beside them. */
 class ReportLibrary(context: Context) {
@@ -61,7 +68,7 @@ class ReportLibrary(context: Context) {
                     flagged = 0,
                 )
             }
-            .sortedByDescending { it.builtAt }
+            .sortedByDescending { it.since }
     }
 
     fun record(file: File, inspection: Inspection, issues: List<Issue>, flagged: Int, review: Review? = null): ReportEntry =
@@ -82,7 +89,10 @@ class ReportLibrary(context: Context) {
 
     /** Lists a report that arrived from another phone, from what that phone said about it. */
     fun receive(file: File, about: JSONObject, from: String): ReportEntry =
-        add(entryFrom(about).copy(fileName = file.name, from = from))
+        add(entryFrom(about, file.name).copy(from = from, receivedAt = System.currentTimeMillis(), unread = true))
+
+    /** Notes that a received report has been opened. */
+    fun markRead(entry: ReportEntry): ReportEntry = add(entry.copy(unread = false))
 
     /** What the phone at the other end needs to list this report as this phone does. */
     fun describe(entry: ReportEntry): JSONObject = toJson(entry)
@@ -108,9 +118,12 @@ class ReportLibrary(context: Context) {
         .put("review", entry.review)
         .put("reviewReason", entry.reviewReason)
         .put("from", entry.from)
+        .put("receivedAt", entry.receivedAt)
+        .put("unread", entry.unread)
 
-    private fun entryFrom(json: JSONObject) = ReportEntry(
-        fileName = json.getString("fileName"),
+    /** [fileName] stands in when the entry does not name its file: a report from another phone is named here. */
+    private fun entryFrom(json: JSONObject, fileName: String = json.getString("fileName")) = ReportEntry(
+        fileName = fileName,
         template = Template.entries.firstOrNull { it.name == json.optString("template") },
         place = json.optString("place"),
         person = json.optString("person"),
@@ -121,6 +134,8 @@ class ReportLibrary(context: Context) {
         review = json.optString("review"),
         reviewReason = json.optString("reviewReason"),
         from = json.optString("from"),
+        receivedAt = json.optLong("receivedAt"),
+        unread = json.optBoolean("unread"),
     )
 
     private companion object {

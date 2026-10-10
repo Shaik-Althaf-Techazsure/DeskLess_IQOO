@@ -103,6 +103,7 @@ import com.techazsure.deskless.data.Issue
 import com.techazsure.deskless.data.Severity
 import com.techazsure.deskless.data.Template
 import com.techazsure.deskless.report.PdfReport
+import com.techazsure.deskless.report.ReportEntry
 import com.techazsure.deskless.report.ReportPack
 import com.techazsure.deskless.report.SignOff
 import com.techazsure.deskless.ui.theme.Chalk
@@ -300,6 +301,14 @@ fun HomeScreen(state: AppState) {
         ) {
             item(key = "brand") { BrandBar(state, onSideBar = { scope.launch { sideBar.open() } }) }
             item(key = "hero") { Hero(state, onNew = { confirmNew = true }, onChangeType = { pickTemplate = true }) }
+            // Reports that came from other phones and have not been opened yet sit at the top until they are.
+            state.unread.forEach { arrived ->
+                item(key = "new-${arrived.fileName}") {
+                    Box(Modifier.animateItem()) {
+                        ArrivedCard(arrived, onClick = { state.screen = Screen.Report(state.reportFile(arrived).absolutePath) })
+                    }
+                }
+            }
             if (state.place.isNotBlank()) {
                 item(key = "place") { PlaceBar(state.place, onClick = { editPlace = true }) }
             }
@@ -393,6 +402,42 @@ private suspend fun askToSign(context: Context, who: String, what: String): Sign
     if (Build.VERSION.SDK_INT < Build.VERSION_CODES.P) return null
     return suspendCancellableCoroutine { waiting ->
         SignOff.ask(context, who, what) { if (waiting.isActive) waiting.resume(it) }
+    }
+}
+
+/** A report that has arrived from another phone and not been opened yet. A tap opens it. */
+@Composable
+private fun ArrivedCard(entry: ReportEntry, onClick: () -> Unit) {
+    val interaction = remember { MutableInteractionSource() }
+    Surface(
+        onClick = onClick,
+        interactionSource = interaction,
+        shape = RoundedCornerShape(18.dp),
+        color = GoGreen.copy(alpha = 0.14f),
+        border = BorderStroke(1.5.dp, GoGreen.copy(alpha = 0.7f)),
+        modifier = Modifier
+            .fillMaxWidth()
+            .bouncy(interaction, pressedScale = 0.98f),
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(Icons.Rounded.Description, contentDescription = null, tint = GoGreen, modifier = Modifier.size(26.dp))
+            Column(Modifier.weight(1f)) {
+                Text("NEW REPORT RECEIVED", style = MaterialTheme.typography.labelSmall, color = GoGreen)
+                Text(
+                    text = entry.place.ifBlank { entry.template?.title ?: "Report" },
+                    style = MaterialTheme.typography.titleMedium,
+                    color = Chalk,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Text("From ${entry.from}. Tap to open.", style = MaterialTheme.typography.bodySmall, color = Fog)
+            }
+            Icon(Icons.Rounded.ChevronRight, contentDescription = null, tint = GoGreen, modifier = Modifier.size(22.dp))
+        }
     }
 }
 

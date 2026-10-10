@@ -1,6 +1,7 @@
 package com.techazsure.deskless.report
 
 import android.content.Context
+import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Canvas
 import android.graphics.Color
@@ -52,6 +53,13 @@ object PdfReport {
     private const val PHOTO_MAX_H = 200f
     private const val PHOTO_GAP = 14f
     private const val LABEL_W = 58f
+
+    /**
+     * The longest side, in pixels, a picture is stored at in the report. It prints sharp at the size the
+     * page shows it, and keeps the report small enough to cross from phone to phone quickly: the pictures
+     * are nearly all of a report's size.
+     */
+    private const val PHOTO_PIXELS = 520
 
     fun newFile(context: Context, inspection: Inspection): File {
         val dir = File(context.filesDir, "reports").apply { mkdirs() }
@@ -490,12 +498,23 @@ object PdfReport {
         }
 
         private fun drawPhoto(photo: File, frame: RectF) {
-            val bitmap = decodeSampled(photo, 480)
-            if (bitmap == null) {
+            val decoded = decodeSampled(photo, 480)
+            if (decoded == null) {
                 fill.color = 0xFFEDEDF0.toInt()
                 canvas.drawRect(frame, fill)
                 return
             }
+            val longest = max(decoded.width, decoded.height)
+            val sized = if (longest <= PHOTO_PIXELS) {
+                decoded
+            } else {
+                Bitmap.createScaledBitmap(decoded, decoded.width * PHOTO_PIXELS / longest, decoded.height * PHOTO_PIXELS / longest, true)
+                    .also { if (it !== decoded) decoded.recycle() }
+            }
+            // The PDF writer stores pictures without loss, so what they cost is decided here. Fewer
+            // colour steps than the eye misses at this size more than halve it again: measured on
+            // photos from the phone, a picture went from about 800 KB in the report to about 160 KB.
+            val bitmap = sized.copy(Bitmap.Config.RGB_565, false)?.also { sized.recycle() } ?: sized
             canvas.drawBitmap(bitmap, null, frame, bitmapPaint)
             bitmap.recycle()
         }

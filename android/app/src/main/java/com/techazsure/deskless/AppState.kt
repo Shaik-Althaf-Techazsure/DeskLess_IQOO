@@ -231,10 +231,13 @@ class AppState(
     }
 
     /**
-     * Sends a report and its working files to the linked phones, with nobody asked to accept. Returns a
-     * line for the screen; the phone says "Report sent" when it has gone.
+     * Sends a report and its working files to the chosen linked phones ([to] holds their codes), with
+     * nobody asked to accept. Each copy is sealed for the phone it is for, so a phone that carries it on
+     * the way cannot open it. Returns a line for the screen when it could not be sent, otherwise null:
+     * the report screen then follows each copy on its way.
      */
-    fun sendReport(pdf: File): String {
+    fun sendReport(pdf: File, to: List<String>): String? {
+        if (to.isEmpty()) return "Choose at least one phone."
         val entry = reports.firstOrNull { it.fileName == pdf.name }
         val title = entry?.place?.takeIf { it.isNotBlank() }?.let { "The $it report" } ?: "The report"
         val pack = File(cacheDir, "send-${pdf.nameWithoutExtension}.zip")
@@ -243,25 +246,43 @@ class AppState(
         } catch (e: Exception) {
             return "Could not pack the report to send it."
         }
-        val now = link.send(pack, title)
+        val sealed = link.send(pack, pdf.name, title, to)
+        pack.delete()
         return when {
-            now < 0 -> "No phone is linked yet."
-            now == 0 -> "Waiting. It goes by itself when a linked phone is in range with DeskLess open."
-            now == 1 -> "Sending to the linked phone…"
-            else -> "Sending to $now linked phones…"
+            sealed == 0 -> "That phone has not been met since it was linked. Open DeskLess on both phones side by side once."
+            sealed < to.size -> "Sent to $sealed of ${to.size}. The others have not been met since they were linked."
+            else -> null
         }
     }
 
-    /** Takes in a report that arrived over the link and lists it with the others. Runs off the main thread. */
-    private fun takeIn(pack: File, from: Peer): String? {
+    /**
+     * Takes in a report that arrived over the link, already opened, and lists it with the others. If the
+     * user is not in the middle of something, the report is put in front of them straight away. Runs off
+     * the main thread.
+     */
+    private fun takeIn(pack: File, from: Peer, via: String?): String? {
         val (pdf, about) = ReportPack.unzip(pack, library.folder, from.id) ?: return null
         val entry = library.receive(pdf, about, from.name)
         scope.launch {
             reports.removeAll { it.fileName == entry.fileName }
             reports.add(0, entry)
             haptics.filled()
+            if (screen == Screen.Home || screen == Screen.Reports || screen == Screen.Sensors) {
+                screen = Screen.Report(pdf.absolutePath, fromLibrary = true)
+            }
         }
         return entry.place.takeIf { it.isNotBlank() }?.let { "The $it report" } ?: "A report"
+    }
+
+    /** Reports that came from other phones and have not been opened here yet, newest first. */
+    val unread: List<ReportEntry>
+        get() = reports.filter { it.unread }
+
+    /** Notes that a received report has been looked at. */
+    fun markRead(fileName: String) {
+        val at = reports.indexOfFirst { it.fileName == fileName && it.unread }
+        if (at < 0) return
+        reports[at] = library.markRead(reports[at])
     }
 
     /** Keeps the phone finding its position while the camera is open, so a picture is stamped at once. */

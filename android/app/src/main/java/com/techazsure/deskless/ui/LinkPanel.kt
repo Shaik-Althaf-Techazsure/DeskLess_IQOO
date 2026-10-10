@@ -26,6 +26,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Bluetooth
 import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.Lock
 import androidx.compose.material.icons.rounded.PhoneAndroid
 import androidx.compose.material.icons.rounded.QrCodeScanner
 import androidx.compose.material.icons.rounded.Sensors
@@ -50,6 +51,7 @@ import androidx.compose.ui.unit.dp
 import com.techazsure.deskless.AppState
 import com.techazsure.deskless.link.Pairing
 import com.techazsure.deskless.link.Qr
+import com.techazsure.deskless.link.Stage
 import com.techazsure.deskless.ui.theme.Chalk
 import com.techazsure.deskless.ui.theme.Coal
 import com.techazsure.deskless.ui.theme.Fog
@@ -164,7 +166,7 @@ fun LinkPanel(state: AppState, onScan: () -> Unit) {
         }
         link.peers.forEach { peer ->
             val near = peer.id in link.connected
-            val queued = link.waiting.count { it.to == peer.id }
+            val queued = link.sent.count { it.to == peer.id && it.stage != Stage.DELIVERED && it.stage != Stage.HANDED }
             Surface(shape = RoundedCornerShape(16.dp), color = Steel, border = BorderStroke(1.dp, if (near) GoGreen.copy(alpha = 0.6f) else Line)) {
                 Row(
                     modifier = Modifier
@@ -177,11 +179,17 @@ fun LinkPanel(state: AppState, onScan: () -> Unit) {
                     Column(Modifier.weight(1f)) {
                         Text(peer.name, style = MaterialTheme.typography.titleMedium, color = Chalk, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         Text(
-                            text = (if (near) "Connected" else "Not in range") +
+                            // Whether the link has moved up to Wi-Fi decides if a report takes seconds or minutes.
+                            text = when {
+                                peer.public.isBlank() -> "Linked, not met yet. Open DeskLess on both phones."
+                                !near -> "Not in range"
+                                link.fast[peer.id] == true -> "Connected · fast link"
+                                else -> "Connected · Bluetooth only, slow"
+                            } +
                                 when (queued) {
                                     0 -> ""
-                                    1 -> " · 1 report waiting"
-                                    else -> " · $queued reports waiting"
+                                    1 -> " · 1 report on its way"
+                                    else -> " · $queued reports on their way"
                                 },
                             style = MaterialTheme.typography.bodySmall,
                             color = if (near) GoGreen else Fog,
@@ -190,6 +198,38 @@ fun LinkPanel(state: AppState, onScan: () -> Unit) {
                     RoundIconButton(Icons.Rounded.Close, "Unlink ${peer.name}", onClick = { link.forget(peer.id) }, container = Color.Transparent, content = Fog, size = 36.dp)
                 }
             }
+        }
+        // What this phone is carrying for others. It holds the sealed copies and cannot open them.
+        if (link.carrying.isNotEmpty()) {
+            Text("CARRYING FOR OTHERS", style = MaterialTheme.typography.labelSmall, color = Fog)
+            Surface(shape = RoundedCornerShape(16.dp), color = Steel, border = BorderStroke(1.dp, Line)) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(12.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    link.carrying.forEach { label ->
+                        val goal = link.peers.firstOrNull { it.id == label.to }?.name ?: label.to
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Rounded.Lock, contentDescription = null, tint = SafetyYellow, modifier = Modifier.size(16.dp))
+                            Text("From ${label.fromName} for $goal", style = MaterialTheme.typography.bodyMedium, color = Chalk)
+                        }
+                    }
+                    Text(
+                        text = "Sealed for the phone they are for. This phone passes them on and cannot open them.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = Fog,
+                    )
+                }
+            }
+        }
+        if (link.connected.any { link.fast[it] != true }) {
+            Text(
+                text = "For a fast link, switch Wi-Fi on on both phones. It does not have to be joined to any network.",
+                style = MaterialTheme.typography.bodySmall,
+                color = SeverityMedium,
+            )
         }
         Spacer(Modifier.size(8.dp))
     }

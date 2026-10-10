@@ -8,9 +8,11 @@ import javax.crypto.spec.SecretKeySpec
 
 /**
  * A phone running DeskLess: its code, the name people know it by, and the secret the two phones share.
- * For this phone itself the secret is the one its own QR code carries.
+ * For this phone itself the secret is the one its own QR code carries. [public] is the phone's public
+ * key, which reports are sealed for; it is learnt the first time the two phones connect, and is blank
+ * until then.
  */
-data class Peer(val id: String, val name: String, val key: String)
+data class Peer(val id: String, val name: String, val key: String, val public: String = "")
 
 /**
  * How two phones come to trust each other. One shows a QR code holding its code and a secret; the other
@@ -50,11 +52,12 @@ object Pairing {
 
     /**
      * What a phone sends to show it knows the shared secret: a keyed hash that names both phones, so a
-     * proof made for one pair cannot be replayed to another.
+     * proof made for one pair cannot be replayed to another. It also covers the sender's public key, so
+     * nobody in between can swap in a key of their own.
      */
-    fun proof(key: String, from: String, to: String): String {
+    fun proof(key: String, from: String, to: String, public: String = ""): String {
         val mac = Mac.getInstance("HmacSHA256").apply { init(SecretKeySpec(key.toByteArray(), "HmacSHA256")) }
-        return mac.doFinal("deskless-link:$from>$to".toByteArray()).joinToString("") { "%02x".format(it) }
+        return mac.doFinal("deskless-link:$from>$to:$public".toByteArray()).joinToString("") { "%02x".format(it) }
     }
 
     /** What this phone calls itself to phones nearby: its code, then its name. */

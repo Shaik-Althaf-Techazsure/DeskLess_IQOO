@@ -8,7 +8,7 @@ Team **techazsure** · iQOO Hackathon 2026 Grand Finale · Productivity track
 
 | Folder | What it is | Written |
 |---|---|---|
-| `android/` | **The finale build.** A native Android app that does everything on the phone: camera, voice, speech-to-text and a language model on the device, PDF report. No server, and it works in airplane mode. | During the finale, 9–11 Oct 2026 |
+| `android/` | **The finale build.** A native Android app that does everything on the phone: camera, voice, speech-to-text and a language model on the device, readings from the phone's sensors, PDF report, and reports passed from phone to phone with no network. No server, and it works in airplane mode. | During the finale, 9–11 Oct 2026 |
 | `backend/`, `frontend/` | The web prototype sent with the registration. The phone is the capture device and the models run on the computer that runs Docker. | Before the finale, 4 Oct 2026 |
 
 ---
@@ -56,7 +56,7 @@ Every push also runs the same build on GitHub Actions (`.github/workflows/build.
 | 4. AI check | The model says what it sees in the picture and whether that matches the note. The inspector can retake the picture or confirm it. | Gemma 4 E2B |
 | 5. Review | Every field can be edited. Fields filled by a model are marked. | Jetpack Compose |
 | 6. Report | An English PDF: counts by severity and type, then one entry per issue with its picture. | Android `PdfDocument` |
-| 7. Hand-off | Save to `Documents/DeskLess`, share, or send to a laptop with iQOO Office Kit file transfer. | Share sheet, Office Kit |
+| 7. Hand-off | Save to `Documents/DeskLess`, share, send to a laptop with iQOO Office Kit file transfer, or pass it to another phone running DeskLess, directly or through relay phones. | Share sheet, Office Kit, Nearby Connections |
 
 Fields the note did not mention are left empty and printed as "Not stated". The AI check is an opinion: when the inspector overrules it, the report says so.
 
@@ -107,11 +107,21 @@ Two phones running DeskLess can pass reports directly, with no network.
 
 1. Open the side bar on one phone (the yellow button at the top left). It shows that phone's QR code.
 2. On the other phone, tap **Scan another phone** in the side bar and point it at the code. The two are now linked.
-3. From then on they find each other by themselves whenever both have DeskLess open. **Share** on a report sends it straight across: nobody taps Accept on either side, and each phone says "Report sent" or "Report received".
+3. From then on they find each other by themselves whenever both have DeskLess open. **Share** on a report lets you choose which linked phones get it and sends it: nobody taps Accept on either side, and each phone says "Report sent" or "Report received".
 
-If the other phone is out of range, the report waits and goes by itself when the phones next meet. A received report arrives with its spreadsheet, calendar, task lists, review and signature, and the signature is checked again on the receiving phone.
+A received report opens by itself if the phone is idle; if its owner is in the middle of capturing an issue, it waits in a "new report" card on the first screen. It arrives with its spreadsheet, calendar, task lists, review and signature, and the signature is checked again on the receiving phone.
 
 The QR code carries the phone's code and a secret. Each phone proves to the other that it knows the secret before anything is exchanged, so a phone that never saw the code is turned away. The transport is Google's Nearby Connections: Bluetooth to find the other phone, and Wi-Fi directly between the two when both have it on. Android asks once to allow nearby devices and location, and offers to switch Bluetooth on if it is off; no app is allowed to switch it on silently.
+
+### Relay: through other phones, sealed
+
+When the phone a report is for is not in range, any linked phone that is in range takes it and carries it, handing it on to the phones it meets until one of them is the phone it is for.
+
+- **Only the chosen phone can open it.** Each copy is sealed for one phone before it leaves: AES-256-GCM under a key agreed (ECDH on P-256) from the sender's key, a one-off key made for that report, and the receiver's public key. A phone carrying it holds the file and can read only the label on the outside: who it is from, who it is for and when it was made. Its side bar lists what it carries and says it cannot open it.
+- **The receiver knows who sent it and that nothing was changed.** The sender's own key is part of the seal, and the label is bound to the contents, so a report relabelled or altered on the way does not open.
+- **The sender learns it arrived.** The phone that opens a report signs a receipt, which travels back the same way. Each phone that carried a copy drops it on seeing the receipt, and the sender's report screen moves from "waiting" to "with a relay phone, sealed" to "delivered and opened".
+
+Phones exchange their public keys the first time they connect after linking, under the same proof as above, so nobody in between can swap in a key of their own.
 
 ### Checked on an iQOO 15
 
@@ -127,7 +137,8 @@ The QR code carries the phone's code and a secret. Each phone proves to the othe
 - The medication audit and community issue report types: they were tried on screen only, and no issue has been run through the model under them.
 - How well a model of this size judges real site photos. This is why its verdict can always be overruled.
 - The sensor features on a real phone. They were written and tried on the Android emulator, where the capture stamp, the level, the noise and vibration meters, lift-to-talk, naming a tag (with a simulated tag) and the signed report work. Real NFC tags, the step counter, the torch, lens switching, the feel of the motor and how close the readings are to real instruments still have to be checked on the phone.
-- The phone link between two real phones. Between two Android emulators it works end to end: linking, connecting with no prompt, a 3 MB report pack crossing over Bluetooth in about 7 seconds, a report sent while the other phone was closed going by itself once it opened, and the signature verifying on the receiving side. Reading the QR code with a real camera, real Bluetooth range and speed, and the spoken confirmation heard aloud are still to be checked on phones.
+- The speed of the phone link over Wi-Fi between two real phones. Between an iQOO 15 and a Pixel 9a, linking by QR code, connecting with no prompt, the report arriving and the spoken "Report sent" all worked, but that first run stayed on Bluetooth and a 1.9 MB report took over three minutes. The link was then changed so the two phones can move up to a direct Wi-Fi connection, and reports were made about a third of the size; that the phones do reach Wi-Fi speed has not been checked yet. Between two Android emulators the whole flow works, including a report sent while the other phone was closed going by itself once it opened, and the signature verifying on the receiving side.
+- The relay between real phones. With three Android emulators it works end to end: a report addressed to a phone out of range went to a relay phone sealed, the relay could not read it and listed nothing new among its reports, the destination opened it when it later met the relay, and the signed receipt came back through the relay to the sender, which then showed "delivered and opened". It has not been run on three real phones.
 - How often the AI review holds back a report that is in fact fine. It was tried on one test walk, which it rejected for good reasons (pictures that did not match their notes, positions far apart).
 
 ### AI models
@@ -162,12 +173,12 @@ android/
 ├── Dockerfile                builds the APK and serves the install page
 ├── docker/                   install page and web server settings
 └── app/src/main/java/com/techazsure/deskless/
-    ├── capture/              photos, video stills, WAV recorder, sensors, instruments, NFC tags
+    ├── capture/              photos, video stills, WAV recorder, position, sensors, instruments, NFC tags
     ├── speech/               speech to English text
-    ├── structure/            Gemma structuring, due dates, rule-based fallback
+    ├── structure/            Gemma structuring, due dates, expiry dates, rule-based fallback
     ├── models/               model import and checks
-    ├── report/               PDF report, saved reports, hand-off, fingerprint sign-off, AI review
-    ├── link/                 QR pairing, phone-to-phone link, spoken confirmation
+    ├── report/               PDF report, report pack, saved reports, hand-off, fingerprint sign-off, AI review
+    ├── link/                 QR pairing, phone-to-phone link, relay and sealed reports, spoken confirmation
     ├── data/                 issues and their readings, their storage, report types
     └── ui/                   screens and theme
 ```

@@ -83,9 +83,9 @@ fun ReportsScreen(state: AppState) {
         .filter { chosen == null || it.template == chosen }
         .let { list ->
             when (sort) {
-                ReportSort.NEWEST -> list.sortedByDescending { it.builtAt }
-                ReportSort.OLDEST -> list.sortedBy { it.builtAt }
-                ReportSort.SERIOUS -> list.sortedWith(compareByDescending<ReportEntry> { it.serious }.thenByDescending { it.builtAt })
+                ReportSort.NEWEST -> list.sortedByDescending { it.since }
+                ReportSort.OLDEST -> list.sortedBy { it.since }
+                ReportSort.SERIOUS -> list.sortedWith(compareByDescending<ReportEntry> { it.serious }.thenByDescending { it.since })
                 ReportSort.PLACE -> list.sortedBy { it.place.lowercase(Locale.ENGLISH) }
             }
         }
@@ -214,11 +214,24 @@ private fun ReportCard(state: AppState, entry: ReportEntry) {
                 Icon(templateIcon(entry.template), contentDescription = null, tint = Ink, modifier = Modifier.size(28.dp))
             }
             Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                Text(
-                    text = (entry.template?.title ?: "Report").uppercase(),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = SafetyYellow,
-                )
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        text = (entry.template?.title ?: "Report").uppercase(),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = SafetyYellow,
+                    )
+                    // A report from another phone that nobody has opened here yet.
+                    if (entry.unread) {
+                        Text(
+                            text = "NEW",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = Ink,
+                            modifier = Modifier
+                                .background(GoGreen, RoundedCornerShape(4.dp))
+                                .padding(horizontal = 6.dp, vertical = 1.dp),
+                        )
+                    }
+                }
                 Text(
                     text = entry.place.ifBlank { "No place given" },
                     style = MaterialTheme.typography.titleMedium,
