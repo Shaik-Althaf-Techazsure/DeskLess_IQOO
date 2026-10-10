@@ -18,11 +18,11 @@ from sqlalchemy.orm import Session
 from .. import mailer
 from ..config import settings
 from ..db import get_db
-from ..models import APPROVED, ASSIGNED, CLOSED, FIXED, OPEN, SEVERITIES, STATUSES, Account, Event, Issue, Report, now
+from ..models import APPROVED, ASSIGNED, CLOSED, FIXED, OPEN, ROLE_NAMES, SEVERITIES, STATUSES, Account, Event, Issue, Report, now
 from ..pictures import save_photo
 from ..service import (
     Actor, aware, current_account, current_actor, get_mailer, may_direct, names_of, note, profile, sees_events,
-    sees_issues, sees_reports, today, waiting_for, when,
+    sees_issues, sees_people, sees_reports, today, waiting_for, when,
 )
 
 router = APIRouter(prefix="/api", tags=["work"])
@@ -527,14 +527,32 @@ def dashboard(actor: Actor = Depends(current_actor), db: Session = Depends(get_d
     days = [day - timedelta(days=back) for back in range(13, -1, -1)]
     reported = Counter(_local_day(issue.captured_at) for issue in found)
     closed = Counter(_local_day(issue.closed_at) for issue in found if issue.status == CLOSED)
-    trend = [{"day": one.isoformat(), "reported": reported.get(one, 0), "closed": closed.get(one, 0)} for one in days]
+    arrived = Counter(_local_day(report.built_at) for report in sent)
+    trend = [
+        {"day": one.isoformat(), "reports": arrived.get(one, 0), "reported": reported.get(one, 0), "closed": closed.get(one, 0)}
+        for one in days
+    ]
+    # Today against yesterday, for the small "up or down" beside a number.
+    before = day - timedelta(days=1)
+    tiles |= {
+        "reports_today": arrived.get(day, 0), "reports_yesterday": arrived.get(before, 0),
+        "issues_today": reported.get(day, 0), "issues_yesterday": reported.get(before, 0),
+        "closed_today": closed.get(day, 0), "closed_yesterday": closed.get(before, 0),
+    }
+
+    # Who is using DeskLess right now, among the people this person may see.
+    people = list(db.scalars(select(Account).where(Account.status == APPROVED, sees_people(actor))))
+    since = now() - timedelta(minutes=15)
+    here = sorted((person for person in people if person.last_seen_at and aware(person.last_seen_at) >= since), key=lambda person: aware(person.last_seen_at), reverse=True)
+    roles = Counter(person.role for person in people)
+    tiles |= {"people": len(people), "online": len(here)}
 
     teams = []
     if actor.is_admin or actor.role == "md":
         # Each lead with the work of the people who answer to them. An issue counts for the team of
         # whoever reported it.
-        people = list(db.scalars(select(Account).where(Account.status == APPROVED, Account.id.in_({issue.author_id for issue in found} | {report.account_id for report in sent}))))
-        lead_of_author = {person.id: (person.id if person.role in ("md", "manager") else person.reports_to) for person in people}
+        authors = list(db.scalars(select(Account).where(Account.id.in_({issue.author_id for issue in found} | {report.account_id for report in sent}))))
+        lead_of_author = {person.id: (person.id if person.role in ("md", "manager") else person.reports_to) for person in authors}
         per_lead: dict[str, Counter] = defaultdict(Counter)
         for report in sent:
             per_lead[lead_of_author.get(report.account_id)]["reports"] += 1
@@ -564,8 +582,13 @@ def dashboard(actor: Actor = Depends(current_actor), db: Session = Depends(get_d
         "by_type": _top(kinds),
         "trend": trend,
         "teams": teams,
+        "people_by_role": {ROLE_NAMES[role]: roles.get(role, 0) for role in ROLE_NAMES},
+        "online": [
+            {"id": person.id, "name": person.name, "role_name": ROLE_NAMES.get(person.role, person.role), "organisation": person.organisation, "seen_at": when(person.last_seen_at)}
+            for person in here[:12]
+        ],
         "activity": [
-            {"at": when(event.at), "kind": event.kind, "text": event.text, "issue_id": event.issue_id, "about": titles.get(event.issue_id, "")}
+            {"id": event.id, "at": when(event.at), "kind": event.kind, "text": event.text, "issue_id": event.issue_id, "about": titles.get(event.issue_id, "")}
             for event in recent
         ],
     }

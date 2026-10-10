@@ -23,6 +23,7 @@ EMAIL_PENDING = "email_pending"        # signed up; the email address is not con
 PENDING_APPROVAL = "pending_approval"  # email confirmed; waiting for the person above
 APPROVED = "approved"                  # has a unique ID and can sign in
 REJECTED = "rejected"
+SUSPENDED = "suspended"                # was approved; shut out until let back in
 
 # Where an issue stands.
 OPEN = "open"            # reported; nobody has been given it
@@ -96,6 +97,8 @@ class Account(Base):
     # Wrong passwords in a row, and until when sign-in is refused after too many.
     failed_logins: Mapped[int] = mapped_column(Integer, default=0)
     locked_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    #: When the app or a dashboard last asked the server something as this person.
+    last_seen_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
 class Otp(Base):

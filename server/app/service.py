@@ -75,12 +75,25 @@ def _bearer(authorization: str | None) -> str:
     return authorization[7:].strip()
 
 
+#: How often, at most, it is written down that somebody is using DeskLess.
+SEEN_EVERY_SECONDS = 60
+
+
+def _seen(db: Session, account: Account) -> None:
+    """Notes that this person is here now, so the dashboards can show who is online."""
+    last = aware(account.last_seen_at)
+    if last is None or (now() - last).total_seconds() >= SEEN_EVERY_SECONDS:
+        account.last_seen_at = now()
+        db.commit()
+
+
 def current_account(authorization: str | None = Header(None), db: Session = Depends(get_db)) -> Account:
-    """The signed-in person. An account that has since been rejected is turned away."""
+    """The signed-in person. An account that has since been rejected or suspended is turned away."""
     account_id = security.read_token(_bearer(authorization), "user")
     account = db.get(Account, account_id) if account_id else None
     if account is None or account.status != APPROVED:
         raise HTTPException(401, "Sign in again.")
+    _seen(db, account)
     return account
 
 
@@ -101,6 +114,7 @@ def current_actor(authorization: str | None = Header(None), db: Session = Depend
     account = db.get(Account, account_id) if account_id else None
     if account is None or account.status != APPROVED:
         raise HTTPException(401, "Sign in again.")
+    _seen(db, account)
     return Actor(account=account)
 
 

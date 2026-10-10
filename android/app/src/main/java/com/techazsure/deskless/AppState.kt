@@ -485,6 +485,23 @@ class AppState(
     }
 
     /**
+     * Tells the server this person is using DeskLess now, so the dashboards of those above show them
+     * online, and takes up any change to their own details (a new code, a new manager). Called when the
+     * app comes to the front and when the phone finds a network; with no network it does nothing.
+     */
+    fun checkIn() {
+        if (profile == null || account.token.isBlank()) return
+        scope.launch {
+            online { Profile.from(api.me(account.token)) }.onSuccess { person ->
+                if (person != profile) {
+                    account.signedIn(account.token, person)
+                    profile = person
+                }
+            }
+        }
+    }
+
+    /**
      * The address that opens this person's dashboard in a browser, already signed in: the link in it
      * works once and for two minutes. Needs the network.
      */

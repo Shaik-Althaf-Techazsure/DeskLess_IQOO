@@ -165,7 +165,8 @@ def test_the_dashboard_counts_what_each_may_see(client, mailbox, admin, company)
     assert md["by_severity"] == {"CRITICAL": 1, "HIGH": 1, "MEDIUM": 1, "LOW": 1}
     assert [(row["name"], row["open"]) for row in md["by_site"]] == [("Tower B", 3), ("Depot", 1)]
     assert {row["lead"]: (row["reports"], row["open"], row["overdue"]) for row in md["teams"]} == {"Ravi Khan": (1, 3, 1), "Sara Paul": (1, 1, 0)}
-    assert md["trend"][-1] == {"day": md["today"], "reported": 4, "closed": 0} and len(md["trend"]) == 14
+    assert md["trend"][-1] == {"day": md["today"], "reports": 2, "reported": 4, "closed": 0} and len(md["trend"]) == 14
+    assert (md["tiles"]["reports_today"], md["tiles"]["issues_today"], md["tiles"]["issues_yesterday"]) == (2, 4, 0)
     assert any("sent the report for Depot" in event["text"] for event in md["activity"])
 
     manager = client.get("/api/dashboard", headers=company.manager.headers).json()

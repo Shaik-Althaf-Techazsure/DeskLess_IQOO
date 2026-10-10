@@ -15,7 +15,7 @@ from sqlalchemy.orm import Session
 from .. import mailer, security
 from ..config import settings
 from ..db import get_db
-from ..models import APPROVED, Account, Otp, now
+from ..models import APPROVED, SUSPENDED, Account, Otp, now
 from ..service import aware, current_account, get_mailer, profile, send_code, use_code
 from .signup import MIN_PASSWORD
 
@@ -31,9 +31,10 @@ class Login(BaseModel):
     password: str
 
 
-def _by_unique_id(db: Session, unique_id: str) -> Account | None:
+def _by_unique_id(db: Session, unique_id: str, also_suspended: bool = False) -> Account | None:
+    standing = (APPROVED, SUSPENDED) if also_suspended else (APPROVED,)
     return db.scalars(
-        select(Account).where(func.upper(Account.unique_id) == unique_id.strip().upper(), Account.status == APPROVED)
+        select(Account).where(func.upper(Account.unique_id) == unique_id.strip().upper(), Account.status.in_(standing))
     ).first()
 
 
@@ -43,7 +44,7 @@ def login(body: Login, db: Session = Depends(get_db)) -> dict:
     Signs in. The answer is a token the phone keeps and the person's details, so that the app can go on
     working with no network afterwards.
     """
-    account = _by_unique_id(db, body.unique_id)
+    account = _by_unique_id(db, body.unique_id, also_suspended=True)
     wrong = HTTPException(401, "Wrong ID or password.")
     if account is None:
         # The same work is done as for a real account, so the time taken gives nothing away.
@@ -63,6 +64,9 @@ def login(body: Login, db: Session = Depends(get_db)) -> dict:
     account.failed_logins = 0
     account.locked_until = None
     db.commit()
+    if account.status == SUSPENDED:
+        # Said only to someone who knows the password, so it tells a stranger nothing.
+        raise HTTPException(403, "This account has been suspended. Ask the person you report to.")
     days = settings().token_days
     return {
         "token": security.make_token(account.id, "user", timedelta(days=days)),

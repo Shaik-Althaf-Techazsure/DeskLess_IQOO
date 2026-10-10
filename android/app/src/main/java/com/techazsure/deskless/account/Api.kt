@@ -45,6 +45,9 @@ class Api(private val server: () -> String) {
     fun reset(uniqueId: String, code: String, password: String): JSONObject =
         post("/api/password/reset", JSONObject().put("unique_id", uniqueId).put("code", code).put("password", password))
 
+    /** The signed-in person's details as the server has them now. Asking also tells the server the phone is in use. */
+    fun me(token: String): JSONObject = call("GET", "/api/me", token)
+
     /** Fetches the signed-in person's photo into [into]. A photo that cannot be fetched is not an error worth stopping for. */
     fun photo(token: String, into: File): Boolean = runCatching {
         val connection = open("GET", "/api/me/photo", token)

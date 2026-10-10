@@ -63,7 +63,7 @@ def client(mailbox, monkeypatch):
     Base.metadata.drop_all(engine)
     Base.metadata.create_all(engine)
     app.state.mailer = mailbox
-    admin_router._wrong.update(count=0, until=0.0)
+    admin_router._wrong.clear()
     # Codes may be asked for again at once in tests; the wait has a test of its own.
     monkeypatch.setattr(service, "RESEND_SECONDS", 0)
     with TestClient(app) as test_client:

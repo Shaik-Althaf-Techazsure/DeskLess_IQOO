@@ -1,18 +1,19 @@
 """The platform's administrator: signs in here, sees every company, and approves each managing director."""
 
+import shutil
 import time
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
-from sqlalchemy import func, select
+from sqlalchemy import func, select, text
 from sqlalchemy.orm import Session
 
-from .. import mailer, security
+from .. import mailer, metrics, security
 from ..config import settings
 from ..db import get_db
-from ..models import APPROVED, CLOSED, PENDING_APPROVAL, REJECTED, Account, Company, Issue, Report
+from ..models import APPROVED, CLOSED, PENDING_APPROVAL, REJECTED, Account, Company, Event, Issue, Report
 from ..service import Actor, approve as approve_account, current_admin, get_mailer, lead_of, public, reject as reject_account, when
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
@@ -20,8 +21,15 @@ router = APIRouter(prefix="/api/admin", tags=["admin"])
 ADMIN_HOURS = 12
 _MAX_WRONG = 5
 _LOCK_SECONDS = 10 * 60
-# Wrong administrator passwords since the last right one, and until when the door stays shut.
-_wrong = {"count": 0, "until": 0.0}
+# Wrong administrator passwords from each address since its last right one, and until when that
+# address is turned away. Kept per address: on a public server one visitor's wrong guesses must not
+# shut the administrator out.
+_wrong: dict[str, dict] = {}
+
+
+def _address(request: Request) -> str:
+    """Where the request really comes from. Behind the site's web server that is the address it passes on."""
+    return request.headers.get("x-real-ip") or (request.client.host if request.client else "")
 
 
 class AdminLogin(BaseModel):
@@ -30,18 +38,26 @@ class AdminLogin(BaseModel):
 
 
 @router.post("/login")
-def login(body: AdminLogin) -> dict:
+def login(body: AdminLogin, request: Request) -> dict:
     config = settings()
-    if time.time() < _wrong["until"]:
-        raise HTTPException(429, "Too many wrong passwords. Try again in a few minutes.")
-    right = security.same(body.email.strip().lower(), config.admin_email) & security.same(body.password, config.admin_password)
+    moment = time.time()
+    # Addresses that have long since been let back in are forgotten.
+    for address in [one for one, record in _wrong.items() if record["seen"] < moment - 2 * _LOCK_SECONDS]:
+        del _wrong[address]
+    record = _wrong.setdefault(_address(request), {"count": 0, "until": 0.0, "seen": moment})
+    record["seen"] = moment
+    if moment < record["until"]:
+        minutes = max(1, int((record["until"] - moment) // 60) + 1)
+        raise HTTPException(429, f"Too many wrong passwords. Try again in {minutes} minutes.")
+    # A password copied from a terminal often brings a space along; that is not a wrong password.
+    right = security.same(body.email.strip().lower(), config.admin_email) & security.same(body.password.strip(), config.admin_password.strip())
     if not right:
-        _wrong["count"] += 1
-        if _wrong["count"] >= _MAX_WRONG:
-            _wrong["count"] = 0
-            _wrong["until"] = time.time() + _LOCK_SECONDS
+        record["count"] += 1
+        if record["count"] >= _MAX_WRONG:
+            record["count"] = 0
+            record["until"] = moment + _LOCK_SECONDS
         raise HTTPException(401, "Wrong email or password.")
-    _wrong["count"] = 0
+    _wrong.pop(_address(request), None)
     return {"token": security.make_token(config.admin_email, "admin", timedelta(hours=ADMIN_HOURS)), "email": config.admin_email}
 
 
@@ -122,6 +138,7 @@ def companies(_: str = Depends(current_admin), db: Session = Depends(get_db)) ->
     people = dict(db.execute(select(Account.company_id, func.count()).where(Account.status == APPROVED).group_by(Account.company_id)).all())
     reports = dict(db.execute(select(Report.company_id, func.count()).group_by(Report.company_id)).all())
     unsettled = dict(db.execute(select(Issue.company_id, func.count()).where(Issue.status != CLOSED).group_by(Issue.company_id)).all())
+    found = dict(db.execute(select(Issue.company_id, func.count()).group_by(Issue.company_id)).all())
     leaders = {
         account.company_id: account
         for account in db.scalars(select(Account).where(Account.role == "md", Account.status == APPROVED))
@@ -138,7 +155,57 @@ def companies(_: str = Depends(current_admin), db: Session = Depends(get_db)) ->
                 "managing_director_id": leader.unique_id if leader else "",
                 "people": people.get(company.id, 0),
                 "reports": reports.get(company.id, 0),
+                "issues": found.get(company.id, 0),
                 "open_issues": unsettled.get(company.id, 0),
             }
         )
     return rows
+
+
+def _folder_bytes(folder) -> int:
+    """How much the files in a folder weigh; nothing if it is not there yet."""
+    try:
+        return sum(entry.stat().st_size for entry in folder.iterdir() if entry.is_file())
+    except OSError:
+        return 0
+
+
+@router.get("/system")
+def system(_: str = Depends(current_admin), db: Session = Depends(get_db)) -> dict:
+    """The health of the server itself, for the live monitor: is it up, how busy, how full."""
+    config = settings()
+    asked = time.perf_counter()
+    try:
+        db.execute(text("SELECT 1"))
+        database = {"ok": True, "ms": round((time.perf_counter() - asked) * 1000, 1)}
+    except Exception:
+        database = {"ok": False, "ms": 0}
+    try:
+        disk = shutil.disk_usage(config.data_dir)
+        disk = {"total": disk.total, "free": disk.free}
+    except OSError:
+        disk = {"total": 0, "free": 0}
+    return {
+        "now": when(datetime.now(timezone.utc)),
+        "started_at": when(datetime.fromtimestamp(metrics.STARTED, timezone.utc)),
+        "uptime_seconds": int(time.time() - metrics.STARTED),
+        "database": database,
+        "mail": bool(config.smtp_host),
+        "public_url": config.public_url,
+        "storage": {
+            "reports": _folder_bytes(config.reports_dir),
+            "pictures": _folder_bytes(config.issues_dir),
+            "photos": _folder_bytes(config.media_dir),
+            "disk_total": disk["total"],
+            "disk_free": disk["free"],
+        },
+        "rows": {
+            "accounts": db.scalar(select(func.count()).select_from(Account)) or 0,
+            "companies": db.scalar(select(func.count()).select_from(Company)) or 0,
+            "reports": db.scalar(select(func.count()).select_from(Report)) or 0,
+            "issues": db.scalar(select(func.count()).select_from(Issue)) or 0,
+            "events": db.scalar(select(func.count()).select_from(Event)) or 0,
+        },
+        "last_report_at": when(db.scalar(select(func.max(Report.received_at)))),
+        "requests": metrics.last_hour(),
+    }

@@ -233,13 +233,28 @@ One page for everybody: http://localhost:8800/dashboard on this computer, `https
 
 | Who | What they see and do |
 |---|---|
-| Administrator | Every company with its managing director and numbers; the sign-ups waiting; all people, reports and issues. Decides sign-ups; does not hand out work. |
+| Administrator | A **control room** for the whole platform: companies, who is online, reports and issues across all of them, what is happening as it happens, and the health of the server. Sections for approvals, companies, people, reports, issues and the system itself. Decides sign-ups and can suspend any account; does not hand out work. |
 | Managing Director | The company: reports, issues not closed, high or critical, overdue, fixed and waiting for a check; issues by severity, site and type; the last 14 days; each manager's team side by side; what happened lately. Approves managers, and can give out and close any issue. Their company code. |
 | Manager | Their team: issues to give out, with technicians, to check, overdue; the team's reports with each PDF and the AI review's verdict; the people in the team and what each has in hand. Approves their inspectors and technicians. Their team code. |
 | Inspector | Their own reports, and what has become of each issue they reported. |
 | Technical | Their jobs: to do, fixed and waiting for the check, done. Opens a job to see the picture, the note, the place and the deadline, and marks it fixed with a photo. |
 
 What each may see is decided on the server, not on the page: a manager cannot open another team's issue, and one company sees nothing of another.
+
+**The overview is live.** It asks the server again every five seconds and changes in place, with no reload: numbers count up to their new value and the tile that changed lights up for a moment, bars and the ring slide, a new event drops in at the top of *Happening now*, and people appear under *Online now* as their phone or browser talks to the server. A pill in the corner says when the page last heard from the server, and turns red while it cannot reach it.
+
+| On the overview | What it shows |
+|---|---|
+| Tiles | The few numbers the role acts on, each with today against yesterday and the last fortnight as a small line. A tile opens the list behind it. |
+| Reported and closed | Two lines over the last 14 days. A hairline follows the pointer (or the arrow keys) and reads out both; **Table** shows the same numbers as a table. |
+| Where every issue stands | One bar divided by stage (to give out, with technicians, fixed and to check, closed), the count of each, and the share closed. A stage opens its issues. |
+| Happening now | Reports arriving, issues given out, fixed, closed or sent back, people joining. An entry opens its issue. |
+| Online now | Who has used the app or a dashboard in the last quarter of an hour. |
+| By severity, by site, by type | What is not closed, and beside it in grey what already is. |
+| Teams, companies | One row each, side by side, with the share of their issues closed. |
+| Server health (administrator) | Uptime, the database, whether a mail server is set, requests in the last hour and how quickly they were answered, the last report received, and how full the disk is. The **System** section adds requests and answer time minute by minute, the files kept and the rows stored. |
+
+The lists have a search box and an **Export** button that saves what is on screen as a spreadsheet file. Under **People**, an account can be suspended and let back in by the level above: its sign-ins stop working at once and nothing of its work is removed. The colours of the charts were chosen with a colour-blindness check against the page's dark surface, and no state is shown by colour alone.
 
 ### Try it on this computer
 
@@ -329,14 +344,15 @@ It pulls, rebuilds, restarts and waits until the server answers. Accounts, repor
 | `POST /api/password/forgot`, `/api/password/reset` | Reset a forgotten password with an emailed code |
 | `POST /api/web-link`, `/api/web-link/open` | A link that works once, with which the app opens the dashboard already signed in |
 | `GET /api/people`, `POST /api/people/{id}/approve`, `/reject` | The people below the one asking, the sign-ups waiting for them, and the deciding of those |
-| `GET /api/admin/companies` | Every company, for the administrator |
+| `POST /api/people/{id}/suspend`, `/reactivate` | Shut an approved account out, and let it back in |
+| `GET /api/admin/companies`, `/api/admin/system` | Every company, and the server's own health, for the administrator |
 | `POST /api/reports` | A phone sends a finished report: its details, the PDF and a picture per issue (multipart) |
 | `GET /api/reports`, `/api/reports/{id}/pdf` | The reports in view, and a report's PDF |
 | `GET /api/issues`, `/api/issues/{id}`, `/photo`, `/fix-photo` | The issues in view, one issue with its history, and its pictures |
 | `GET /api/technicians`, `POST /api/issues/{id}/assign` | Who an issue can be given to; give it out with a deadline |
 | `POST /api/issues/{id}/fixed` | The technician marks it fixed, with a photo of the repair (multipart) |
 | `POST /api/issues/{id}/close`, `/reopen` | Accept a repair and close the issue; send it back |
-| `GET /api/dashboard` | The numbers for the signed-in person's dashboard |
+| `GET /api/dashboard` | Everything the signed-in person's overview shows: numbers, the fortnight, who is online, what happened lately |
 | `GET /api/health` | Status |
 
 FastAPI and SQLAlchemy on PostgreSQL, in `server/`; the dashboard is one page of plain HTML, CSS and JavaScript in `server/app/static/`, with no build step. The tests run the account flow, the roles, the work on an issue and each refusal:

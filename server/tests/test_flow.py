@@ -217,3 +217,17 @@ def test_health_and_the_dashboard_page(client):
     assert client.get("/static/app.js").headers["content-type"].startswith("text/javascript")
     assert client.get("/static/app.css").status_code == 200
     assert client.get("/static/main.py").status_code == 404
+
+
+def test_wrong_administrator_passwords_shut_out_only_the_address_they_came_from(client):
+    sign_in = lambda password, **more: client.post("/api/admin/login", json={"email": "admin@example.test", "password": password}, **more)
+    elsewhere = {"headers": {"X-Real-IP": "203.0.113.9"}}
+    for _ in range(5):
+        assert sign_in("a guess", **elsewhere).status_code == 401
+    # That address is now turned away, even with the right password...
+    shut = sign_in("admin-test-password", **elsewhere)
+    assert shut.status_code == 429 and shut.json()["detail"] == "Too many wrong passwords. Try again in 10 minutes."
+    # ...but the administrator, coming from somewhere else, is not.
+    assert sign_in("admin-test-password").status_code == 200
+    # A space copied along with the password does not make it wrong.
+    assert sign_in("  admin-test-password \n").status_code == 200

@@ -3,6 +3,7 @@ The DeskLess server: accounts (sign-up with a code by email, approval by the lev
 unique ID), the reports the phones send, the work that follows from them, and a dashboard for each role.
 """
 
+import time
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -10,6 +11,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 from sqlalchemy import text
 
+from . import metrics
 from .config import settings
 from .db import SessionLocal, init_db
 from .mailer import Mailer
@@ -40,6 +42,30 @@ class UnderItsPath:
         await self.app(scope, receive, send)
 
 
+class Counted:
+    """Times every answer, so the administrator's live monitor can show how busy and how quick the server is."""
+
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+        began = time.perf_counter()
+        answer = {"status": 500}
+
+        async def noting(message):
+            if message["type"] == "http.response.start":
+                answer["status"] = message["status"]
+            await send(message)
+
+        try:
+            await self.app(scope, receive, noting)
+        finally:
+            metrics.record(scope["path"], answer["status"], (time.perf_counter() - began) * 1000)
+
+
 # The dashboard is one page with its style and script beside it.
 _PAGE_FILES = {"app.css": "text/css", "app.js": "text/javascript"}
 
@@ -52,6 +78,8 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="DeskLess", version="2.0", lifespan=lifespan, docs_url="/api/docs", redoc_url=None, openapi_url="/api/openapi.json")
 app.state.mailer = Mailer()
+# Counted sits inside UnderItsPath, so it sees each path as the routes do, without the site's prefix.
+app.add_middleware(Counted)
 app.add_middleware(UnderItsPath, base=settings().base_path)
 app.include_router(signup.router)
 app.include_router(auth.router)
