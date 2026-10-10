@@ -10,7 +10,7 @@ Team **techazsure** · iQOO Hackathon 2026 Grand Finale · Productivity track
 |---|---|---|
 | `android/` | **The finale build.** A native Android app that does everything on the phone: camera, voice, speech-to-text and a language model on the device, readings from the phone's sensors, PDF report, and reports passed from phone to phone with no network. No server takes part in making a report, and once signed in the app captures and builds reports in airplane mode. | During the finale, 9–11 Oct 2026 |
 | `server/` | **The server.** Accounts for five roles (sign-up with a code sent by email, approval by the level above, sign-in with a unique ID), the reports the phones send, the work on their issues, and a web dashboard for each role. | During the finale, 9–11 Oct 2026 |
-| `docker-compose.server.yml`, `deploy/` | **The server on a real machine.** The server and its database alone, the nginx lines that put them under a path of an existing site, and the script that updates them after a push. | During the finale, 9–11 Oct 2026 |
+| `docker-compose.server.yml`, `deploy/` | **The server on a real machine.** The server and its database alone, and the scripts that put them under a path of an existing site (`deploy/setup.sh`, once) and update them after a push (`deploy/update.sh`). | During the finale, 9–11 Oct 2026 |
 | `backend/`, `frontend/` | The web prototype sent with the registration. The phone is the capture device and the models run on the computer that runs Docker. | Before the finale, 4 Oct 2026 |
 
 ---
@@ -229,7 +229,7 @@ An issue the inspector already saw repaired on site arrives closed.
 
 ### The dashboards
 
-One page for everybody: http://localhost:8800/dashboard on this computer, `https://shaikalthaf.in/competitions/IQOO/dashboard` on our server. What it shows depends on who signs in. In the app, **My dashboard** in the side bar opens it already signed in, with a link that works once.
+One page for everybody: http://localhost:8800/dashboard on this computer, `https://www.shaikalthaf.in/competitions/iqoo/dashboard` on our server. What it shows depends on who signs in. In the app, **My dashboard** in the side bar opens it already signed in, with a link that works once.
 
 | Who | What they see and do |
 |---|---|
@@ -276,55 +276,45 @@ Aadhaar numbers are personal data, and Indian law restricts who may collect and 
 
 ### On a real server
 
-The app works on its own with no network: it captures, runs the models and builds the report on the phone, and keeps each finished report in an outbox. The server is the other half. It runs in the cloud, takes the reports as the phones come online, and serves the dashboards. Our own runs beside an existing website, under a path of its domain:
+The app works on its own with no network: it captures, runs the models and builds the report on the phone, and keeps each finished report in an outbox. The server is the other half. It runs in the cloud, takes the reports as the phones come online, and serves the dashboards. Ours runs beside an existing website, under a path of its domain:
 
 | | Address |
 |---|---|
-| Dashboards | `https://shaikalthaf.in/competitions/IQOO/dashboard` |
-| What the app talks to | `https://shaikalthaf.in/competitions/IQOO/api/...` |
+| Dashboards | `https://www.shaikalthaf.in/competitions/iqoo/dashboard` |
+| What the app talks to | `https://www.shaikalthaf.in/competitions/iqoo/api/...` |
 
-Only the server and its database run there, from `docker-compose.server.yml`: no APK build, no web prototype, no test mailbox. The site's own web server stays in front, adds HTTPS, and passes that one path on.
+Only the server and its database run there, from `docker-compose.server.yml`: no APK build, no web prototype, no test mailbox. The site's own nginx stays in front, keeps its HTTPS, and passes that one path on. The website itself is not touched, and the project does not have to live in the website's folder: it can be cloned anywhere on the machine, because nginx, not the folder, decides which address leads to it.
 
-**First time, on the server** (it needs Docker and git):
+**First time, on the server** (it needs Docker, git and the site's nginx):
 
 ```bash
 git clone https://github.com/Shaik-Althaf-Techazsure/DeskLess_IQOO.git
 cd DeskLess_IQOO
-cp .env.example .env
+sudo bash deploy/setup.sh
 ```
 
-Fill in the server's part of `.env`; the file explains each line:
+`deploy/setup.sh` asks three things: the address (Enter takes the one above), the administrator's email, and the mail server that will send the sign-up codes (Enter to set it later). Then it:
 
-| Setting | What to put |
-|---|---|
-| `PUBLIC_URL` | The address people reach the server at, path included: `https://shaikalthaf.in/competitions/IQOO` |
-| `ADMIN_EMAIL`, `ADMIN_PASSWORD` | The administrator's sign-in on the dashboard |
-| `SECRET_KEY`, `AADHAAR_KEY` | Two keys made once (`openssl rand -base64 48` and `openssl rand -base64 32`) and kept safe: a lost `SECRET_KEY` signs everyone out, a lost `AADHAAR_KEY` makes the stored Aadhaar numbers unreadable for good |
-| `SMTP_HOST` and the other `SMTP_*` | A real mail server. Without one nobody receives their sign-up code; it is only written to the server's log |
+1. writes `.env`, readable by its owner only, with an administrator password and the two keys made on the spot;
+2. builds and starts the server and its database, and waits until the server answers;
+3. puts the nginx lines in a file of their own (`/etc/nginx/snippets/deskless.conf`) and adds one `include` for it as the first line of the site's HTTPS `server { ... }`, so that no other rule of the site comes before it. The site's file is copied to `/etc/nginx/deskless-backup/` first, `nginx -t` is run, and if nginx does not accept the result everything is put back and nothing is reloaded;
+4. asks the public address for `/api/health` and prints the dashboard's address and the administrator's sign-in.
 
-The server will not start while `PUBLIC_URL`, `ADMIN_EMAIL`, `ADMIN_PASSWORD`, `SECRET_KEY` or `AADHAAR_KEY` is missing, and says which. Then:
+It can be run again: an existing `.env` is kept and nginx is not given the line twice. The nginx lines pass `/competitions/iqoo` on in capitals or small letters, with or without `www`, and allow uploads of 64 MB, because a report arrives as one upload with a picture per issue (nginx alone would stop at 1 MB). The server answers the same whether the web server passes the path on or cuts it off, and the dashboard page asks for its style, its script and the API beside itself, so nothing in it depends on the path.
 
-```bash
-docker compose -f docker-compose.server.yml up -d --build
-```
+Keep a copy of `SECRET_KEY` and `AADHAAR_KEY` from `.env` somewhere safe: a lost `SECRET_KEY` signs everyone out, a lost `AADHAAR_KEY` makes the stored Aadhaar numbers unreadable for good. Without a mail server (`SMTP_*`) nobody receives their sign-up code; it is only written to the server's log.
 
-It listens on that machine only (`127.0.0.1:8800`). To put it on the site, add the block in `deploy/nginx.conf` to the site's nginx `server { ... }`, above the `location /` that serves the rest of the site, and reload nginx:
-
-```bash
-sudo nginx -t && sudo systemctl reload nginx
-```
-
-That block passes `/competitions/IQOO/` on, in capitals or small letters, and allows uploads of 64 MB, because a report arrives as one upload with a picture per issue (nginx alone would stop at 1 MB). The rest of the site is untouched. The server answers the same whether the web server passes the path on or cuts it off, and the dashboard page asks for its style, its script and the API beside itself, so nothing in it depends on the path.
+By hand instead: copy `.env.example` to `.env` and fill in the server's part, run `docker compose -f docker-compose.server.yml up -d --build`, and add the block in `deploy/nginx.conf` to the site's HTTPS `server { ... }` as its first location.
 
 **After every push to GitHub**, on the server:
 
 ```bash
-sh deploy/update.sh
+sudo sh deploy/update.sh
 ```
 
 It pulls, rebuilds, restarts and waits until the server answers. Accounts, reports and pictures are kept: they live in Docker volumes, and a database from an earlier version gains its new columns at start; nothing is dropped.
 
-**The app** has to be built for that address. With Docker: `APP_SERVER_URL=https://shaikalthaf.in/competitions/IQOO` in `.env` (or just `PUBLIC_URL`, which it falls back to). With Gradle: `./gradlew assembleDebug -PphoneOnly -PserverUrl=https://shaikalthaf.in/competitions/IQOO`. On GitHub, set the repository variable `APP_SERVER_URL` (Settings, Secrets and variables, Actions, Variables) and the APK that every push builds signs in there. The address can also be typed on the app's first screen.
+**The app** has to be built for that address. With Docker: `APP_SERVER_URL=https://www.shaikalthaf.in/competitions/iqoo` in `.env` (or just `PUBLIC_URL`, which it falls back to). With Gradle: `./gradlew assembleDebug -PphoneOnly -PserverUrl=https://www.shaikalthaf.in/competitions/iqoo`. On GitHub, set the repository variable `APP_SERVER_URL` (Settings, Secrets and variables, Actions, Variables) and the APK that every push builds signs in there. The address can also be typed on the app's first screen.
 
 ### API
 

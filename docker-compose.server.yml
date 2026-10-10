@@ -1,12 +1,14 @@
 # DeskLess on a real server: the API the app talks to and the dashboards, with their database.
 # Nothing else from this repository runs there: no APK build, no web prototype, no test mailbox.
 #
-#   cp .env.example .env        then fill in the server's part of it
+#   sudo bash deploy/setup.sh        the first time: settings, this file, and the site's nginx
+#   sudo sh deploy/update.sh         after each push to GitHub
+#
+# By hand:  cp .env.example .env , fill in the server's part of it, then
 #   docker compose -f docker-compose.server.yml up -d --build
 #
 # The server listens on this machine only (127.0.0.1:8800). The site's own web server adds HTTPS and
 # passes the path in PUBLIC_URL on to it; deploy/nginx.conf has the lines for that.
-# To update after a push to GitHub:  sh deploy/update.sh
 name: deskless
 
 services:
@@ -30,7 +32,7 @@ services:
     environment:
       DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-deskless}:${POSTGRES_PASSWORD:-deskless}@db:5432/${POSTGRES_DB:-deskless}
       DATA_DIR: /data
-      # Where people reach the server, path included, e.g. https://shaikalthaf.in/competitions/IQOO
+      # Where people reach the server, path included, e.g. https://www.shaikalthaf.in/competitions/iqoo
       PUBLIC_URL: ${PUBLIC_URL:?Set PUBLIC_URL in .env to the address people reach the server at}
       ADMIN_EMAIL: ${ADMIN_EMAIL:?Set ADMIN_EMAIL in .env}
       # On a real server these three are set, and kept: a lost SECRET_KEY signs everyone out, and a lost

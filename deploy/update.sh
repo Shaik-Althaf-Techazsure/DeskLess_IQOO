@@ -1,6 +1,6 @@
 #!/bin/sh
 # Brings the DeskLess server on this machine up to date with GitHub: pull, rebuild, restart, check.
-# Run it from anywhere:  sh deploy/update.sh
+# Run it from anywhere:  sudo sh deploy/update.sh   (plain "sh" will do for a user who may use Docker)
 # Accounts, reports and pictures are kept: they live in Docker volumes, and the database gains any
 # new columns by itself when the server starts.
 set -e
@@ -13,7 +13,13 @@ if [ ! -f .env ]; then
     exit 1
 fi
 
-git pull --ff-only
+# The code is fetched as whoever owns this folder, also when the rest runs as root.
+owner=$(stat -c %U .)
+if [ "$(id -u)" = "0" ] && [ "$owner" != "root" ] && command -v sudo >/dev/null; then
+    sudo -u "$owner" git pull --ff-only
+else
+    git pull --ff-only
+fi
 $compose up -d --build
 
 # The server says so itself once it is ready to answer.
