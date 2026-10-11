@@ -50,6 +50,8 @@ services:
       # Where people reach the server from outside, path included; empty on a developer's machine.
       PUBLIC_URL: ${PUBLIC_URL:-}
       ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@deskless.local}
+      # The WhatsApp number the home page and the brochure's email send people to for a price.
+      CONTACT_WHATSAPP: ${CONTACT_WHATSAPP:-}
       # Left empty, these three are made on first start and kept in the "accounts" volume. The admin
       # password is then read with:  docker compose exec server sh -c "cat /data/admin-password.txt"
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}

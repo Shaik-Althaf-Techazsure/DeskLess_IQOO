@@ -36,6 +36,8 @@ services:
       # Where people reach the server, path included, e.g. https://www.shaikalthaf.in/competitions/iqoo
       PUBLIC_URL: ${PUBLIC_URL:?Set PUBLIC_URL in .env to the address people reach the server at}
       ADMIN_EMAIL: ${ADMIN_EMAIL:?Set ADMIN_EMAIL in .env}
+      # The WhatsApp number the home page and the brochure's email send people to for a price.
+      CONTACT_WHATSAPP: ${CONTACT_WHATSAPP:-}
       # On a real server these three are set, and kept: a lost SECRET_KEY signs everyone out, and a lost
       # AADHAAR_KEY makes the stored Aadhaar numbers unreadable for good.
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:?Set ADMIN_PASSWORD in .env}

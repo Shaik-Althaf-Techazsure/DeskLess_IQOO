@@ -16,11 +16,11 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
 from sqlalchemy import text
 
-from . import autopilot, changes, metrics, writer
+from . import autopilot, changes, front, metrics, writer
 from .config import settings
 from .db import SessionLocal, init_db
 from .mailer import Mailer
-from .routers import admin, auth, desk, door, linking, people, signup, work, types
+from .routers import admin, auth, desk, door, enquiry, linking, people, signup, work, types
 
 STATIC = Path(__file__).parent / "static"
 
@@ -187,6 +187,7 @@ app.include_router(desk.router)
 app.include_router(door.router)
 app.include_router(types.router)
 app.include_router(linking.router)
+app.include_router(enquiry.router)
 
 
 @app.exception_handler(HTTPException)
@@ -226,7 +227,7 @@ _SITE_FILE = re.compile(r'static/site/([\w.-]+)(?=")')
 _FOR_GOOD = "public, max-age=31536000, immutable"
 
 
-def _page(name: str) -> HTMLResponse:
+def _page(name: str, filled=None) -> HTMLResponse:
     """
     A page as the browser gets it. It asks for its style, its script, its pictures and the API beside
     itself, so it works under whatever path the server is given. The page itself is always asked for
@@ -234,6 +235,8 @@ def _page(name: str) -> HTMLResponse:
     fetches them again only when the server has been updated.
     """
     page = (STATIC / name).read_text(encoding="utf-8")
+    if filled:
+        page = filled(page)
     mark = _mark()
     for file in _PAGE_FILES:
         page = page.replace(f"static/{file}", f"static/{file}?v={mark}")
@@ -245,8 +248,11 @@ def _page(name: str) -> HTMLResponse:
 
 @app.get("/", include_in_schema=False)
 def home_page() -> HTMLResponse:
-    """The front door: what DeskLess is and how it works, with the film, the deck and the way in."""
-    return _page("home.html")
+    """
+    The front door: what DeskLess is and how it works, with the film, the deck and the way in. The deck,
+    the business model canvas and the film show when their files are in the folder (see `front.py`).
+    """
+    return _page("home.html", lambda page: front.fill(page, _site()[0]))
 
 
 @app.get("/dashboard", include_in_schema=False)

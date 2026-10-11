@@ -4,11 +4,11 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="theme-color" content="#0f1115">
-<title>DeskLess · Inspection reports, without the desk</title>
-<meta name="description" content="Walk the place, photograph each problem and say what is wrong. The AI inside the phone writes the inspection report with no network, and the office sees it on a live dashboard.">
+<title>DeskLess · Spot it. Say it. It gets fixed.</title>
+<meta name="description" content="DeskLess turns a photo and a spoken sentence into a finished report on the phone, with no network, carries it to the person who has to fix it, and tells you when it is done. For apartments, colleges, hospitals, offices, malls, factories and every other place.">
 <meta property="og:type" content="website">
-<meta property="og:title" content="DeskLess · Inspection reports, without the desk">
-<meta property="og:description" content="Photo and voice in, finished report out. The AI runs on the phone, with no network. Team techazsure, iQOO Hackathon 2026 Grand Finale.">
+<meta property="og:title" content="DeskLess · Spot it. Say it. It gets fixed.">
+<meta property="og:description" content="Say what is wrong. The AI inside the phone writes the report with no network, the right person gets it, and you are told when it is fixed. Team techazsure, iQOO Hackathon 2026 Grand Finale.">
 <meta property="og:image" content="{{public}}/static/site/share.jpg">
 <meta name="twitter:card" content="summary_large_image">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%23ffc31f'/%3E%3Ctext x='32' y='43' font-family='Arial,sans-serif' font-size='28' font-weight='800' text-anchor='middle' fill='%230f1115'%3EDL%3C/text%3E%3C/svg%3E">
@@ -17,26 +17,28 @@
 <body>
 
 <svg class="sprite" aria-hidden="true">
-  <symbol id="i-play" viewBox="0 0 24 24"><path d="M8 5.5v13l11-6.5z" fill="currentColor" stroke="none"/></symbol>
+  <symbol id="i-play" viewBox="0 0 24 24"><path d="M8 5.500v13l11-6.500z" fill="currentColor" stroke="none"/></symbol>
   <symbol id="i-arrow" viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6"/></symbol>
   <symbol id="i-left" viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7"/></symbol>
   <symbol id="i-right" viewBox="0 0 24 24"><path d="M9 5l7 7-7 7"/></symbol>
   <symbol id="i-close" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></symbol>
   <symbol id="i-menu" viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h16"/></symbol>
   <symbol id="i-download" viewBox="0 0 24 24"><path d="M12 4v11M7 11l5 5 5-5M5 20h14"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><path d="M5 12.500l4.500 4.500L19 7.500"/></symbol>
+  <symbol id="i-cross-out" viewBox="0 0 24 24"><path d="M7 7l10 10M17 7L7 17"/></symbol>
   <symbol id="i-chip" viewBox="0 0 24 24"><rect x="7" y="7" width="10" height="10" rx="2"/><path d="M10 3v4M14 3v4M10 17v4M14 17v4M3 10h4M3 14h4M17 10h4M17 14h4"/></symbol>
-  <symbol id="i-mic" viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5.5 11a6.5 6.5 0 0013 0M12 17.5V21"/></symbol>
-  <symbol id="i-eye" viewBox="0 0 24 24"><path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z"/><circle cx="12" cy="12" r="3"/></symbol>
-  <symbol id="i-video" viewBox="0 0 24 24"><rect x="3" y="6" width="12" height="12" rx="2.5"/><path d="M15 10.5l6-3.5v10l-6-3.5"/></symbol>
-  <symbol id="i-gauge" viewBox="0 0 24 24"><path d="M4 17a8 8 0 1116 0"/><path d="M12 17l4-6"/><circle cx="12" cy="17" r="1.2" fill="currentColor"/></symbol>
-  <symbol id="i-pin" viewBox="0 0 24 24"><path d="M12 21s7-6.2 7-11.5a7 7 0 10-14 0C5 14.800 12 21 12 21z"/><circle cx="12" cy="9.500" r="2.500"/></symbol>
+  <symbol id="i-mic" viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5.500 11a6.500 6.500 0 0013 0M12 17.500V21"/></symbol>
+  <symbol id="i-eye" viewBox="0 0 24 24"><path d="M2.500 12S6 5.500 12 5.500 21.500 12 21.500 12 18 18.500 12 18.500 2.500 12 2.500 12z"/><circle cx="12" cy="12" r="3"/></symbol>
+  <symbol id="i-gauge" viewBox="0 0 24 24"><path d="M4 17a8 8 0 1116 0"/><path d="M12 17l4-6"/><circle cx="12" cy="17" r="1.200" fill="currentColor"/></symbol>
+  <symbol id="i-pin" viewBox="0 0 24 24"><path d="M12 21s7-6.200 7-11.500a7 7 0 10-14 0C5 14.800 12 21 12 21z"/><circle cx="12" cy="9.500" r="2.500"/></symbol>
   <symbol id="i-shield" viewBox="0 0 24 24"><path d="M12 3l7.500 3v5.500c0 4.600-3.200 8-7.500 9.500-4.300-1.500-7.500-4.900-7.500-9.500V6z"/><path d="M8.500 12l2.500 2.500 4.500-5"/></symbol>
   <symbol id="i-finger" viewBox="0 0 24 24"><path d="M7 19c1-2 1.500-4 1.500-7a3.500 3.500 0 017 0c0 3-.300 5.500-1.200 8"/><path d="M12 12c0 3.500-.500 6-1.700 8.500"/><path d="M5 15.500c.300-1.200.500-2.300.500-3.500a6.500 6.500 0 0113 0c0 1.200 0 2.200-.200 3.500"/></symbol>
   <symbol id="i-ask" viewBox="0 0 24 24"><path d="M4 5.500h16v11H10l-4.500 3.500v-3.500H4z"/><path d="M10 9.200a2 2 0 113 1.700c-.600.400-1 .800-1 1.600M12 14.500v.100"/></symbol>
-  <symbol id="i-pack" viewBox="0 0 24 24"><path d="M7 3h7l4 4v14H7z"/><path d="M14 3v4h4M10 12h5M10 15.500h5"/></symbol>
+  <symbol id="i-say" viewBox="0 0 24 24"><path d="M4 5.500h16v11H10l-4.500 3.500v-3.500H4z"/><path d="M8.500 9.500h7M8.500 12.500h4.500"/></symbol>
   <symbol id="i-relay" viewBox="0 0 24 24"><rect x="2.500" y="7" width="5" height="10" rx="1.200"/><rect x="9.500" y="7" width="5" height="10" rx="1.200"/><rect x="16.500" y="7" width="5" height="10" rx="1.200"/><path d="M5 4.500c2.300-1.300 4.700-1.300 7 0M12 4.500c2.300-1.300 4.700-1.300 7 0"/></symbol>
+  <symbol id="i-radio" viewBox="0 0 24 24"><rect x="7.500" y="8" width="9" height="13" rx="2"/><path d="M10 8V3M10.500 12h3M10.500 15h3M3.500 9a6 6 0 010 6M20.500 9a6 6 0 000 6"/></symbol>
   <symbol id="i-fix" viewBox="0 0 24 24"><path d="M14.500 6.500a4 4 0 00-5.300 5.300L3.500 17.500l3 3 5.700-5.700a4 4 0 005.300-5.300l-2.700 2.700-2.500-.500-.500-2.500z"/></symbol>
-  <symbol id="i-pill" viewBox="0 0 24 24"><rect x="3" y="8.500" width="18" height="7" rx="3.500" transform="rotate(-35 12 12)"/><path d="M9.300 8.200l5.400 7.600" /></symbol>
+  <symbol id="i-pill" viewBox="0 0 24 24"><rect x="3" y="8.500" width="18" height="7" rx="3.500" transform="rotate(-35 12 12)"/><path d="M9.300 8.200l5.400 7.600"/></symbol>
   <symbol id="i-lang" viewBox="0 0 24 24"><path d="M3 6h9M7.500 4v2M5 6c.500 3 2.500 5.500 6 7M10.500 6c-.500 3-2.500 5.500-6 7"/><path d="M12.500 20l4-9 4 9M14 17h5"/></symbol>
   <symbol id="i-build" viewBox="0 0 24 24"><path d="M4 20h16M6 20V9l6-4 6 4v11M10 20v-5h4v5"/></symbol>
   <symbol id="i-campus" viewBox="0 0 24 24"><path d="M2.500 9.500L12 5l9.500 4.500L12 14z"/><path d="M6.500 12v4.500c1.500 1.500 3.500 2 5.500 2s4-.500 5.500-2V12M21.500 9.500V15"/></symbol>
@@ -44,11 +46,19 @@
   <symbol id="i-home" viewBox="0 0 24 24"><rect x="5" y="3.500" width="14" height="17" rx="1.500"/><path d="M9 7.500h2M13 7.500h2M9 11h2M13 11h2M9 14.500h2M13 14.500h2M10.500 20.500v-3h3v3"/></symbol>
   <symbol id="i-shop" viewBox="0 0 24 24"><path d="M4 9.500l1.500-5h13l1.500 5M4 9.500a2.700 2.700 0 005.300 0 2.700 2.700 0 005.400 0 2.700 2.700 0 005.300 0M5.500 12v8h13v-8"/></symbol>
   <symbol id="i-cross" viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="3"/><path d="M12 8v8M8 12h8"/></symbol>
+  <symbol id="i-factory" viewBox="0 0 24 24"><path d="M3 20V10l5 3.500V10l5 3.500V6h3.500l1 14z"/><path d="M3 20h18"/></symbol>
+  <symbol id="i-box" viewBox="0 0 24 24"><path d="M3.500 8L12 3.500 20.500 8v8.500L12 21l-8.500-4.500z"/><path d="M3.500 8L12 12.500 20.500 8M12 12.500V21"/></symbol>
+  <symbol id="i-bed" viewBox="0 0 24 24"><path d="M3 18.500V6M3 15h18v3.500M21 15v-2.500a3 3 0 00-3-3h-7V15"/><circle cx="7" cy="11.500" r="1.800"/></symbol>
+  <symbol id="i-road" viewBox="0 0 24 24"><path d="M7 20.500L9.500 3.500M17 20.500L14.500 3.500M12 5.500v2.500M12 11v2.500M12 16.500V19"/></symbol>
+  <symbol id="i-any" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.500"/><path d="M3.500 12h17M12 3.500c2.500 2.500 3.500 5.300 3.500 8.500s-1 6-3.500 8.500c-2.500-2.500-3.500-5.300-3.500-8.500s1-6 3.500-8.500z"/></symbol>
+  <symbol id="i-own" viewBox="0 0 24 24"><path d="M5 7h9M18 7h1M5 12h2M11 12h8M5 17h7M16 17h3"/><circle cx="16" cy="7" r="2"/><circle cx="9" cy="12" r="2"/><circle cx="14" cy="17" r="2"/></symbol>
   <symbol id="i-people" viewBox="0 0 24 24"><circle cx="8.500" cy="9" r="3"/><circle cx="16.500" cy="10" r="2.300"/><path d="M3 19c.500-3 2.700-4.500 5.500-4.500S13.500 16 14 19M15 14.700c2.700-.300 5 .800 6 4.300"/></symbol>
-  <symbol id="i-check" viewBox="0 0 24 24"><path d="M5 12.500l4.500 4.500L19 7.500"/></symbol>
+  <symbol id="i-person" viewBox="0 0 24 24"><circle cx="12" cy="8.500" r="3.500"/><path d="M5 20c.700-3.700 3.500-5.500 7-5.500s6.300 1.800 7 5.500"/></symbol>
   <symbol id="i-laptop" viewBox="0 0 24 24"><rect x="5" y="5" width="14" height="10" rx="1.500"/><path d="M2.500 19h19l-1.800-4H4.300z"/></symbol>
-  <symbol id="i-cloud" viewBox="0 0 24 24"><path d="M7 18.500a4.500 4.500 0 01-.600-9 6 6 0 0111.500 1.500 3.800 3.800 0 01-.400 7.500z"/><path d="M12 16.500v-5M9.800 13.500l2.200-2.200 2.200 2.200"/></symbol>
   <symbol id="i-rank" viewBox="0 0 24 24"><path d="M5 19V9M12 19V5M19 19v-7"/></symbol>
+  <symbol id="i-memory" viewBox="0 0 24 24"><path d="M12 5.500c-2-1.500-5-2-7.500-1v13c2.500-1 5.500-.500 7.500 1 2-1.500 5-2 7.500-1v-13c-2.500-1-5.500-.500-7.500 1zM12 5.500v13"/></symbol>
+  <symbol id="i-swap" viewBox="0 0 24 24"><path d="M4 8.500h14M14.500 5l3.500 3.500-3.500 3.500M20 15.500H6M9.500 12L6 15.500 9.500 19"/></symbol>
+  <symbol id="i-orbit" viewBox="0 0 24 24"><circle cx="12" cy="12" r="2.500"/><ellipse cx="12" cy="12" rx="9.500" ry="4" transform="rotate(-25 12 12)"/><circle cx="19.500" cy="7.500" r="1.300" fill="currentColor"/></symbol>
 </svg>
 
 <header class="top" id="top">
@@ -57,12 +67,14 @@
     <span class="name">DeskLess</span>
   </a>
   <nav class="links" id="links" aria-label="Sections">
+    <a href="#why">Why</a>
     <a href="#how">How it works</a>
-    <a href="#film">Film</a>
-    <a href="#features">Features</a>
-    <a href="#screens">Screens</a>
-    <a href="#office">Dashboards</a>
-    <a href="#deck">Pitch deck</a>
+    <a href="#places">Places</a>
+    <a href="#ask">Ask DeskLess</a>
+    <a href="#product">Product</a>
+    <!--if film--><a href="#film">Film</a><!--end film-->
+    <!--if deck--><a href="#deck">Deck</a><!--end deck-->
+    <!--if canvas--><a href="#canvas">Business model</a><!--end canvas-->
   </nav>
   <div class="acts">
     <a class="btn ghost" id="nav-in" href="dashboard">Sign in</a>
@@ -77,49 +89,74 @@
 <section class="hero">
   <div class="wrap hero-grid">
     <div class="hero-words">
-      <p class="eyebrow"><i class="tape"></i>iQOO Hackathon 2026 · Grand Finale · Productivity track</p>
-      <h1>Inspection reports, <span>without the desk.</span></h1>
-      <p class="lead">Walk the place. Photograph each problem and say what is wrong, in Hindi, English or both. The AI inside the phone writes the report, with no network. When the phone finds one, the office sees it and the work begins.</p>
+      <p class="eyebrow"><i class="tape"></i>iQOO Hackathon 2026 · Grand Finale · Team techazsure</p>
+      <h1>Spot it. Say it. <span>It gets fixed.</span></h1>
+      <p class="lead">DeskLess turns a photo and a spoken sentence into a finished report, on the phone itself, with no network. Then it carries it to the person who has to fix it, and tells you when it is done. For every place people live, study, work and are treated in.</p>
       <div class="cta">
-        <a class="btn solid big" href="#film"><svg><use href="#i-play"/></svg>Watch the 90-second film</a>
+        <!--if film--><a class="btn solid big" href="#film"><svg><use href="#i-play"/></svg>Watch the film · 2 min</a><!--end film-->
         <a class="btn ghost big" href="signup">Sign up<svg><use href="#i-arrow"/></svg></a>
       </div>
-      <p class="under">Have a DeskLess ID already? <a href="dashboard">Sign in to your dashboard</a></p>
+      <p class="under">Not sure it fits your place? <a href="#ask">Ask DeskLess</a> · Have a DeskLess ID already? <a href="dashboard">Sign in</a></p>
     </div>
     <div class="hero-show" aria-hidden="true">
       <div class="window tilt">
-        <div class="bar"><i></i><i></i><i></i><span>dashboard</span></div>
+        <div class="bar"><i></i><i></i><i></i><span>console · managing director</span></div>
         <img src="static/site/dash-md-top.webp" alt="" width="1440" height="900">
       </div>
-      <div class="phone float">
-        <img src="static/site/app-home.webp" alt="" width="720" height="1600">
+      <div class="phone p-left float">
+        <img src="static/site/user-draft.webp" alt="" width="720" height="1600">
       </div>
-      <span class="chip c1"><svg><use href="#i-chip"/></svg>AI on the phone</span>
-      <span class="chip c2"><svg><use href="#i-mic"/></svg>Hindi + English</span>
+      <div class="phone p-right float">
+        <img src="static/site/iqoo-ask.webp" alt="" width="720" height="1584">
+      </div>
+      <span class="chip c1"><svg><use href="#i-chip"/></svg>AI runs on the phone</span>
+      <span class="chip c2"><svg><use href="#i-mic"/></svg>Hindi, English or both</span>
       <span class="chip c3"><svg><use href="#i-check"/></svg>No network needed</span>
+      <span class="chip c4">On the iQOO 15</span>
     </div>
   </div>
   <div class="stripes"></div>
   <div class="wrap facts">
-    <div><strong>2</strong><span>AI models running on the phone: Whisper small and Gemma 4 E2B</span></div>
-    <div><strong>0</strong><span>bars of signal needed to build a finished report</span></div>
-    <div><strong>3–11 s</strong><span>from the end of a voice note to a filled entry, on the iQOO 15</span></div>
-    <div><strong>8</strong><span>report types, from hospital rounds to building sites</span></div>
-    <div><strong>5</strong><span>roles, with a live console for each</span></div>
+    <div><strong>3 s</strong><span>from the end of a voice note to a filled report entry, on the iQOO 15</span></div>
+    <div><strong>Under 3 s</strong><span>to answer a question about the walk, on the phone's own GPU</span></div>
+    <div><strong>0</strong><span>bars of signal needed to make a finished report</span></div>
+    <div><strong>12</strong><span>kinds of place built in, and a company can add its own</span></div>
+    <div><strong>6</strong><span>roles, from the person who reports to the one who closes</span></div>
   </div>
 </section>
+
+<div class="ticker" aria-hidden="true">
+  <div>
+    <span>Apartments</span><span>Colleges</span><span>Hospitals</span><span>Government offices</span><span>Malls</span><span>Factories</span><span>Warehouses</span><span>Hotels</span><span>Construction sites</span><span>Pharmacies</span><span>Neighbourhoods</span><span>Your own kind of place</span>
+    <span>Apartments</span><span>Colleges</span><span>Hospitals</span><span>Government offices</span><span>Malls</span><span>Factories</span><span>Warehouses</span><span>Hotels</span><span>Construction sites</span><span>Pharmacies</span><span>Neighbourhoods</span><span>Your own kind of place</span>
+  </div>
+</div>
 
 <!-- ============================================================ the problem -->
 <section class="paper" id="why">
   <div class="wrap">
     <p class="kicker"><i class="tape"></i>The problem</p>
-    <h2>The report still happens at a desk.</h2>
-    <p class="intro">Buildings, campuses, wards, malls and offices are checked on foot. The report is typed up hours later, from memory, by the person who should already be on the next round.</p>
-    <div class="pains">
-      <div><b>Notes retyped by hand</b><span>Paper notes and memory become typed text hours later.</span></div>
-      <div><b>Photos sorted at night</b><span>Dozens of pictures get matched to the wrong issue.</span></div>
-      <div><b>No network inside</b><span>Basements, plant rooms and wards rule out cloud tools.</span></div>
-      <div><b>Reports arrive late</b><span>The people who must fix things wait for the write-up.</span></div>
+    <h2>Everyone sees it. Nobody reports it.</h2>
+    <p class="intro">India runs on shared places: housing societies, colleges, hospitals, offices, markets, factories. What goes wrong in them is seen by many people every day and reported by few, because reporting is slow, has to be typed, wants English, and nobody answers. The people whose job it is to check do the walking by day and the writing by night.</p>
+
+    <div class="scenes">
+      <div class="reveal"><b>The stuck lift</b><span>Everybody walks past it. Each assumes someone else has already complained.</span></div>
+      <div class="reveal"><b>The register at the gate</b><span>Open in office hours, written by hand, read by nobody who can fix anything.</span></div>
+      <div class="reveal"><b>The group chat</b><span>The complaint sinks between forwards. No owner, no date, no proof.</span></div>
+      <div class="reveal"><b>The report typed at night</b><span>A day of walking becomes an evening of matching photos to notes from memory.</span></div>
+      <div class="reveal"><b>The basement with no signal</b><span>Plant rooms, wards and stairwells are exactly where cloud apps stop.</span></div>
+      <div class="reveal"><b>“It's done, sir”</b><span>No picture of the repair, and the person who reported it never hears.</span></div>
+    </div>
+
+    <div class="versus reveal" role="table" aria-label="Today, and with DeskLess">
+      <div class="row head" role="row"><span role="columnheader">Today</span><span role="columnheader">With DeskLess</span></div>
+      <div class="row" role="row"><span role="cell"><svg><use href="#i-cross-out"/></svg>Find the register, the form or the right person</span><span role="cell"><svg><use href="#i-check"/></svg>Say it to your phone, where you are standing</span></div>
+      <div class="row" role="row"><span role="cell"><svg><use href="#i-cross-out"/></svg>Type it, in English</span><span role="cell"><svg><use href="#i-check"/></svg>Speak it in Hindi, English or both; it is written down in English</span></div>
+      <div class="row" role="row"><span role="cell"><svg><use href="#i-cross-out"/></svg>Hope somebody picks it up</span><span role="cell"><svg><use href="#i-check"/></svg>Ranked at once and given to a named person, with a date</span></div>
+      <div class="row" role="row"><span role="cell"><svg><use href="#i-cross-out"/></svg>No signal, no app</span><span role="cell"><svg><use href="#i-check"/></svg>The AI is inside the phone, and phones pass reports to each other</span></div>
+      <div class="row" role="row"><span role="cell"><svg><use href="#i-cross-out"/></svg>Take their word that it is fixed</span><span role="cell"><svg><use href="#i-check"/></svg>A photo of the repair, compared with the first one</span></div>
+      <div class="row" role="row"><span role="cell"><svg><use href="#i-cross-out"/></svg>Never hear back</span><span role="cell"><svg><use href="#i-check"/></svg>Your phone tells you when it is closed</span></div>
+      <div class="row" role="row"><span role="cell"><svg><use href="#i-cross-out"/></svg>Write the inspection report at night</span><span role="cell"><svg><use href="#i-check"/></svg>The report is built during the walk, signed and sent</span></div>
     </div>
   </div>
 </section>
@@ -128,45 +165,287 @@
 <section id="how">
   <div class="wrap">
     <p class="kicker"><i class="tape"></i>How it works</p>
-    <h2>One picture, one sentence. The phone does the rest.</h2>
-    <p class="intro">Four steps, all of them on the phone, none of them needing a signal.</p>
+    <h2>From a sentence to a repair, in four steps.</h2>
+    <p class="intro">Whoever notices starts it. Nobody has to type, and nobody has to chase.</p>
 
     <ol class="steps">
       <li class="reveal">
-        <button class="phone shot" data-zoom="static/site/app-record.webp"><img loading="lazy" src="static/site/app-record.webp" alt="The app recording a voice note under the picture of an issue" width="720" height="1600"></button>
-        <div><em>1</em><h3>Photograph it, say it</h3><p>Point the phone at the problem, take a picture or a short clip, and describe it aloud the way you would to a colleague.</p></div>
+        <button class="phone shot" data-zoom="static/site/user-draft.webp"><img loading="lazy" src="static/site/user-draft.webp" alt="A user's entry, read back and ready to send: leaking water cooler on the second floor" width="720" height="1600"></button>
+        <div><em>1</em><h3>Someone says it</h3><p>A resident, a student, a nurse, a guard: they tap the microphone and say what is wrong in their own words. An inspector on a round adds a picture or a short clip. The phone reads the entry back and waits for “send it”.</p></div>
       </li>
       <li class="reveal">
-        <button class="phone shot" data-zoom="static/site/app-check.webp"><img loading="lazy" src="static/site/app-check.webp" alt="The steps Heard, English text and Report fields ticked off, and the AI check card" width="720" height="1600"></button>
-        <div><em>2</em><h3>The phone writes the entry</h3><p>Whisper turns the speech into English text. Gemma reads the text and the picture together, fills in what is wrong, where, how severe, who owns it and by when, and says so when the picture does not show what the note says.</p></div>
+        <button class="phone shot" data-zoom="static/site/app-asks.webp"><img loading="lazy" src="static/site/app-asks.webp" alt="The phone asked who should fix it and by when, and filled owner and due date from the answer" width="720" height="1600"></button>
+        <div><em>2</em><h3>The phone writes it</h3><p>Whisper turns the speech into English text. Gemma reads it with the picture and fills in what, where, how severe, who and by when. If something is missing it asks one question aloud. What nobody said is left out.</p></div>
       </li>
       <li class="reveal">
-        <button class="phone shot" data-zoom="static/site/app-home.webp"><img loading="lazy" src="static/site/app-home.webp" alt="The walk so far: six issues by severity and a map of where each one was found" width="720" height="1600"></button>
-        <div><em>3</em><h3>The walk adds up</h3><p>Every issue is counted by severity and placed on a map drawn from the phone's own position fixes. No map tiles, no network.</p></div>
+        <button class="phone shot" data-zoom="static/site/desk-plan.webp"><img loading="lazy" src="static/site/desk-plan.webp" alt="My desk: the spoken instruction Give the first one to Arjun by Monday, shown as a plan before it is carried out" width="720" height="1600"></button>
+        <div><em>3</em><h3>It lands on the right desk</h3><p>The office's assistant ranks every issue and names who could take it. On <b>My desk</b> the phone reads the work aloud and the manager answers by voice: “Give the first one to Arjun by Monday.” Nothing is done until it has been shown and confirmed.</p></div>
       </li>
       <li class="reveal">
-        <button class="phone shot" data-zoom="static/site/app-report.webp"><img loading="lazy" src="static/site/app-report.webp" alt="Report done: the first page of the PDF with Save for Office Kit, Open and Share" width="720" height="1600"></button>
-        <div><em>4</em><h3>Leave with the report</h3><p>One tap lays out an English PDF with every picture beside its entry, ready before you are back at the gate.</p></div>
+        <button class="phone shot" data-zoom="static/site/desk-repair.webp"><img loading="lazy" src="static/site/desk-repair.webp" alt="The repair of a job: the picture as reported and the picture now, compared by the phone's AI" width="720" height="1600"></button>
+        <div><em>4</em><h3>Fixed, with proof</h3><p>The technician photographs the repair. The phone compares it with the first picture, the manager closes the job, and the phone of the person who reported it says so.</p></div>
       </li>
     </ol>
 
-    <h3 class="sub">Then it travels, with a network or without</h3>
+    <h3 class="sub">And when there is no network at all</h3>
     <div class="ways">
       <article class="reveal">
-        <svg><use href="#i-laptop"/></svg>
-        <h4>To the laptop</h4>
-        <p><b>Save for Office Kit</b> puts the PDF and its pack where iQOO Office Kit's file transfer picks them up, and the action items go on the clipboard the phone shares with the laptop.</p>
-      </article>
-      <article class="reveal">
         <svg><use href="#i-relay"/></svg>
-        <h4>From phone to phone</h4>
-        <p>With no network at all, the report hops through nearby phones running DeskLess. Each copy is sealed for one phone: the phones in between carry it and cannot read it. A signed receipt comes back.</p>
+        <h4>Phone to phone, sealed</h4>
+        <p>A report hops through nearby phones running DeskLess until it reaches the one it is for. The phones in between carry it and cannot read it, and a signed receipt comes back. What a user tells with no network is handed to a nearby phone of the place, which sends it on.</p>
       </article>
       <article class="reveal">
-        <svg><use href="#i-cloud"/></svg>
-        <h4>To the office</h4>
-        <p>When the phone finds a network, the walk and its report go to the company's server by themselves. Issues show on the dashboard as they are raised, before the report is even built.</p>
+        <svg><use href="#i-radio"/></svg>
+        <h4>Walkie-talkie</h4>
+        <p>Hold, speak, let go. The voice travels over the same sealed link to every linked phone within Bluetooth and Wi-Fi reach, or onward through a chain of DeskLess phones.</p>
       </article>
+      <article class="reveal">
+        <svg><use href="#i-laptop"/></svg>
+        <h4>To the laptop, then the office</h4>
+        <p><b>Save for Office Kit</b> puts the report where iQOO Office Kit's file transfer picks it up. When the phone finds a network, everything goes to the company's server by itself.</p>
+      </article>
+    </div>
+  </div>
+</section>
+
+<!--if film-->
+<!-- ============================================================ the film -->
+<section class="film" id="film">
+  <div class="wrap">
+    <p class="kicker"><i class="tape"></i>The film</p>
+    <h2>The whole mechanism, in two minutes.</h2>
+    <div class="player reveal">
+      <video id="video" preload="none" playsinline poster="static/site/film-poster.jpg" width="1280" height="720">
+        <source src="static/site/film.mp4" type="video/mp4">
+      </video>
+      <button class="play" id="play"><svg><use href="#i-play"/></svg>Play the film</button>
+    </div>
+    <p class="note">From the problem to the closed repair: someone tells their phone, what happens inside it, the assistant, the desk worked by voice, and what happens with no network. The screens in the film are drawn; the ones on this page are the app itself.</p>
+  </div>
+</section>
+<!--end film-->
+
+<!-- ============================================================ every kind of place -->
+<section id="places">
+  <div class="wrap">
+    <p class="kicker"><i class="tape"></i>Where it helps</p>
+    <h2>One app for every kind of place.</h2>
+    <p class="intro">Choose what you are checking and the app changes its wording, what counts as serious and how issues are sorted. Twelve kinds come with it. The steps never change: say it, and it gets fixed.</p>
+    <div class="places">
+      <article class="reveal"><svg><use href="#i-home"/></svg><h4>Apartments and housing societies</h4><p class="who">Residents, security, the facility team</p><ul><li>Lift stuck between floors</li><li>Water tank overflowing</li><li>Parking lights out</li></ul></article>
+      <article class="reveal"><svg><use href="#i-campus"/></svg><h4>Colleges and schools</h4><p class="who">Students, wardens, the estate office</p><ul><li>Exposed wiring in the lab</li><li>Hostel water cooler leaking</li><li>Broken bench in a classroom</li></ul></article>
+      <article class="reveal"><svg><use href="#i-cross"/></svg><h4>Hospitals</h4><p class="who">Nurses, ward staff, maintenance</p><ul><li>Oxygen cylinder not chained</li><li>Sharps bin overfilled</li><li>Backup power failed its test</li></ul></article>
+      <article class="reveal"><svg><use href="#i-office"/></svg><h4>Government and company offices</h4><p class="who">Staff, visitors, the caretaker</p><ul><li>Token display dead at the counter</li><li>Ramp blocked</li><li>Damp in the records room</li></ul></article>
+      <article class="reveal"><svg><use href="#i-shop"/></svg><h4>Malls and shops</h4><p class="who">Shop staff, housekeeping, the mall office</p><ul><li>Fire exit blocked by cartons</li><li>Escalator handrail slipping</li><li>Food court drain smelling</li></ul></article>
+      <article class="reveal"><svg><use href="#i-factory"/></svg><h4>Factories</h4><p class="who">Operators, supervisors, safety officers</p><ul><li>Guard missing on a press</li><li>Oil on the floor by the line</li><li>Gas cylinder without its cap</li></ul></article>
+      <article class="reveal"><svg><use href="#i-box"/></svg><h4>Warehouses and depots</h4><p class="who">Pickers, forklift drivers, shift leads</p><ul><li>Bent racking upright</li><li>Dock leveller stuck</li><li>Lane blocked by pallets</li></ul></article>
+      <article class="reveal"><svg><use href="#i-bed"/></svg><h4>Hotels and restaurants</h4><p class="who">Housekeeping, front desk, engineering</p><ul><li>AC leaking in a guest room</li><li>Kitchen exhaust choked</li><li>Torn carpet on the stairs</li></ul></article>
+      <article class="reveal"><svg><use href="#i-build"/></svg><h4>Construction sites</h4><p class="who">Site engineers, safety, contractors</p><ul><li>Crack in a beam</li><li>Live wire by the panel</li><li>No railing on the terrace edge</li></ul></article>
+      <article class="reveal"><svg><use href="#i-pill"/></svg><h4>Pharmacies and ward stores</h4><p class="who">Pharmacists and auditors</p><ul><li>Expired stock on the shelf</li><li>Fridge too warm</li><li>Label missing from a pack</li></ul></article>
+      <article class="reveal"><svg><use href="#i-road"/></svg><h4>Neighbourhoods</h4><p class="who">Residents and the local office</p><ul><li>Streetlight out</li><li>Drain overflowing</li><li>Pothole at the junction</li></ul></article>
+      <article class="reveal"><svg><use href="#i-any"/></svg><h4>Anywhere else</h4><p class="who">A yard, a vehicle, a single room</p><ul><li>A general inspection fits any place</li><li>It is what a new walk starts with</li></ul></article>
+    </div>
+
+    <div class="own reveal">
+      <div>
+        <svg><use href="#i-own"/></svg>
+        <h3>Not on the list? Make your own.</h3>
+        <p>A managing director or manager makes a report type on the dashboard in a minute: its name, what the place is called, the kinds of issue, and what counts as serious there. Every phone of the company picks it up by itself, with no new version of the app.</p>
+        <p class="fine">Our test company made “Bus depot check”: tyres, brakes, lights, fuel point. It is first in the list pictured here.</p>
+      </div>
+      <button class="phone shot" data-zoom="static/site/app-types.webp"><img loading="lazy" src="static/site/app-types.webp" alt="What are you checking: a company's own Bus depot check first, then the kinds that come with the app" width="720" height="1600"></button>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================ will it work for you: the form -->
+<section class="dark ask" id="ask">
+  <div class="wrap ask-grid">
+    <div>
+      <p class="kicker"><i class="tape"></i>Ask DeskLess</p>
+      <h2>Will it work for your place?</h2>
+      <p class="intro">Write what you need in your own words. The DeskLess assistant reads it against what the product really does today and answers plainly: yes, partly, or no. Then it can email you the brochure.</p>
+      <ul class="ticks">
+        <li><svg><use href="#i-check"/></svg><span><b>A straight answer.</b> It tells you what DeskLess does not do as readily as what it does.</span></li>
+        <li><svg><use href="#i-check"/></svg><span><b>Nothing to install, no account.</b> One box, a few seconds.</span></li>
+        <li><svg><use href="#i-check"/></svg><span><b>Pricing in one tap.</b> The brochure comes with a link straight to us on WhatsApp.</span></li>
+      </ul>
+      <p class="fine">Your words are kept so we can follow up. Your email address is used only to send you the brochure and to answer you.</p>
+    </div>
+
+    <div class="helper" id="fit">
+      <div class="helper-bar"><i></i><i></i><i></i><b>DeskLess assistant</b><span id="fit-engine">checks your words against what the product does</span></div>
+
+      <form id="fit-form" novalidate>
+        <label for="fit-text">What do you need?</label>
+        <textarea id="fit-text" rows="5" maxlength="1500" placeholder="For example: We run a housing society of 300 flats. Complaints get lost in WhatsApp groups and nobody knows who is fixing the lift."></textarea>
+        <div class="tries" aria-label="Examples to try">
+          <button type="button" data-try="We run a housing society of 300 flats. Complaints get lost in WhatsApp groups and nobody knows who is fixing what.">A housing society</button>
+          <button type="button" data-try="Nurses in our hospital should report broken equipment by voice in Hindi, and we want proof that it was repaired.">A hospital</button>
+          <button type="button" data-try="Daily safety rounds in our factory. There is no network on the shop floor and supervisors type their reports at night.">A factory</button>
+          <button type="button" data-try="We need payroll and attendance for our housekeeping staff.">Payroll?</button>
+        </div>
+        <div class="helper-row">
+          <select id="fit-place" aria-label="Kind of place">
+            <option value="">Kind of place (if you like)</option>
+            <option value="residential">Apartments or housing society</option>
+            <option value="campus">College or school</option>
+            <option value="hospital">Hospital or clinic</option>
+            <option value="office">Office</option>
+            <option value="retail">Mall or shop</option>
+            <option value="factory">Factory</option>
+            <option value="warehouse">Warehouse or depot</option>
+            <option value="hotel">Hotel or restaurant</option>
+            <option value="site">Construction site</option>
+            <option value="medication">Pharmacy</option>
+            <option value="community">Neighbourhood</option>
+          </select>
+          <button class="btn solid" id="fit-ask">Ask DeskLess<svg><use href="#i-arrow"/></svg></button>
+        </div>
+        <p class="helper-error" id="fit-error" role="alert"></p>
+      </form>
+
+      <div id="fit-answer" hidden>
+        <p class="you" id="fit-you"></p>
+        <p class="verdict" id="fit-headline"></p>
+        <p class="summary" id="fit-summary"></p>
+        <div id="fit-points"></div>
+        <div class="helper-acts" id="fit-next">
+          <button class="btn solid" id="fit-want">Yes, email me the brochure</button>
+          <button class="btn ghost" id="fit-more">Let me add something</button>
+          <a class="btn wa" id="fit-wa" target="_blank" rel="noopener">Pricing on WhatsApp</a>
+        </div>
+
+        <form id="fit-mail" hidden novalidate>
+          <p class="ask-line">Where shall I send it?</p>
+          <div class="helper-row">
+            <input id="fit-name" autocomplete="name" placeholder="Your name (if you like)" maxlength="60">
+            <input id="fit-email" type="email" autocomplete="email" placeholder="you@example.com" maxlength="254">
+          </div>
+          <button class="btn solid wide" id="fit-send">Send me the brochure</button>
+          <p class="helper-error" id="fit-mail-error" role="alert"></p>
+        </form>
+
+        <div id="fit-sent" hidden>
+          <p class="verdict good" id="fit-sent-line"></p>
+          <p class="summary" id="fit-sent-more"></p>
+          <div class="helper-acts">
+            <a class="btn wa" id="fit-wa-2" target="_blank" rel="noopener">Ask for pricing on WhatsApp</a>
+            <a class="btn ghost" id="fit-deck" hidden>The pitch deck (PDF)</a>
+            <button class="btn ghost" id="fit-again">Ask something else</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================ the product, screen by screen -->
+<section class="dark" id="product">
+  <div class="wrap">
+    <p class="kicker"><i class="tape"></i>The product</p>
+    <h2>See it working.</h2>
+    <p class="intro">These are the app's own screens: some from the iQOO 15, the rest from the Android emulator during the build, test pictures and all. The consoles show a sample company. Tap one to see it whole.</p>
+
+    <div class="tabs" role="tablist" aria-label="Sides of the product">
+      <button role="tab" aria-selected="true" data-show="side-user"><svg><use href="#i-person"/></svg>People who use the place</button>
+      <button role="tab" aria-selected="false" data-show="side-walk"><svg><use href="#i-eye"/></svg>Inspectors</button>
+      <button role="tab" aria-selected="false" data-show="side-desk"><svg><use href="#i-say"/></svg>The team: My desk</button>
+      <button role="tab" aria-selected="false" data-show="side-air"><svg><use href="#i-radio"/></svg>No network</button>
+      <button role="tab" aria-selected="false" data-show="side-web"><svg><use href="#i-laptop"/></svg>On the web</button>
+    </div>
+  </div>
+
+  <div class="pane" id="side-user">
+    <div class="wrap told">
+      <div>
+        <h3>DeskLess User: say it, and you are done.</h3>
+        <p>For residents, students, staff and visitors. A name, an email address and a code are all it takes to join: no forms, no approval. Pick the kind of place and the place, then talk.</p>
+        <ul class="ticks">
+          <li><svg><use href="#i-check"/></svg><span><b>Read back before it goes.</b> “Make it high”, “it is block C, not block B”, “send it”, “forget it”.</span></li>
+          <li><svg><use href="#i-check"/></svg><span><b>A question is a question.</b> “Is the cafeteria open on Sunday?” goes to be answered, not repaired.</span></li>
+          <li><svg><use href="#i-check"/></svg><span><b>You hear back.</b> Who has it, what they answered, and when it was repaired, checked and closed.</span></li>
+        </ul>
+      </div>
+      <div class="trio">
+        <figure><button class="phone shot" data-zoom="static/site/user-home.webp"><img loading="lazy" src="static/site/user-home.webp" alt="The user's first screen: choose the kind of place, then tap and say it" width="720" height="1600"></button><figcaption><b>Choose the place</b>Then tap and say it</figcaption></figure>
+        <figure><button class="phone shot" data-zoom="static/site/user-draft.webp"><img loading="lazy" src="static/site/user-draft.webp" alt="The entry ready to send to Northgate College, with its severity" width="720" height="1600"></button><figcaption><b>Read back</b>Change it by voice, or send</figcaption></figure>
+        <figure><button class="phone shot" data-zoom="static/site/user-after.webp"><img loading="lazy" src="static/site/user-after.webp" alt="Just in: the leaking water cooler was repaired, checked and closed" width="720" height="1600"></button><figcaption><b>Just in</b>Repaired, checked and closed</figcaption></figure>
+      </div>
+    </div>
+  </div>
+
+  <div class="pane" id="side-walk" hidden>
+    <div class="reel-wrap">
+      <div class="reel" tabindex="0" aria-label="Screens of an inspection round">
+        <figure><button class="phone shot" data-zoom="static/site/iqoo-home.webp"><img loading="lazy" src="static/site/iqoo-home.webp" alt="The first screen on the iQOO 15: My desk, Walkie-talkie and the start of a walk" width="720" height="1584"></button><figcaption><i>iQOO 15</i><b>The first screen</b>A walk, My desk and the walkie-talkie</figcaption></figure>
+        <figure><button class="phone shot" data-zoom="static/site/app-record.webp"><img loading="lazy" src="static/site/app-record.webp" alt="A voice note being recorded under the picture of an issue" width="720" height="1600"></button><figcaption><b>Picture and voice</b>That is all the typing there is</figcaption></figure>
+        <figure><button class="phone shot" data-zoom="static/site/app-match.webp"><img loading="lazy" src="static/site/app-match.webp" alt="An issue with its position and the AI check saying the picture matches the note" width="720" height="1600"></button><figcaption><b>AI check</b>The picture matches the note</figcaption></figure>
+        <figure><button class="phone shot" data-zoom="static/site/app-check.webp"><img loading="lazy" src="static/site/app-check.webp" alt="The AI check saying the picture may not show what the note says" width="720" height="1600"></button><figcaption><b>…and when it does not</b>Retake, or tell it you are right</figcaption></figure>
+        <figure><button class="phone shot" data-zoom="static/site/app-asks.webp"><img loading="lazy" src="static/site/app-asks.webp" alt="DeskLess asks who should fix it and by when" width="720" height="1600"></button><figcaption><b>It asks back</b>Who should fix it, and by when?</figcaption></figure>
+        <figure><button class="phone shot" data-zoom="static/site/app-tell.webp"><img loading="lazy" src="static/site/app-tell.webp" alt="A spoken instruction shown as three changes with Do it and Cancel" width="720" height="1600"></button><figcaption><b>Ask or tell</b>“Mark issue 3 high, give it to Suresh”</figcaption></figure>
+        <figure><button class="phone shot" data-zoom="static/site/iqoo-ask.webp"><img loading="lazy" src="static/site/iqoo-ask.webp" alt="On the iQOO 15: what should be fixed first, answered in 2.8 seconds on the phone's GPU" width="720" height="1584"></button><figcaption><i>iQOO 15</i><b>Ask the walk</b>Answered in 2.8 s on the phone</figcaption></figure>
+        <figure><button class="phone shot" data-zoom="static/site/app-home.webp"><img loading="lazy" src="static/site/app-home.webp" alt="The walk: issues by severity and a map of where each one is" width="720" height="1600"></button><figcaption><b>Where they are</b>A map drawn with no network</figcaption></figure>
+        <figure><button class="phone shot" data-zoom="static/site/app-list.webp"><img loading="lazy" src="static/site/app-list.webp" alt="Issues grouped by type with the AI's verdict on each picture" width="720" height="1600"></button><figcaption><b>Issues, grouped</b>By type, with the AI's verdict</figcaption></figure>
+        <figure><button class="phone shot" data-zoom="static/site/app-fix.webp"><img loading="lazy" src="static/site/app-fix.webp" alt="Before and after pictures of a repair with the AI's opinion" width="720" height="1600"></button><figcaption><b>Close it out</b>Before and after, compared</figcaption></figure>
+        <figure><button class="phone shot" data-zoom="static/site/app-expiry.webp"><img loading="lazy" src="static/site/app-expiry.webp" alt="A pack of tablets with its expiry date read by the AI" width="720" height="1600"></button><figcaption><b>Medication audit</b>The expiry date read off the pack</figcaption></figure>
+        <figure><button class="phone shot" data-zoom="static/site/app-report.webp"><img loading="lazy" src="static/site/app-report.webp" alt="Report done, with the first page of the PDF" width="720" height="1600"></button><figcaption><b>Report done</b>Save for Office Kit, open or share</figcaption></figure>
+        <figure><button class="phone shot" data-zoom="static/site/app-language.webp"><img loading="lazy" src="static/site/app-language.webp" alt="Which language will you speak: Hindi and English, Kannada, Tamil, Telugu, Marathi, Bengali, English only" width="720" height="1600"></button><figcaption><b>Your language</b>Written down in English, on the phone</figcaption></figure>
+        <figure><button class="phone shot" data-zoom="static/site/app-ai.webp"><img loading="lazy" src="static/site/app-ai.webp" alt="The on-device AI screen: the speech model and the language model both on the phone and ready" width="720" height="1600"></button><figcaption><b>On-device AI</b>Both models on the phone, ready</figcaption></figure>
+      </div>
+      <div class="wrap reel-acts">
+        <button class="round reel-back" aria-label="Earlier screens"><svg><use href="#i-left"/></svg></button>
+        <button class="round reel-on" aria-label="More screens"><svg><use href="#i-right"/></svg></button>
+      </div>
+    </div>
+  </div>
+
+  <div class="pane" id="side-desk" hidden>
+    <div class="wrap told">
+      <div>
+        <h3>My desk: the office speaks, and is answered by voice.</h3>
+        <p>Whoever the work now waits on opens My desk and is told, aloud, what waits for them. They answer the same way, and the phone shows what it understood before anything happens.</p>
+        <ul class="ticks">
+          <li><svg><use href="#i-check"/></svg><span><b>“Give the first one to Arjun by Monday.”</b> It goes to that technician, with that day.</span></li>
+          <li><svg><use href="#i-check"/></svg><span><b>“I fixed the first one.”</b> The camera opens, and the repair is compared with the picture it was reported with.</span></li>
+          <li><svg><use href="#i-check"/></svg><span><b>“Close job 5.”</b> Or send it back, with what is still wrong.</span></li>
+          <li><svg><use href="#i-check"/></svg><span><b>One phone, several people.</b> A shared phone becomes yours with a tap on your name.</span></li>
+        </ul>
+      </div>
+      <div class="trio">
+        <figure><button class="phone shot" data-zoom="static/site/desk-brief.webp"><img loading="lazy" src="static/site/desk-brief.webp" alt="My desk for an inspector: a spoken briefing of three jobs waiting" width="720" height="1600"></button><figcaption><b>The briefing</b>Read aloud as the desk opens</figcaption></figure>
+        <figure><button class="phone shot" data-zoom="static/site/desk-plan.webp"><img loading="lazy" src="static/site/desk-plan.webp" alt="A spoken instruction shown as a plan: give job 1 to Arjun Das, due 12 October" width="720" height="1600"></button><figcaption><b>Said, then shown</b>Nothing is sent until Do it</figcaption></figure>
+        <figure><button class="phone shot" data-zoom="static/site/desk-repair.webp"><img loading="lazy" src="static/site/desk-repair.webp" alt="The repair of job 1 with both pictures and what the phone's AI made of them" width="720" height="1600"></button><figcaption><b>The repair</b>Two pictures, compared on the phone</figcaption></figure>
+      </div>
+    </div>
+  </div>
+
+  <div class="pane" id="side-air" hidden>
+    <div class="wrap told">
+      <div>
+        <h3>The phones talk to each other.</h3>
+        <p>Scan a QR code once and two phones are linked. From then on reports, voice and a user's entries cross between them over Bluetooth and Wi-Fi, with no internet and no mobile signal.</p>
+        <ul class="ticks">
+          <li><svg><use href="#i-check"/></svg><span><b>Sealed for one phone.</b> A phone that carries a report for another cannot open it.</span></li>
+          <li><svg><use href="#i-check"/></svg><span><b>Delivered and opened.</b> The sender watches each copy go from waiting to handed over.</span></li>
+          <li><svg><use href="#i-check"/></svg><span><b>Honest about reach.</b> It is a walkie-talkie in how it is used, not a radio set: some tens of metres, or further through phones in between.</span></li>
+        </ul>
+      </div>
+      <div class="trio two">
+        <figure><button class="phone shot" data-zoom="static/site/iqoo-talk.webp"><img loading="lazy" src="static/site/iqoo-talk.webp" alt="The walkie-talkie on the iQOO 15 with its Hold to talk button" width="720" height="1584"></button><figcaption><i>iQOO 15</i><b>Hold to talk</b>What you say waits until a phone is in reach</figcaption></figure>
+        <figure><button class="phone shot" data-zoom="static/site/app-talk.webp"><img loading="lazy" src="static/site/app-talk.webp" alt="A voice message received over the phone link" width="720" height="1600"></button><figcaption><b>A message arrives</b>Sealed, like a report</figcaption></figure>
+      </div>
+    </div>
+  </div>
+
+  <div class="pane" id="side-web" hidden>
+    <div class="wrap">
+      <div class="wall">
+        <figure><button class="window shot" data-zoom="static/site/dash-md.webp"><span class="bar"><i></i><i></i><i></i><span>Console · Managing Director</span></span><img loading="lazy" src="static/site/dash-md-top.webp" alt="The managing director's console" width="1440" height="900"></button><figcaption><b>The console</b>What needs you first, the assistant's ranking, who has room. Tap to see all of it.</figcaption></figure>
+        <figure><button class="window shot" data-zoom="static/site/dash-issue.webp"><span class="bar"><i></i><i></i><i></i><span>An issue · Manager</span></span><img loading="lazy" src="static/site/dash-issue.webp" alt="An issue with the assistant's brief, who could take it and the next step" width="1440" height="900"></button><figcaption><b>An issue</b>Ranked, with who could take it and why, and the next step as one button.</figcaption></figure>
+        <figure><button class="window shot" data-zoom="static/site/dash-link.webp"><span class="bar"><i></i><i></i><i></i><span>Live linkage · Administrator</span></span><img loading="lazy" src="static/site/dash-link.webp" alt="The live linkage: the server, each place and each person drawn in three dimensions, with what moves between them" width="1440" height="900"></button><figcaption><b>Live linkage</b>The whole system drawn in 3D as it runs: every report and repair a packet in flight.</figcaption></figure>
+        <figure><button class="window shot" data-zoom="static/site/dash-admin.webp"><span class="bar"><i></i><i></i><i></i><span>Control room · Administrator</span></span><img loading="lazy" src="static/site/dash-admin.webp" alt="The administrator's control room" width="1440" height="900"></button><figcaption><b>Control room</b>Every company, who is online, and the health of the server.</figcaption></figure>
+      </div>
     </div>
   </div>
 </section>
@@ -175,148 +454,31 @@
 <section class="report" id="report">
   <div class="wrap report-grid">
     <div class="sheets">
-      <button class="sheet back shot" data-zoom="static/site/report-2.webp"><img loading="lazy" src="static/site/report-2.webp" alt="Second page of a report: two issues, each with its picture, type, severity, owner, due date, position and AI check" width="1100" height="1557"></button>
+      <button class="sheet back shot" data-zoom="static/site/report-2.webp"><img loading="lazy" src="static/site/report-2.webp" alt="Second page of a report: two issues with picture, type, severity, owner, due date, position and AI check" width="1100" height="1557"></button>
       <button class="sheet front shot" data-zoom="static/site/report-1.webp"><img loading="lazy" src="static/site/report-1.webp" alt="First page of a report built by the app: a briefing written by the AI and a map of the issues" width="1100" height="1557"></button>
     </div>
     <div>
-      <p class="kicker"><i class="tape"></i>What comes out</p>
+      <p class="kicker"><i class="tape"></i>For the inspection round</p>
       <h2>A report somebody can act on.</h2>
       <p class="intro">The pages shown are from a report the app built during testing. Nothing in it was typed at a desk. A report carries:</p>
       <ul class="ticks">
         <li><svg><use href="#i-check"/></svg><span><b>A briefing at the top</b>, written by the model: the state of the place in a sentence and the three issues to do first. Which three is decided by rules, not by the model.</span></li>
-        <li><svg><use href="#i-check"/></svg><span><b>A map of the issues</b>, numbered and coloured by severity, with a scale bar and north.</span></li>
-        <li><svg><use href="#i-check"/></svg><span><b>Every entry complete</b>: picture, type, severity, location, owner, due date, position, what the phone's sensors read, and the AI's opinion of the picture.</span></li>
+        <li><svg><use href="#i-check"/></svg><span><b>A map of the issues</b>, numbered and coloured by severity, drawn from the phone's own position fixes.</span></li>
+        <li><svg><use href="#i-check"/></svg><span><b>Every entry complete</b>: picture, type, severity, location, owner, due date, what the phone's sensors read, and the AI's opinion of the picture.</span></li>
         <li><svg><use href="#i-check"/></svg><span><b>Before and after</b>, where a repair was photographed and compared.</span></li>
         <li><svg><use href="#i-check"/></svg><span><b>Signed with a fingerprint</b>. A changed copy no longer matches its signature.</span></li>
-        <li><svg><use href="#i-check"/></svg><span><b>A pack beside it</b>: the issues as a spreadsheet, the deadlines as a calendar file, and a task list for each owner.</span></li>
+        <li><svg><use href="#i-check"/></svg><span><b>A pack beside it</b>: the issues as a spreadsheet, the deadlines as a calendar file, a task list for each owner.</span></li>
       </ul>
     </div>
   </div>
 </section>
 
-<!-- ============================================================ the film -->
-<section class="film" id="film">
-  <div class="wrap">
-    <p class="kicker"><i class="tape"></i>The film</p>
-    <h2>DeskLess in 90 seconds.</h2>
-    <div class="player reveal">
-      <video id="video" preload="none" playsinline poster="static/site/film-poster.jpg" width="1280" height="720">
-        <source src="static/site/film.mp4" type="video/mp4">
-      </video>
-      <button class="play" id="play"><svg><use href="#i-play"/></svg>Play the film <span>1:29</span></button>
-    </div>
-    <p class="note">The problem, the walk, what happens inside the phone, how a report travels and who it is for. The screens in the film are drawn; the ones on this page are the app itself.</p>
-  </div>
-</section>
-
-<!-- ============================================================ features -->
-<section id="features">
-  <div class="wrap">
-    <p class="kicker"><i class="tape"></i>What is in the app</p>
-    <h2>More than a camera and a form.</h2>
-    <div class="cards">
-      <article class="reveal"><svg><use href="#i-chip"/></svg><h4>AI that stays on the phone</h4><p>Whisper small and Gemma 4 E2B, both open models, run on the phone's own chip. No cloud call, no cost per report.</p></article>
-      <article class="reveal"><svg><use href="#i-lang"/></svg><h4>Speak the way you speak</h4><p>Hindi, English or the mix of both that people really use. The report comes out in English.</p></article>
-      <article class="reveal"><svg><use href="#i-eye"/></svg><h4>A second pair of eyes</h4><p>The model says what it sees in the picture and flags a note that does not fit it. It is an opinion: the inspector can overrule it with one tap.</p></article>
-      <article class="reveal"><svg><use href="#i-video"/></svg><h4>Film it instead</h4><p>A clip of up to 20 seconds with the voice beside it. Three stills from it go to the model and one goes in the report.</p></article>
-      <article class="reveal"><svg><use href="#i-gauge"/></svg><h4>The phone as an instrument</h4><p>Level, noise and vibration at a tap; compass, light and steps stamped on every issue; NFC tags that name a place. A guide, not a calibrated meter, and the report says so.</p></article>
-      <article class="reveal"><svg><use href="#i-pin"/></svg><h4>Where, without a map service</h4><p>Each issue carries the phone's satellite position, and the map is drawn from those alone.</p></article>
-      <article class="reveal"><svg><use href="#i-shield"/></svg><h4>A review before it leaves</h4><p>Pictures, positions, the order of capture and the sensor readings are checked against the words. The verdict is printed in the report, with each check, and says it is not proof.</p></article>
-      <article class="reveal"><svg><use href="#i-finger"/></svg><h4>Signed by a person</h4><p>A key kept in the Android Keystore signs the finished PDF, and it works only with a fingerprint.</p></article>
-      <article class="reveal"><svg><use href="#i-ask"/></svg><h4>Ask DeskLess</h4><p>“What should be fixed first?” Ask about the walk aloud. The answer is worked out on the phone and read back.</p></article>
-      <article class="reveal"><svg><use href="#i-relay"/></svg><h4>A relay with no network</h4><p>Nearby phones pass a sealed report along until it reaches the one it is for. Scan a QR code once to link two phones.</p></article>
-      <article class="reveal"><svg><use href="#i-fix"/></svg><h4>Was it really fixed?</h4><p>A second picture after the repair is compared with the first by the model. In the office, the manager sees both before closing the job.</p></article>
-      <article class="reveal"><svg><use href="#i-pill"/></svg><h4>Expiry dates, read</h4><p>In a medication audit the model reads the date printed on the pack and raises expired stock by itself.</p></article>
-    </div>
-  </div>
-</section>
-
-<!-- ============================================================ screens -->
-<section class="dark" id="screens">
-  <div class="wrap">
-    <p class="kicker"><i class="tape"></i>Screens</p>
-    <h2>The app itself.</h2>
-    <p class="intro">Captured from DeskLess on the Android emulator during the build, test pictures and all. Tap one to see it whole.</p>
-  </div>
-  <div class="reel" id="reel" tabindex="0" aria-label="Screens of the app">
-    <figure><button class="phone shot" data-zoom="static/site/app-home.webp"><img loading="lazy" src="static/site/app-home.webp" alt="First screen: the walk, its issues by severity and the issue map" width="720" height="1600"></button><figcaption><b>The walk</b>Issues by severity and where each one is</figcaption></figure>
-    <figure><button class="phone shot" data-zoom="static/site/app-list.webp"><img loading="lazy" src="static/site/app-list.webp" alt="Issues grouped by type, each with its severity and the AI's verdict on the picture" width="720" height="1600"></button><figcaption><b>Issues, grouped</b>By type, with the AI's verdict on each picture</figcaption></figure>
-    <figure><button class="phone shot" data-zoom="static/site/app-record.webp"><img loading="lazy" src="static/site/app-record.webp" alt="A voice note being recorded" width="720" height="1600"></button><figcaption><b>Voice note</b>Describe it aloud; that is all the typing there is</figcaption></figure>
-    <figure><button class="phone shot" data-zoom="static/site/app-match.webp"><img loading="lazy" src="static/site/app-match.webp" alt="An issue with its position and the AI check saying the picture matches the note" width="720" height="1600"></button><figcaption><b>AI check</b>The picture matches the note</figcaption></figure>
-    <figure><button class="phone shot" data-zoom="static/site/app-check.webp"><img loading="lazy" src="static/site/app-check.webp" alt="The AI check saying the picture may not show what the note says, with Retake and It is right" width="720" height="1600"></button><figcaption><b>…and when it does not</b>Retake, or tell it you are right</figcaption></figure>
-    <figure><button class="phone shot" data-zoom="static/site/app-fix.webp"><img loading="lazy" src="static/site/app-fix.webp" alt="Before and after pictures of a repair with the AI's opinion" width="720" height="1600"></button><figcaption><b>Close it out</b>Before and after, compared by the model</figcaption></figure>
-    <figure><button class="phone shot" data-zoom="static/site/app-expiry.webp"><img loading="lazy" src="static/site/app-expiry.webp" alt="A pack of tablets with its expiry date read by the AI and marked as passed" width="720" height="1600"></button><figcaption><b>Medication audit</b>The expiry date read off the pack</figcaption></figure>
-    <figure><button class="phone shot" data-zoom="static/site/app-report.webp"><img loading="lazy" src="static/site/app-report.webp" alt="Report done, with the first page of the PDF" width="720" height="1600"></button><figcaption><b>Report done</b>Save for Office Kit, open or share</figcaption></figure>
-    <figure><button class="phone shot" data-zoom="static/site/app-ask.webp"><img loading="lazy" src="static/site/app-ask.webp" alt="Ask DeskLess answering which issue should be fixed first" width="720" height="1600"></button><figcaption><b>Ask DeskLess</b>A question about the walk, answered on the phone</figcaption></figure>
-    <figure><button class="phone shot" data-zoom="static/site/app-types.webp"><img loading="lazy" src="static/site/app-types.webp" alt="The list of eight report types" width="720" height="1600"></button><figcaption><b>What are you checking?</b>Eight kinds of round</figcaption></figure>
-    <figure><button class="phone shot" data-zoom="static/site/app-ai.webp"><img loading="lazy" src="static/site/app-ai.webp" alt="The on-device AI screen with both models ready" width="720" height="1600"></button><figcaption><b>On-device AI</b>Both models on the phone, ready</figcaption></figure>
-    <figure><button class="phone shot" data-zoom="static/site/app-approved.webp"><img loading="lazy" src="static/site/app-approved.webp" alt="Approved: the new DeskLess ID" width="720" height="1600"></button><figcaption><b>Approved</b>A DeskLess ID to sign in with</figcaption></figure>
-  </div>
-  <div class="wrap reel-acts">
-    <button class="round" id="reel-back" aria-label="Earlier screens"><svg><use href="#i-left"/></svg></button>
-    <button class="round" id="reel-on" aria-label="More screens"><svg><use href="#i-right"/></svg></button>
-  </div>
-</section>
-
-<!-- ============================================================ every kind of place -->
-<section id="places">
-  <div class="wrap">
-    <p class="kicker"><i class="tape"></i>Who it is for</p>
-    <h2>Anywhere a place is walked and written up.</h2>
-    <p class="intro">Pick what you are checking. The wording, the way the AI rates severity and the types of issue change with it. The steps never do: picture, voice, report.</p>
-    <div class="places">
-      <div class="reveal"><svg><use href="#i-cross"/></svg><b>Hospitals</b><span>Wards, corridors and plant rooms: safety, hygiene, equipment</span></div>
-      <div class="reveal"><svg><use href="#i-campus"/></svg><b>Colleges and schools</b><span>Classrooms, labs, hostels, canteens</span></div>
-      <div class="reveal"><svg><use href="#i-office"/></svg><b>Offices</b><span>Government and company: counters, records, access</span></div>
-      <div class="reveal"><svg><use href="#i-home"/></svg><b>Apartment blocks</b><span>Lifts, water, parking, common areas</span></div>
-      <div class="reveal"><svg><use href="#i-shop"/></svg><b>Malls and shops</b><span>Escalators, fire exits, food court hygiene</span></div>
-      <div class="reveal"><svg><use href="#i-build"/></svg><b>Construction</b><span>Projects of any size, fit-outs and handovers</span></div>
-      <div class="reveal"><svg><use href="#i-pill"/></svg><b>Pharmacies</b><span>Stock, storage and labelling audits</span></div>
-      <div class="reveal"><svg><use href="#i-people"/></svg><b>Neighbourhoods</b><span>Roads, water, waste and public safety, for the local office</span></div>
-    </div>
-  </div>
-</section>
-
 <!-- ============================================================ the office -->
-<section class="dark" id="office">
+<section id="office">
   <div class="wrap">
     <p class="kicker"><i class="tape"></i>The office</p>
-    <h2>A live console for every role.</h2>
-    <p class="intro">Found, given out, repaired, checked, closed. Each person sees their part of that, as it happens, in any browser. The pictures show a sample company.</p>
-
-    <div class="tabs" role="tablist" aria-label="Consoles">
-      <button role="tab" aria-selected="true" data-show="pane-md">Managing Director</button>
-      <button role="tab" aria-selected="false" data-show="pane-admin">Administrator</button>
-      <button role="tab" aria-selected="false" data-show="pane-issue">Manager</button>
-      <button role="tab" aria-selected="false" data-show="pane-tech">Technician</button>
-    </div>
-
-    <div class="panes">
-      <div class="pane" id="pane-md">
-        <button class="window shot" data-zoom="static/site/dash-md.webp"><span class="bar"><i></i><i></i><i></i><span>Console · Managing Director</span></span><img loading="lazy" src="static/site/dash-md-top.webp" alt="The managing director's console: what needs them first, the assistant's triage, who has room" width="1440" height="900"></button>
-        <p class="note">The whole company on one page: what needs you first, the assistant's ranking, which technician has room, what the numbers say. <b>Tap to see the whole console.</b></p>
-      </div>
-      <div class="pane" id="pane-admin" hidden>
-        <button class="window shot" data-zoom="static/site/dash-admin.webp"><span class="bar"><i></i><i></i><i></i><span>Control room · Administrator</span></span><img loading="lazy" src="static/site/dash-admin.webp" alt="The administrator's control room across all companies" width="1440" height="900"></button>
-        <p class="note">Every company, who is online, sign-ups waiting, and the health of the server. The administrator approves each new company and hands out no work.</p>
-      </div>
-      <div class="pane" id="pane-issue" hidden>
-        <button class="window shot" data-zoom="static/site/dash-issue.webp"><span class="bar"><i></i><i></i><i></i><span>An issue · Manager</span></span><img loading="lazy" src="static/site/dash-issue.webp" alt="An issue opened by a manager, with the assistant's brief, who could take it and the suggested next step" width="1440" height="900"></button>
-        <p class="note">Open an issue and the assistant has already ranked it, named who could take it and why, and proposed the next step as one button.</p>
-      </div>
-      <div class="pane narrow" id="pane-tech" hidden>
-        <button class="phone shot" data-zoom="static/site/dash-tech.webp"><img loading="lazy" src="static/site/dash-tech.webp" alt="The technician's console on a phone" width="780" height="1688"></button>
-        <p class="note">On a phone, in the browser: the technician's jobs, most pressing first. A repair is marked fixed with a photo, and the manager checks it against the first one.</p>
-      </div>
-    </div>
-
-    <div class="roles">
-      <div class="reveal"><b>Inspector</b><span>Walks, reports, and watches what happens to each issue.</span></div>
-      <div class="reveal"><b>Technician</b><span>Gets the job with its picture, repairs it, proves it with a photo.</span></div>
-      <div class="reveal"><b>Manager</b><span>Approves the team, gives issues out, checks repairs and closes them.</span></div>
-      <div class="reveal"><b>Managing Director</b><span>Sees every team side by side and where the risk is.</span></div>
-      <div class="reveal"><b>Administrator</b><span>Runs the platform: companies, accounts, the server.</span></div>
-    </div>
+    <h2>Nothing waits for someone to remember it.</h2>
+    <p class="intro">Found, given out, repaired, checked, closed. Each person sees their part of that as it happens, on their phone and in any browser.</p>
 
     <div class="assistant reveal">
       <div>
@@ -328,46 +490,121 @@
       <ul>
         <li><svg><use href="#i-rank"/></svg><span><b>Ranks</b> by severity, deadline, how long it has waited and what the note says</span></li>
         <li><svg><use href="#i-people"/></svg><span><b>Suggests</b> who has room, who knows the place, who is on time</span></li>
-        <li><svg><use href="#i-ask"/></svg><span><b>Passes on</b> an issue between roles with a note, and keeps the thread</span></li>
+        <li><svg><use href="#i-say"/></svg><span><b>Passes on</b> an issue between roles with a note, and keeps the thread</span></li>
         <li><svg><use href="#i-shield"/></svg><span><b>Follows up</b> on its own rounds; each company can switch that off</span></li>
       </ul>
+    </div>
+
+    <div class="linkage reveal">
+      <button class="window shot" data-zoom="static/site/dash-link.webp"><span class="bar"><i></i><i></i><i></i><span>Live linkage</span></span><img loading="lazy" src="static/site/dash-link.webp" alt="The live linkage page: nodes for the server, places and people, and a feed of what moves" width="1440" height="900"></button>
+      <div>
+        <svg><use href="#i-orbit"/></svg>
+        <h3>Watch it run.</h3>
+        <p>Live linkage draws the whole system in three dimensions as it works: the server, the assistant, each place and each person around it. Every report, question, hand-over and repair is a packet flying between them, within a second of the thing itself.</p>
+        <a class="btn ghost" href="linking">Open the live linkage<svg><use href="#i-arrow"/></svg></a>
+      </div>
+    </div>
+
+    <div class="roles">
+      <div class="reveal"><b>User</b><span>Lives, studies or works in the place. Says what is wrong and hears back.</span></div>
+      <div class="reveal"><b>Inspector</b><span>Walks, reports, and passes on what users send in.</span></div>
+      <div class="reveal"><b>Technician</b><span>Gets the job with its picture, repairs it, proves it with a photo.</span></div>
+      <div class="reveal"><b>Manager</b><span>Gives issues out, checks the repairs and closes them.</span></div>
+      <div class="reveal"><b>Managing Director</b><span>Sees every team side by side and where the risk is.</span></div>
+      <div class="reveal"><b>Administrator</b><span>Runs the platform: companies, accounts, the server.</span></div>
     </div>
   </div>
 </section>
 
+<!-- ============================================================ AI you can check -->
+<section class="paper" id="trust">
+  <div class="wrap trust-grid">
+    <div>
+      <p class="kicker"><i class="tape"></i>AI you can check</p>
+      <h2>The model words it. Plain code decides.</h2>
+      <p class="intro">A small model on a phone will sometimes be wrong. DeskLess is built so that being wrong cannot do damage.</p>
+      <div class="pains">
+        <div><b>Nothing made up</b><span>A name, a place or a date that nobody said is kept out of the report, and shown to you as kept out. Every field says where it came from.</span></div>
+        <div><b>Shown before it is done</b><span>A spoken instruction becomes a list of changes on the screen. Nothing changes until you tap Do it, and you can put it back.</span></div>
+        <div><b>An opinion, never a verdict</b><span>The picture check, the repair check and the review can each be overruled by the person on the spot, and the report says so.</span></div>
+        <div><b>Measured every time</b><span>Twenty fixed notes run through the same models on the phone after every change: fields right, anything made up, seconds, battery.</span></div>
+      </div>
+      <p class="private"><svg><use href="#i-shield"/></svg><span>Speech is turned into words on the phone, and the recording stays there. What is sent is the written entry with its pictures, and only to your organisation's own server.</span></p>
+    </div>
+    <div class="pair">
+      <figure><button class="phone shot" data-zoom="static/site/app-kept.webp"><img loading="lazy" src="static/site/app-kept.webp" alt="Kept out: the AI offered a name and a date that are not in the note" width="720" height="1600"></button><figcaption><b>Kept out</b>The AI offered a name nobody said</figcaption></figure>
+      <figure><button class="phone shot" data-zoom="static/site/app-measured.webp"><img loading="lazy" src="static/site/app-measured.webp" alt="Measured here: the share of fields right, seconds per note, anything made up" width="720" height="1600"></button><figcaption><b>Measured here</b>Our own test, run on the emulator</figcaption></figure>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================ features -->
+<section id="features">
+  <div class="wrap">
+    <p class="kicker"><i class="tape"></i>What is in the app</p>
+    <h2>More than a microphone and a form.</h2>
+    <div class="cards">
+      <article class="reveal"><svg><use href="#i-chip"/></svg><h4>AI that stays on the phone</h4><p>Whisper small and Gemma 4 E2B, both open models, run on the phone's own chip. No cloud call, no cost per report.</p></article>
+      <article class="reveal"><svg><use href="#i-lang"/></svg><h4>Speak the way you speak</h4><p>Hindi, English or the mix people really use, written down in English. Kannada, Tamil, Telugu, Marathi and Bengali can be chosen too and are still being tested.</p></article>
+      <article class="reveal"><svg><use href="#i-ask"/></svg><h4>The phone asks back</h4><p>When a note leaves out where, who or by when, the phone asks one question aloud, listens, and fills only those fields.</p></article>
+      <article class="reveal"><svg><use href="#i-say"/></svg><h4>Ask it, or tell it</h4><p>“What should be fixed first?” is answered from the walk. “Mark issue 3 high, give it to Suresh” is shown as changes, then done.</p></article>
+      <article class="reveal"><svg><use href="#i-eye"/></svg><h4>A second pair of eyes</h4><p>The model says what it sees in the picture and flags a note that does not fit it. A clip of up to 20 seconds works too.</p></article>
+      <article class="reveal"><svg><use href="#i-gauge"/></svg><h4>The phone as an instrument</h4><p>Level, noise and vibration at a tap; compass, light and steps stamped on every issue; NFC tags that name a place. A guide, not a calibrated meter.</p></article>
+      <article class="reveal"><svg><use href="#i-pin"/></svg><h4>Where, without a map service</h4><p>Each issue carries the phone's satellite position, and the map of the walk is drawn from those alone.</p></article>
+      <article class="reveal"><svg><use href="#i-shield"/></svg><h4>A review before it leaves</h4><p>Pictures, positions, the order of capture and the readings are checked against the words. The verdict is printed, and says it is not proof.</p></article>
+      <article class="reveal"><svg><use href="#i-finger"/></svg><h4>Signed by a person</h4><p>A key kept in the Android Keystore signs the finished PDF, and it works only with a fingerprint.</p></article>
+      <article class="reveal"><svg><use href="#i-memory"/></svg><h4>It learns your people and places</h4><p>A name heard a little wrong is spelt the way it is known, and known places are one tap away. No model involved: one small file on the phone.</p></article>
+      <article class="reveal"><svg><use href="#i-swap"/></svg><h4>Two apps, one system</h4><p><b>DeskLess</b> for the team that looks after a place, <b>DeskLess User</b> for the people who use it. Built from one code base.</p></article>
+      <article class="reveal"><svg><use href="#i-pill"/></svg><h4>Expiry dates, read</h4><p>In a medication audit the model reads the date printed on the pack and raises expired stock by itself.</p></article>
+    </div>
+  </div>
+</section>
+
+<!--if deck-->
 <!-- ============================================================ the deck -->
-<section id="deck">
+<section class="dark" id="deck">
   <div class="wrap">
     <p class="kicker"><i class="tape"></i>Pitch deck</p>
-    <h2>The idea, as we pitched it.</h2>
-    <p class="intro">Our concept deck for the Grand Finale, written on 4 October, before a line of the app existed. Everything else on this page was built in the 48 hours of the finale.</p>
+    <h2>The pitch, slide by slide.</h2>
+    <!--if concept--><p class="intro">Our concept deck for the Grand Finale, written on 4 October, before a line of the app existed. Everything else on this page was built in the 48 hours of the finale.</p><!--end concept-->
+    <!--if pitch--><p class="intro">The deck we take to the jury of the Grand Finale.</p><!--end pitch-->
 
-    <div class="deck reveal" id="deck-view" tabindex="0" aria-label="Pitch deck, eleven slides. Use the arrow keys.">
+    <div class="deck reveal" id="deck-view" tabindex="0" aria-label="Pitch deck, {{deck-count}} slides. Use the arrow keys.">
       <div class="stage">
-        <img id="slide" src="static/site/deck-01.webp" alt="Slide 1 of 11" width="1600" height="900">
+        <img id="slide" src="static/site/{{deck-first}}" alt="Slide 1 of {{deck-count}}" width="1600" height="900">
         <button class="round prev" id="deck-back" aria-label="Previous slide"><svg><use href="#i-left"/></svg></button>
         <button class="round next" id="deck-on" aria-label="Next slide"><svg><use href="#i-right"/></svg></button>
       </div>
       <div class="deck-foot">
-        <span id="deck-count">1 / 11</span>
-        <a class="btn ghost" href="static/site/DeskLess-Concept-Deck.pdf" download><svg><use href="#i-download"/></svg>Download the PDF</a>
+        <span id="deck-count">1 / {{deck-count}}</span>
+        <!--if deck-pdf--><a class="btn ghost" href="static/site/{{deck-pdf}}" download><svg><use href="#i-download"/></svg>Download the PDF</a><!--end deck-pdf-->
       </div>
       <div class="thumbs" id="thumbs">
-        <button aria-current="true" data-full="static/site/deck-01.webp"><img loading="lazy" src="static/site/deck-01-s.webp" alt="Slide 1: DeskLess" width="320" height="180"></button>
-        <button data-full="static/site/deck-02.webp"><img loading="lazy" src="static/site/deck-02-s.webp" alt="Slide 2: The problem" width="320" height="180"></button>
-        <button data-full="static/site/deck-03.webp"><img loading="lazy" src="static/site/deck-03-s.webp" alt="Slide 3: The gap" width="320" height="180"></button>
-        <button data-full="static/site/deck-04.webp"><img loading="lazy" src="static/site/deck-04-s.webp" alt="Slide 4: The solution" width="320" height="180"></button>
-        <button data-full="static/site/deck-05.webp"><img loading="lazy" src="static/site/deck-05-s.webp" alt="Slide 5: How it works, steps 1 and 2" width="320" height="180"></button>
-        <button data-full="static/site/deck-06.webp"><img loading="lazy" src="static/site/deck-06-s.webp" alt="Slide 6: How it works, steps 3 and 4" width="320" height="180"></button>
-        <button data-full="static/site/deck-07.webp"><img loading="lazy" src="static/site/deck-07-s.webp" alt="Slide 7: Technology" width="320" height="180"></button>
-        <button data-full="static/site/deck-08.webp"><img loading="lazy" src="static/site/deck-08-s.webp" alt="Slide 8: The output" width="320" height="180"></button>
-        <button data-full="static/site/deck-09.webp"><img loading="lazy" src="static/site/deck-09-s.webp" alt="Slide 9: Fit with the scoring rubric" width="320" height="180"></button>
-        <button data-full="static/site/deck-10.webp"><img loading="lazy" src="static/site/deck-10-s.webp" alt="Slide 10: The 48-hour build plan" width="320" height="180"></button>
-        <button data-full="static/site/deck-11.webp"><img loading="lazy" src="static/site/deck-11-s.webp" alt="Slide 11: Risks and mitigations" width="320" height="180"></button>
+{{deck-thumbs}}
       </div>
     </div>
   </div>
 </section>
+<!--end deck-->
+
+<!--if canvas-->
+<!-- ============================================================ the business model -->
+<section id="canvas">
+  <div class="wrap">
+    <p class="kicker"><i class="tape"></i>Business model</p>
+    <h2>How DeskLess becomes a business.</h2>
+    <p class="intro">The business model canvas: who it is for, what it gives them, how it reaches them, what it costs to run and how it earns. Tap a sheet to read it at full size.</p>
+    <div class="canvas reveal">
+      <button class="canvas-sheet shot" data-zoom="static/site/{{canvas}}"><img loading="lazy" src="static/site/{{canvas}}" alt="The DeskLess business model canvas"></button>
+{{canvas-more}}
+      <div class="deck-foot">
+        <span>Prices on it are indicative</span>
+        <!--if canvas-pdf--><a class="btn ghost" href="static/site/{{canvas-pdf}}" download><svg><use href="#i-download"/></svg>Download the PDF</a><!--end canvas-pdf-->
+      </div>
+    </div>
+  </div>
+</section>
+<!--end canvas-->
 
 <!-- ============================================================ under the hood -->
 <section class="paper" id="stack">
@@ -375,14 +612,14 @@
     <p class="kicker"><i class="tape"></i>Under the hood</p>
     <h2>Open models, one Android app, one command.</h2>
     <dl class="spec">
-      <div><dt>The app</dt><dd>Native Android: Kotlin, Jetpack Compose, CameraX</dd></div>
+      <div><dt>The app</dt><dd>Native Android: Kotlin, Jetpack Compose, CameraX. Two editions from one code base.</dd></div>
       <div><dt>Speech to English</dt><dd>Whisper small through sherpa-onnx, with Silero voice detection for long notes</dd></div>
-      <div><dt>Picture and note to entry</dt><dd>Gemma 4 E2B through LiteRT-LM, on the phone's GPU</dd></div>
-      <div><dt>Phone to phone</dt><dd>Google Nearby Connections; each report sealed with ECDH P-256 and AES-256-GCM</dd></div>
+      <div><dt>Words and picture to entry</dt><dd>Gemma 4 E2B through LiteRT-LM, on the phone's GPU, with plain code checking what it returns</dd></div>
+      <div><dt>Phone to phone</dt><dd>Google Nearby Connections; every report and voice message sealed with ECDH P-256 and AES-256-GCM</dd></div>
       <div><dt>The report</dt><dd>Android's own PDF writer; ECDSA signature from the Android Keystore</dd></div>
-      <div><dt>The server</dt><dd>FastAPI and PostgreSQL; dashboards in plain JavaScript, no build step</dd></div>
-      <div><dt>The assistant</dt><dd>Rules for rank and suggestions; Gemma 3 1B through llama.cpp, optional, for wording</dd></div>
-      <div><dt>Shipping it</dt><dd>Docker brings up everything with one command; GitHub Actions builds the app on every push</dd></div>
+      <div><dt>The server</dt><dd>FastAPI and PostgreSQL; consoles and the live linkage in plain JavaScript, no build step</dd></div>
+      <div><dt>The assistant</dt><dd>Rules for rank, routing and follow-up; Gemma 3 1B through llama.cpp, optional, for wording</dd></div>
+      <div><dt>Shipping it</dt><dd>Docker brings up everything with one command; GitHub Actions tests the server and builds both apps on every push</dd></div>
     </dl>
     <p class="source"><a class="btn dark" href="https://github.com/Shaik-Althaf-Techazsure/DeskLess_IQOO" rel="noopener">The code on GitHub<svg><use href="#i-arrow"/></svg></a><span>The Android app and the server were written during the finale, 9 to 11 October 2026.</span></p>
   </div>
@@ -392,16 +629,17 @@
 <section class="start" id="start">
   <div class="wrap">
     <p class="kicker"><i class="tape"></i>Get started</p>
-    <h2>Three steps to your dashboard.</h2>
+    <h2>Bring your place to DeskLess.</h2>
     <ol class="three">
-      <li class="reveal"><em>1</em><h4>Sign up</h4><p>As a managing director with your company's name, or with the team code of the person you will report to.</p></li>
+      <li class="reveal"><em>1</em><h4>Sign up</h4><p>As a managing director with your organisation's name, or with the team code of the person you will report to.</p></li>
       <li class="reveal"><em>2</em><h4>Confirm and wait</h4><p>Type the code sent to your email. The person above you approves the sign-up and you receive your DeskLess ID.</p></li>
-      <li class="reveal"><em>3</em><h4>Sign in</h4><p>With that ID and your password, here on the web and in the app on your phone.</p></li>
+      <li class="reveal"><em>3</em><h4>Sign in</h4><p>With that ID and your password, here on the web and in the app. Open your place to the people who use it whenever you are ready.</p></li>
     </ol>
     <div class="cta center">
       <a class="btn solid big" href="signup">Sign up<svg><use href="#i-arrow"/></svg></a>
       <a class="btn ghost big" href="dashboard">Sign in</a>
     </div>
+    <p class="under">Only want to report something? That is the DeskLess User app: a name, an email address and a code.</p>
   </div>
 </section>
 
@@ -412,7 +650,7 @@
   <div class="wrap foot">
     <div>
       <a class="brand" href="./"><span class="mark">DL</span><span class="name">DeskLess</span></a>
-      <p>Great ideas don't need desks.</p>
+      <p>Inspection reports, without the desk.<br>Great ideas don't need desks.</p>
     </div>
     <div>
       <b>Team techazsure</b>
@@ -424,7 +662,7 @@
     </div>
     <div>
       <b>Go to</b>
-      <p><a href="dashboard">Sign in</a> · <a href="signup">Sign up</a><br><a href="https://github.com/Shaik-Althaf-Techazsure/DeskLess_IQOO" rel="noopener">GitHub</a></p>
+      <p><a href="dashboard">Sign in</a> · <a href="signup">Sign up</a><br><a href="linking">Live linkage</a> · <a href="https://github.com/Shaik-Althaf-Techazsure/DeskLess_IQOO" rel="noopener">GitHub</a></p>
     </div>
   </div>
 </footer>

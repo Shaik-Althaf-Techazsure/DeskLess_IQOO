@@ -159,6 +159,13 @@ The work is split as everywhere else in DeskLess:
 
 **What comes back.** The sender's screen lists everything they sent with where each stands: "With Kavya Nair. Nobody has taken it up yet.", "Given to Imran Sheikh to put right, by 12 Oct.", "Repaired, checked and closed." An answer from the place, and each step, is said aloud when it comes, while the app is open; the phone looks every few seconds. The sender can add a word, typed or spoken, and it goes to whoever at the place wrote last. With no network, what was told and agreed waits on the phone and goes by itself when the network is back.
 
+**With no network, through a phone nearby.** The user's phone can be linked with a phone of the place (the yellow button at the top left; see [Linking phones](#linking-phones)). If there is no network when the person says "send it", the entry is handed to that phone over Bluetooth or Wi-Fi directly between the two, and that phone sends it to the place's server as soon as it has a network itself. The user's screen says where it is: "It is on Arjun Das's phone, to be sent on as soon as there is a network there."
+
+- **The phone in between only carries.** The user's phone signs the entry (HMAC-SHA256) with a key the server gives to that person's phone alone, at sign-in. The server works the signature out again before it takes anything in, so the phone that carries an entry cannot change a word of it or write one in somebody's name. A picture goes with it only if its fingerprint is in what was signed.
+- **It is sealed on the way**, like a report: only the phone it is for can open it, and a third phone may carry it sealed (see [Relay](#relay-through-other-phones-sealed)).
+- **It is taken once.** The entry also stays on the user's phone and goes by itself if that phone finds a network first. Whichever way it arrives, and if it arrives both ways, the place has one issue.
+- **A report can come the other way.** A report shared from a phone of the place to a user's phone arrives with no network and is listed on the user's first screen.
+
 **Two editions from one code.** Built as usual, the app is for an organisation's own people, and a user who signs in to it gets the user's screen. Built with `-PuserApp` it is **DeskLess User**: it carries that name on the phone, offers only the user's sign-up, shows only the user's screen, and tells an inspector or a manager who tries to sign in to use the other app. Both have one package name and one key, so a phone holds one of the two and installing one takes the place of the other. `docker compose up --build` makes both.
 
 **Three places to show it with.** On the server, `python -m app.demo` makes an apartment block, a college and an office park, each with a managing director, a manager, an inspector and a technician who are already approved, opens each to its users, and prints the twelve DeskLess IDs with the one password they share (see [On a real server](#on-a-real-server)). They are stand-ins and say so: their email addresses cannot receive mail and their Aadhaar numbers are from the range kept for testing.
@@ -247,7 +254,7 @@ Two phones running DeskLess can pass reports directly, with no network.
 
 A received report opens by itself if the phone is idle; if its owner is in the middle of capturing an issue, it waits in a "new report" card on the first screen. It arrives with its spreadsheet, calendar, task lists, review and signature, and the signature is checked again on the receiving phone.
 
-The QR code carries the phone's code and a secret. Each phone proves to the other that it knows the secret before anything is exchanged, so a phone that never saw the code is turned away. The transport is Google's Nearby Connections: Bluetooth to find the other phone, and Wi-Fi directly between the two when both have it on. Android asks once to allow nearby devices and location, and offers to switch Bluetooth on if it is off; no app is allowed to switch it on silently.
+The QR code carries the phone's code and a secret. Each phone proves to the other that it knows the secret before anything is exchanged, so a phone that never saw the code is turned away. The transport is Google's Nearby Connections: Bluetooth to find the other phone, and Wi-Fi directly between the two when both have it on. Android asks once to allow nearby devices and location. **Bluetooth and Wi-Fi come on as the app opens:** an app may not switch either on itself, but the part of Google Play services that runs the link does it for the link, with nobody asked. Where a phone does not let it, Android's own prompt for Bluetooth and then its Wi-Fi panel are shown after a few seconds, one tap each, and the side bar has a row for each. Wi-Fi does not have to be joined to any network: switched on, it lets the two phones move from Bluetooth, which is slow, to a direct link.
 
 ### Relay: through other phones, sealed
 
@@ -276,6 +283,7 @@ Phones exchange their public keys the first time they connect after linking, und
 - The test's own limits: its notes are in English, clearly worded, read by a synthetic voice, and carry no picture. It measures the models on clean input, not a person on a noisy site.
 - The accounts, the dashboards and the sending of reports on a real phone and a real server. They were tried with the Android emulator and the server in Docker on one computer: the sign-up form with a team code, sign-in, a report built on the emulator arriving on the manager's dashboard with its pictures, and the dashboards in a desktop browser at desktop and phone width. Email was sent only to the test mailbox.
 - Speed of the picture check on a video issue (three stills) on the phone.
+- **An entry handed from a user's phone to a phone of the place, on real phones.** On two Android emulators with the server in Docker stopped, so that neither could reach it: a typed sentence was worded by the model on the user's phone, "send it" found no server, and within seconds the entry was on the linked staff phone and the user's screen said so. With the server started again the staff phone sent it on 2 seconds after coming to the front, the server took it from that phone after checking the user's signature, and when the user's own phone then sent its copy the place still had one issue. With Bluetooth and Wi-Fi both switched off, opening the app had both on within ten seconds with no prompt, switched on by Google Play services for the link. Not yet tried: two real phones (in particular whether the iQOO 15's own Android lets Google Play services switch the radios on, or shows its prompt), a picture with the entry, and the distance it works over.
 - The walkie-talkie between real phones: how far it reaches, how quickly a message crosses on Bluetooth alone, how it sounds, and whether the phones' battery managers let the link run. Between two emulators a 3-second message (13 KB) arrived and was listed within seconds, and the sender's screen went to "heard".
 - A company's own report type through the model on the phone; it was made, fetched and shown on an emulator, and a new walk started with it by itself.
 - The report types other than the site inspection. On an emulator, one typed note was run through the model under the hospital round ("The oxygen cylinder in ward three is not chained to the wall" came back as *Oxygen cylinder unsecured in ward three*, type Medical gases and equipment, High). The others were tried on screen only, and none has been used on the phone or in a real place of its kind.
@@ -386,15 +394,38 @@ At each of these steps the dashboard's assistant has already read the issue: it 
 
 ### The home page
 
-The bare address of the server is its front door: http://localhost:8800 on this computer, `https://www.shaikalthaf.in/competitions/iqoo/` on our server. It says what DeskLess is and shows it: the four steps on the phone, a report the app built, the 90-second film, what is in the app, screens of the app, the kinds of place it is for, the consoles of each role, the pitch deck (slide by slide, and as a PDF) and what it is built with. **Sign in** in its top bar opens the dashboard; **Sign up** opens the same form as the app's, in the browser.
+The bare address of the server is its front door: http://localhost:8800 on this computer, `https://www.shaikalthaf.in/competitions/iqoo/` on our server. It is the page that sells the idea: what goes unreported in shared places and why, side by side with what DeskLess does about each point; the four steps from a spoken sentence to a checked repair; what happens with no network; the film; the twelve kinds of place it comes with, each with who uses it there and what it catches, and how a company adds its own; a form that says whether DeskLess fits what a visitor needs and emails them the brochure; the product screen by screen, for the people who use a place, for inspectors, for the team on My desk, with no network, and on the web; a report the app built; the assistant and the live linkage; how the AI is kept in check; the pitch deck; and what it is built with. **Sign in** in its top bar opens the dashboard; **Sign up** opens the same form as the app's, in the browser.
 
 | File | What it is |
 |---|---|
 | `server/app/static/home.html`, `home.css`, `home.js` | The page. Plain HTML, CSS and JavaScript; no build step, no fonts or scripts from anywhere else. |
+| `server/app/front.py` | Fills the page as it is served: a part whose file is missing is left out, the others are given their files. |
 | `server/app/static/signup.html`, `signup.css`, `signup.js` | Signing up in a browser: the form, the emailed code, the wait, the DeskLess ID. It uses the same `/api/signup` doors as the app. |
-| `server/app/static/site/` | What the page shows: `film.mp4` with its poster, the deck (`deck-01.webp` to `deck-11.webp`, small copies, and the PDF), screens of the app (`app-*.webp`), pages of a report (`report-*.webp`) and the consoles (`dash-*.webp`). Replace a file under the same name and the page shows the new one after the server is updated. |
+| `server/app/static/site/` | What the page shows: the film, the deck, screens of the app (`app-*`, `user-*`, `desk-*`, and `iqoo-*` from the iQOO 15), pages of a report (`report-*`) and the consoles (`dash-*`). Replace a file under the same name and the page shows the new one after the server is updated. |
 
-The screens of the app were captured on the Android emulator while it was being built, with its test pictures. The consoles show a sample company on a throwaway server. The film's screens are drawn. The deck is the concept deck from before the finale, without its team slide.
+**Parts that are finished later show by themselves.** The deck, the business model canvas and the film each have a place on the page that appears when its file is in `server/app/static/site/`, with its link in the menu, and is left out when it is not:
+
+| Put in the folder | The page then shows |
+|---|---|
+| `deck-01.webp`, `deck-02.webp`, ... (`.png` and `.jpg` do as well; `deck-01-s.webp` and so on are the small copies, when present) | The deck, slide by slide, however many slides there are |
+| A `.pdf` with "deck" in its name | The deck's download. With "concept" in its name it is introduced as the concept deck written before the build. |
+| `canvas.webp` (or `.png`, `.jpg`; `canvas-2.webp` and so on for more sheets) | A **Business model** section with the canvas, and its link in the menu |
+| A `.pdf` with "canvas" in its name | The canvas's download |
+| `film.mp4` with `film-poster.jpg` | The film, and the button to it at the top of the page |
+
+The screens of the app were captured on the iQOO 15 where they are marked so and otherwise on the Android emulator while it was being built, with its test pictures. The consoles show a sample company on a throwaway server. The film's screens are drawn. The deck in the folder is the one for the finale's jury (20 slides) and the canvas has three sheets: the business model canvas, the revenue model and the go-to-market. The prices on them are indicative.
+
+### Ask DeskLess: will it work for my place?
+
+A form on the home page for somebody who does not have DeskLess yet. They write what they need in their own words ("We run a housing society of 300 flats; complaints get lost in WhatsApp groups and nobody knows who is fixing the lift") and are answered at once and plainly: **yes**, **yes, with something to know first**, **partly**, or **no**, with what DeskLess would do for them, what it does only within a limit, and what it does not do at all. If it fits they can have the brochure emailed: the answer they were given, the home page, the film and the deck, and a button that opens WhatsApp to us with the first message written, for the price. We are emailed the enquiry, with their words, and answering that email writes to them.
+
+It follows the rule of the rest of DeskLess: **plain code decides, a model only words.**
+
+- **What decides** is `server/app/fit.py`: three lists a person can read. What the product does today (twenty-one points), what it does with a limit (other Indian languages, Android only, no SMS or WhatsApp messages, no ready-made link to other software, readings that are a guide), and what it is not for (payroll, billing, stock, visitors, bookings, cameras, medical records, selling, exams), each with the words people use for it. The verdict follows from which lists a request touches; a request that touches nothing DeskLess is for at its heart and asks for something on the last list is told no. Nothing is promised that is not on the first list.
+- **What words it**: the opening sentences are made by that code. Where a writing model runs beside the server (see [The assistant](#the-assistant)) it is asked to word them, only for a plain yes and only from the points already decided; its sentence is thrown away if it is too long, carries a price or an address, or names anything from the other two lists. The window says which of the two answered.
+- **What keeps it from being misused**: nobody is signed in, so every door is counted by the address it is asked from (twenty questions in ten minutes, four brochures an hour), one mailbox is written to once an hour, and the email repeats nothing the asker typed except a name stripped to letters, so the form cannot carry somebody's message to a third person. Each enquiry is kept in the table `enquiry`.
+
+The WhatsApp number is `CONTACT_WHATSAPP` in `.env` (digits with the country code); left out, it is the team's own. Enquiries go to `ADMIN_EMAIL`. With no mail server set, the page says so and hands over the links itself.
 
 ### The dashboards
 
@@ -608,6 +639,8 @@ It makes, once, an apartment block, a college and an office park, each with a ma
 | `GET /api/signup/invite` | Whose code this is: the company and the person the newcomer would report to |
 | `POST /api/signup/verify`, `/api/signup/resend` | Confirm the email address with the code; ask for a new code |
 | `GET /api/signup/status` | How a sign-up is doing and who is to decide it, for the phone or browser that made it |
+| `POST /api/fit` | From the home page's form: what somebody needs, answered yes, partly or no with the reasons, and a pass for the brochure |
+| `POST /api/fit/brochure` | Emails the brochure to the address given, with the answer and the WhatsApp link, and tells the team |
 | `POST /api/login`, `POST /api/admin/login` | Sign in: a person with their unique ID, the administrator with their email address |
 | `GET /api/me`, `/api/me/photo` | The signed-in person's details, with their company's own report types and its usual one; and their photo |
 | `POST /api/password/forgot`, `/api/password/verify`, `/api/password/reset` | A forgotten password: email a code, check it (which gives a pass for one change), set the new password |
@@ -627,6 +660,7 @@ It makes, once, an apartment block, a college and an office park, each with a ma
 | `GET /api/places` | The places that take what their users send in, and the kinds they are |
 | `GET /api/company/door`, `POST /api/company/door` | Whether the asker's company is open to its users and what kind of place it is; the managing director opens or shuts it |
 | `POST /api/requests`, `GET /api/requests` | A user sends in an issue, a report or a question, with a photo if they have one (multipart): it becomes an issue of the place and goes to one of its inspectors. Everything the user has sent, with where each stands, what was said, and a `mark` that changes when anything does |
+| `POST /api/requests/carried` | An entry a user's phone handed to a nearby phone when it had no network, posted by that phone and checked against the user's own signature (multipart) |
 | `POST /api/requests/{id}/say`, `/heard` | The user adds a word, which goes to whoever at the place wrote last; what the place wrote has been read out to them |
 | `POST /api/issues/{id}/fixed` | The technician marks it fixed, with a photo of the repair (multipart) |
 | `POST /api/issues/{id}/close`, `/reopen` | Accept a repair and close the issue; send it back |

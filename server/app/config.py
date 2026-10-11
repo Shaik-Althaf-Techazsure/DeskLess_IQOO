@@ -49,6 +49,8 @@ class Settings:
     untaken_minutes: int = 30
     escalate_minutes: int = 120
     unchecked_hours: int = 24
+    #: The WhatsApp number people are sent to for a price, as digits with the country code and nothing else.
+    contact_whatsapp: str = "918978716587"
 
     @property
     def base_path(self) -> str:
@@ -143,4 +145,5 @@ def settings() -> Settings:
         untaken_minutes=int(env.get("AUTOPILOT_UNTAKEN_MINUTES", "30")),
         escalate_minutes=int(env.get("AUTOPILOT_ESCALATE_MINUTES", "120")),
         unchecked_hours=int(env.get("AUTOPILOT_UNCHECKED_HOURS", "24")),
+        contact_whatsapp="".join(c for c in env.get("CONTACT_WHATSAPP", "") if c.isdigit()) or "918978716587",
     )

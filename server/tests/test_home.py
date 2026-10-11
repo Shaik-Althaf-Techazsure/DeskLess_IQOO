@@ -28,7 +28,7 @@ def test_everything_the_home_page_names_is_there(client):
         # Named by its mark, a file may be kept by the browser for good.
         assert "immutable" in answer.headers["cache-control"], address
     kinds = {client.get(f"{BASE}/{address}").headers["content-type"].split(";")[0] for address in named}
-    assert {"image/webp", "image/jpeg", "video/mp4", "application/pdf", "text/css", "text/javascript"} <= kinds
+    assert {"image/webp", "image/jpeg", "video/mp4", "text/css", "text/javascript"} <= kinds
 
 
 def test_the_film_is_sent_in_pieces(client):
@@ -66,3 +66,50 @@ def test_signing_up_in_a_browser(client, mailbox, admin):
 def test_the_sign_in_card_leads_back(client):
     page = client.get(BASE + "/dashboard").text
     assert 'href="./"' in page and 'href="signup"' in page
+
+
+def test_the_page_says_where_it_helps_and_shows_the_product(client):
+    page = client.get(BASE + "/").text
+    for part in ('id="why"', 'id="how"', 'id="places"', 'id="product"', 'id="film"', 'id="trust"'):
+        assert part in page, part
+    for place in ("Apartments", "Colleges", "Hospitals", "offices", "Malls", "Factories", "Warehouses", "Hotels", "Construction", "Pharmacies", "Neighbourhoods"):
+        assert place in page, place
+    # Whichever deck is in the folder is shown, and introduced as what it is; a canvas has its place
+    # and its link in the menu only once its file is there. (A new deck or a finished canvas is put in
+    # by adding files, so this test goes by the folder as it is.)
+    from app import front
+    from app.main import _site
+
+    has = front.held(_site()[0])
+    assert ('id="deck"' in page) == has["deck"] and ("concept deck" in page) == has["concept"]
+    assert ('id="canvas"' in page) == has["canvas"] and ('href="#canvas"' in page) == has["canvas"]
+    assert "<!--if" not in page and "<!--end" not in page
+
+
+def test_the_parts_that_come_later_show_when_their_files_are_there():
+    from app import front
+    from app.main import STATIC
+
+    page = (STATIC / "home.html").read_text(encoding="utf-8")
+    # Nothing but the film: no deck, no canvas, and nothing left over of their places.
+    bare = front.fill(page, {"film.mp4", "film-poster.jpg"})
+    assert 'id="film"' in bare and 'id="deck"' not in bare and 'id="canvas"' not in bare
+    assert "{{deck" not in bare and "{{canvas" not in bare and "<!--if" not in bare
+    assert 'id="film"' not in front.fill(page, {"film.mp4"})
+    # A new deck, as pictures in any of the three kinds, with its PDF: the slides in the order of their numbers.
+    names = {"deck-10.png", "deck-2.jpg", "deck-01.webp", "deck-01-s.webp", "DeskLess-Pitch-Deck.pdf", "notes.pdf"}
+    deck = front.fill(page, names)
+    assert 'src="static/site/deck-01.webp" alt="Slide 1 of 3"' in deck and "1 / 3" in deck
+    order = [deck.index(f'data-full="static/site/{name}"') for name in ("deck-01.webp", "deck-2.jpg", "deck-10.png")]
+    assert order == sorted(order)
+    # The small copy is used where there is one, the slide itself where there is none.
+    assert 'src="static/site/deck-01-s.webp" alt="Slide 1"' in deck and 'src="static/site/deck-2.jpg" alt="Slide 2"' in deck
+    assert 'href="static/site/DeskLess-Pitch-Deck.pdf" download' in deck
+    assert "concept deck" not in deck and "The deck we take to the jury" in deck
+    assert "Download the PDF" not in front.fill(page, {"deck-01.webp"})
+    # The business model canvas, when it is finished: its place on the page, its link in the menu, its PDF.
+    canvas = front.fill(page, {"canvas.png", "canvas-2.png", "DeskLess-Business-Model-Canvas.pdf"})
+    assert 'id="canvas"' in canvas and 'href="#canvas"' in canvas
+    assert 'data-zoom="static/site/canvas.png"' in canvas and 'data-zoom="static/site/canvas-2.png"' in canvas
+    assert 'href="static/site/DeskLess-Business-Model-Canvas.pdf" download' in canvas
+    assert 'id="deck"' not in canvas and "{{" not in canvas.replace("{{public}}", "")

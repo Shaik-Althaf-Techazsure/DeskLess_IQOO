@@ -77,8 +77,8 @@ def reachable() -> bool:
     return _state["ready"]
 
 
-def ask(prompt: str) -> str | None:
-    """One question to the model; its answer as text, or nothing when it did not answer."""
+def ask(prompt: str, seconds: float = ANSWER_SECONDS) -> str | None:
+    """One question to the model; its answer as text, or nothing when it did not answer within [seconds]."""
     config = settings()
     body = {
         "messages": [{"role": "user", "content": prompt}],
@@ -91,7 +91,7 @@ def ask(prompt: str) -> str | None:
         body["model"] = config.ai_model
     request = urllib.request.Request(config.ai_url + "/v1/chat/completions", data=json.dumps(body).encode(), headers={"Content-Type": "application/json"})
     try:
-        with urllib.request.urlopen(request, timeout=ANSWER_SECONDS) as answer:
+        with urllib.request.urlopen(request, timeout=seconds) as answer:
             return json.load(answer)["choices"][0]["message"]["content"]
     except (OSError, ValueError, KeyError, IndexError, TypeError) as error:
         log.warning("The writing model did not answer: %s", error)

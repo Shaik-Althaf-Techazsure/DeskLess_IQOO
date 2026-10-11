@@ -316,3 +316,28 @@ class Brief(Base):
     made_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
     #: How often the model has failed on this telling; after a few it is left to the built-in wording.
     tries: Mapped[int] = mapped_column(Integer, default=0)
+
+
+class Enquiry(Base):
+    """
+    What a visitor to the home page asked: whether DeskLess fits what they need. Kept with the answer they
+    were given, and with their email address once they ask for the brochure, so the team can follow it up.
+    """
+
+    __tablename__ = "enquiry"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_id)
+    asked_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+    #: Their own words.
+    text: Mapped[str] = mapped_column(Text, default="")
+    #: The kind of place found in them or chosen, by its key; and the verdict: yes, yes_but, partly, no, likely, unclear.
+    place: Mapped[str] = mapped_column(String(24), default="")
+    verdict: Mapped[str] = mapped_column(String(12), default="")
+    #: The answer as it was shown, as JSON, so the brochure's email says the same.
+    reply: Mapped[str] = mapped_column(Text, default="")
+    #: Filled when they ask for the brochure.
+    name: Mapped[str] = mapped_column(String(80), default="")
+    email: Mapped[str] = mapped_column(String(254), default="")
+    sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    #: A mark of where the question came from that cannot be read back, to tell one asker from another.
+    asker: Mapped[str] = mapped_column(String(32), default="")

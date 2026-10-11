@@ -1820,7 +1820,8 @@ function doorCard() {
       el("div", { class: "pairs" },
         el("div", {}, el("label", { text: "Kind of place" }), kind),
         el("div", {}, el("label", { text: door.open ? `${door.sent_in} sent in so far` : "Closed: your company is not shown to anyone" }), button)),
-      door.may_set ? null : el("p", { class: "hint", text: "Set by your managing director." }));
+      // Nothing is put in the place of the line when it is not wanted: the page would write "null" there.
+      ...(door.may_set ? [] : [el("p", { class: "hint", text: "Set by your managing director." })]));
   };
   get("/company/door").then(draw).catch((error) => box.replaceChildren(el("div", { class: "head" }, el("h4", { text: title })), el("p", { class: "hint", text: error.message })));
   return box;
