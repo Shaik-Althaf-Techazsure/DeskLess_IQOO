@@ -25,11 +25,11 @@ class Mailer:
     organisation's own mail server.
     """
 
-    def send(self, to: str, subject: str, text: str, html: str = "", reply_to: str = "") -> bool:
+    def send(self, to: str, subject: str, text: str, html: str = "", reply_to: str = "", files: tuple = ()) -> bool:
         """
         True when the email was handed to a mail server; False when there is none to hand it to. With
         [html] the email also carries a laid-out version for mail programs that show one; [reply_to] is
-        where an answer to it goes.
+        where an answer to it goes; [files] are PDFs sent with it, each a name and its bytes.
         """
         config = settings()
         if not config.smtp_host:
@@ -46,6 +46,8 @@ class Mailer:
             message["Reply-To"] = reply_to
         if html:
             message.add_alternative(html, subtype="html")
+        for name, data in files:
+            message.add_attachment(data, maintype="application", subtype="pdf", filename=name)
         try:
             if config.smtp_security == "ssl":
                 server = smtplib.SMTP_SSL(config.smtp_host, config.smtp_port, timeout=15)
@@ -168,22 +170,29 @@ def _points(told: dict) -> list[tuple[str, list[dict]]]:
         ("What DeskLess would do for you", "does"), ("What to know first", "limits"), ("What it does not do", "not"))]
 
 
-def brochure_email(name: str, told: dict, home: str, deck: str, whatsapp: str, contact: str, phone: str) -> tuple[str, str, str]:
+def brochure_email(name: str, told: dict, links: dict, contact: str, phone: str, attached: bool = False) -> tuple[str, str, str]:
     """
-    The brochure, for whoever asked on the home page whether DeskLess fits them: the answer they were given,
-    where the brochure, the film and the deck are, and a link straight to WhatsApp for the price. As
-    plain text and laid out. Nothing the asker typed is repeated in it except their name.
+    The email that brings the brochure to whoever asked on the home page whether DeskLess fits them: the
+    answer they were given, the brochure (attached when [attached], and to download), where to see it
+    live, and a link straight to WhatsApp for the price. As plain text and laid out. Nothing the asker
+    typed is repeated in it except their name. [links] has "site", "brochure", "deck" and "whatsapp";
+    "brochure" and "deck" are empty where there is no such file.
     """
+    home, brochure, deck, whatsapp = links["site"], links.get("brochure", ""), links.get("deck", ""), links["whatsapp"]
     place = told.get("place") or {}
     where = place.get("name", "your place")
     hello = f"Hello {name}," if name else "Hello,"
     subject = f"DeskLess for {where}: the brochure you asked for"
-    lines = [hello, "", f"Thank you for asking whether DeskLess fits {where}. Here is the answer you were given, and the brochure.", "",
+    sent_with = ("The brochure is attached to this email as a PDF." if attached and brochure else
+                 "The brochure is one tap away, below." if brochure else "Everything about DeskLess is one tap away, below.")
+    lines = [hello, "", f"Thank you for asking whether DeskLess fits {where}. Here is the answer you were given. {sent_with}", "",
              told["headline"], told["summary"], ""]
     for heading, points in _points(told):
         if points:
             lines += [heading + ":"] + [f"  - {point['says']}" for point in points] + [""]
-    lines += [f"The brochure: {home}", f"The film, two minutes: {home}#film"]
+    if brochure:
+        lines.append(f"The brochure (PDF, 6 pages): {brochure}")
+    lines += [f"See it live: {home}", f"The film, two minutes: {home}#film"]
     if deck:
         lines.append(f"The pitch deck (PDF): {deck}")
     lines += ["", "For pricing, message us on WhatsApp and we will answer with a price for your place:", whatsapp, "",
@@ -196,7 +205,7 @@ def brochure_email(name: str, told: dict, home: str, deck: str, whatsapp: str, c
         + "".join(f'<p style="margin:0 0 8px;padding-left:14px;border-left:3px solid {colour};line-height:1.5">{escape(point["says"])}</p>' for point in points)
         for (heading, points), colour in zip(_points(told), ("#16a34a", "#f59e0b", "#dc2626")) if points
     )
-    more = f'<a href="{escape(home)}#film" style="color:#16181d">The film, two minutes</a>' + (
+    more = f'<a href="{escape(home)}" style="color:#16181d">See it live</a> &nbsp;·&nbsp; <a href="{escape(home)}#film" style="color:#16181d">The film, two minutes</a>' + (
         f' &nbsp;·&nbsp; <a href="{escape(deck)}" style="color:#16181d">The pitch deck (PDF)</a>' if deck else "")
     html = f"""<!doctype html>
 <html lang="en"><body style="margin:0;padding:0;background:#f1eee6;font-family:'Segoe UI',Roboto,Arial,sans-serif;color:#16181d;font-size:16px">
@@ -209,11 +218,11 @@ def brochure_email(name: str, told: dict, home: str, deck: str, whatsapp: str, c
 <tr><td style="height:6px;line-height:6px;font-size:0;background:#ffc31f">&nbsp;</td></tr>
 <tr><td style="padding:28px">
 <p style="margin:0 0 14px">{escape(hello)}</p>
-<p style="margin:0 0 20px;line-height:1.55">Thank you for asking whether DeskLess fits {escape(where)}. Here is the answer you were given, and the brochure.</p>
+<p style="margin:0 0 20px;line-height:1.55">Thank you for asking whether DeskLess fits {escape(where)}. Here is the answer you were given. <b>{escape(sent_with)}</b></p>
 <p style="margin:0 0 8px;font-size:20px;font-weight:700;line-height:1.3">{escape(told["headline"])}</p>
 <p style="margin:0;line-height:1.55;color:#374151">{escape(told["summary"])}</p>
 {blocks}
-<p style="margin:28px 0 12px"><a href="{escape(home)}" style="display:inline-block;background:#ffc31f;color:#0f1115;font-weight:700;text-decoration:none;padding:14px 24px;border-radius:10px">Open the brochure</a></p>
+<p style="margin:28px 0 12px"><a href="{escape(brochure or home)}" style="display:inline-block;background:#ffc31f;color:#0f1115;font-weight:700;text-decoration:none;padding:14px 24px;border-radius:10px">{"Download the brochure (PDF)" if brochure else "See DeskLess live"}</a></p>
 <p style="margin:0 0 26px;font-size:14px;color:#4b5563">{more}</p>
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#ecfdf3;border:1px solid #bbf7d0;border-radius:12px"><tr><td style="padding:20px 22px">
 <p style="margin:0 0 6px;font-weight:700;font-size:17px">Pricing</p>

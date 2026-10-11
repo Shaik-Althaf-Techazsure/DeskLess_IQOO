@@ -248,11 +248,13 @@ if (fitForm) {
       const sent = await say("api/fit/brochure", { ticket: told.ticket, email, name: $("#fit-name").value });
       $("#fit-sent-line").textContent = sent.sent ? "Sent. Look in your inbox." : "Here it is.";
       $("#fit-sent-more").textContent = sent.sent
-        ? `The brochure is on its way to ${sent.email}, with the answer above and a link to us on WhatsApp for the price. If it is not there in a minute, look in the spam folder.`
-        : "This server has no mail service just now, so the brochure is this page itself; the price is one message away on WhatsApp.";
-      const deck = $("#fit-deck");
-      deck.hidden = !sent.deck;
-      if (sent.deck) deck.href = sent.deck;
+        ? `The brochure is on its way to ${sent.email}${sent.attached ? " as a PDF" : ""}, with the answer above and a link to us on WhatsApp for the price. If it is not there in a minute, look in the spam folder.`
+        : "This server has no mail service just now, so take the brochure from here; the price is one message away on WhatsApp.";
+      // The brochure and the deck are offered here too, where the server has them.
+      for (const [button, address] of [["#fit-brochure", sent.brochure], ["#fit-deck", sent.deck]]) {
+        $(button).hidden = !address;
+        if (address) $(button).href = address;
+      }
       $("#fit-wa-2").href = sent.whatsapp;
       $("#fit-mail").hidden = $("#fit-next").hidden = true;
       $("#fit-sent").hidden = false;

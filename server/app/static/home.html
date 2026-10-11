@@ -264,7 +264,7 @@
     <div>
       <p class="kicker"><i class="tape"></i>Ask DeskLess</p>
       <h2>Will it work for your place?</h2>
-      <p class="intro">Write what you need in your own words. The DeskLess assistant reads it against what the product really does today and answers plainly: yes, partly, or no. Then it can email you the brochure.</p>
+      <p class="intro">Write what you need in your own words. The DeskLess assistant reads it against what the product really does today and answers plainly: yes, partly, or no. Then it emails you the brochure, as a PDF.</p>
       <ul class="ticks">
         <li><svg><use href="#i-check"/></svg><span><b>A straight answer.</b> It tells you what DeskLess does not do as readily as what it does.</span></li>
         <li><svg><use href="#i-check"/></svg><span><b>Nothing to install, no account.</b> One box, a few seconds.</span></li>
@@ -330,6 +330,7 @@
           <p class="verdict good" id="fit-sent-line"></p>
           <p class="summary" id="fit-sent-more"></p>
           <div class="helper-acts">
+            <a class="btn solid" id="fit-brochure" download hidden><svg><use href="#i-download"/></svg>Download the brochure</a>
             <a class="btn wa" id="fit-wa-2" target="_blank" rel="noopener">Ask for pricing on WhatsApp</a>
             <a class="btn ghost" id="fit-deck" hidden>The pitch deck (PDF)</a>
             <button class="btn ghost" id="fit-again">Ask something else</button>
@@ -662,7 +663,7 @@
     </div>
     <div>
       <b>Go to</b>
-      <p><a href="dashboard">Sign in</a> · <a href="signup">Sign up</a><br><a href="linking">Live linkage</a> · <a href="https://github.com/Shaik-Althaf-Techazsure/DeskLess_IQOO" rel="noopener">GitHub</a></p>
+      <p><a href="dashboard">Sign in</a> · <a href="signup">Sign up</a><br><a href="linking">Live linkage</a> · <a href="https://github.com/Shaik-Althaf-Techazsure/DeskLess_IQOO" rel="noopener">GitHub</a><!--if brochure--><br><a href="static/site/{{brochure}}" download>Brochure (PDF)</a><!--end brochure--></p>
     </div>
   </div>
 </footer>

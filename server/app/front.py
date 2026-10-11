@@ -11,6 +11,7 @@ a finished canvas is put on the page by putting the file in the folder.
   canvas.webp (or .png, .jpg)       the business model canvas; canvas-2.webp and so on for more sheets
   any .pdf with "canvas" in its name  the canvas to download
   film.mp4 with film-poster.jpg     the film
+  any .pdf with "brochure" in its name  the brochure: the form's email attaches it, and the page offers it
 """
 
 import re
@@ -43,14 +44,14 @@ def _pdf(names, word: str) -> str:
 def papers() -> dict:
     """The deck and the canvas to download, by the names they have in the folder now; empty where there is none."""
     names = {file.name for file in SITE.iterdir()} if SITE.is_dir() else set()
-    return {"deck": _pdf(names, "deck"), "canvas": _pdf(names, "canvas")}
+    return {"deck": _pdf(names, "deck"), "canvas": _pdf(names, "canvas"), "brochure": _pdf(names, "brochure")}
 
 
 def held(names) -> dict:
     """Which of the page's later parts are there, and the words that go into their places."""
     slides = _numbered(names, _SLIDE)
     sheets = _numbered(names, _SHEET)
-    deck_pdf, canvas_pdf = _pdf(names, "deck"), _pdf(names, "canvas")
+    deck_pdf, canvas_pdf, brochure = _pdf(names, "deck"), _pdf(names, "canvas"), _pdf(names, "brochure")
     concept = bool(slides) and "concept" in deck_pdf.lower()
     first = ' aria-current="true"'
     thumbs = "\n".join(
@@ -71,6 +72,7 @@ def held(names) -> dict:
         "canvas": bool(sheets),
         "canvas-pdf": bool(sheets and canvas_pdf),
         "film": "film.mp4" in names and "film-poster.jpg" in names,
+        "brochure": bool(brochure),
         "words": {
             "deck-first": slides[0] if slides else "",
             "deck-count": str(len(slides)),
@@ -79,6 +81,7 @@ def held(names) -> dict:
             "canvas": sheets[0] if sheets else "",
             "canvas-more": more,
             "canvas-pdf": canvas_pdf,
+            "brochure": brochure,
         },
     }
 

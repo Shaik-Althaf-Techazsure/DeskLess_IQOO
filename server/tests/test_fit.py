@@ -2,16 +2,26 @@
 
 import pytest
 
-from app import fit, writer
+from app import fit, front, writer
 from app.routers import enquiry
 
 BASE = "/competitions/IQOO"
+HOME = "https://site.example.test/competitions/IQOO/"
 SOCIETY = "We run a 300 flat housing society and complaints get lost in WhatsApp groups. Nobody knows who is fixing the lift."
 
 
 @pytest.fixture(autouse=True)
 def nothing_counted_yet():
     enquiry._counted.clear()
+
+
+@pytest.fixture
+def brochure(tmp_path, monkeypatch):
+    """A folder of the home page's files that holds a brochure and a deck, whatever the real one holds today."""
+    (tmp_path / "DeskLess-Brochure.pdf").write_bytes(b"%PDF-1.4\n% the brochure\n%%EOF\n")
+    (tmp_path / "DeskLess-Pitch-Deck.pdf").write_bytes(b"%PDF-1.4\n% the deck\n%%EOF\n")
+    monkeypatch.setattr(front, "SITE", tmp_path)
+    return tmp_path
 
 
 def test_a_need_it_meets_is_told_yes_with_the_reasons():
@@ -77,7 +87,7 @@ def test_the_model_only_words_and_is_checked(monkeypatch):
     assert fit.answer("We need payroll and attendance for our staff")["verdict"] == "no"
 
 
-def test_asking_and_then_having_the_brochure_sent(client, mailbox):
+def test_asking_and_then_having_the_brochure_sent(client, mailbox, brochure):
     assert client.post(BASE + "/api/fit", json={"text": "hi"}).status_code == 422
     assert client.post(BASE + "/api/fit", json={"text": "x" * 1600}).status_code == 422
     told = client.post(BASE + "/api/fit", json={"text": SOCIETY}).json()
@@ -87,23 +97,46 @@ def test_asking_and_then_having_the_brochure_sent(client, mailbox):
     assert client.post(BASE + "/api/fit/brochure", json={"ticket": told["ticket"], "email": "not an address"}).status_code == 422
     assert client.post(BASE + "/api/fit/brochure", json={"ticket": "made-up", "email": "dev@example.test"}).status_code == 400
     sent = client.post(BASE + "/api/fit/brochure", json={"ticket": told["ticket"], "email": " Dev@Example.test ", "name": "Dev <b>Rao</b>"}).json()
-    assert sent["sent"] is True and sent["email"] == "dev@example.test"
-    assert sent["brochure"] == "https://site.example.test/competitions/IQOO/" and sent["whatsapp"] == told["whatsapp"]
+    assert sent["sent"] is True and sent["attached"] is True and sent["email"] == "dev@example.test"
+    assert sent["site"] == HOME and sent["whatsapp"] == told["whatsapp"]
+    assert sent["brochure"] == HOME + "static/site/DeskLess-Brochure.pdf" and sent["deck"] == HOME + "static/site/DeskLess-Pitch-Deck.pdf"
 
     subject, text = mailbox.last_to("dev@example.test")
     assert subject == "DeskLess for an apartment block or housing society: the brochure you asked for"
     assert "Hello Dev b Rao b," in text and "Yes. DeskLess does this today." in text
-    assert "https://site.example.test/competitions/IQOO/" in text and told["whatsapp"] in text
+    assert "The brochure is attached to this email as a PDF." in text and sent["brochure"] in text
+    assert f"See it live: {HOME}" in text and told["whatsapp"] in text
+    # The brochure itself travels with the email, under a plain name.
+    assert mailbox.files["dev@example.test"] == (("DeskLess-Brochure.pdf", b"%PDF-1.4\n% the brochure\n%%EOF\n"),)
     # Nothing the asker typed is repeated to that address: the form cannot carry somebody's message.
     assert "300 flat" not in text and "lift" not in text
     laid_out = mailbox.laid_out["dev@example.test"]
-    assert "Ask for pricing on WhatsApp" in laid_out and "Open the brochure" in laid_out and "<b>Rao" not in laid_out
+    assert "Ask for pricing on WhatsApp" in laid_out and "Download the brochure (PDF)" in laid_out and "<b>Rao" not in laid_out
+    assert f'href="{sent["brochure"]}"' in laid_out and "attached to this email" in laid_out
     assert told["whatsapp"].replace("&", "&amp;") in laid_out and "300 flat" not in laid_out
     assert mailbox.reply_to["dev@example.test"] == "admin@example.test"
     # The team is told, with the words and the address, and an answer to that email goes to the asker.
     subject, text = mailbox.last_to("admin@example.test")
     assert "dev@example.test" in subject and "300 flat housing society" in text and "Dev b Rao b" in text
-    assert mailbox.reply_to["admin@example.test"] == "dev@example.test"
+    assert mailbox.reply_to["admin@example.test"] == "dev@example.test" and not mailbox.files["admin@example.test"]
+
+
+def test_without_a_brochure_in_the_folder_the_email_leads_to_the_page(client, mailbox, tmp_path, monkeypatch):
+    monkeypatch.setattr(front, "SITE", tmp_path)   # an empty folder: no brochure has been made yet
+    told = client.post(BASE + "/api/fit", json={"text": SOCIETY}).json()
+    sent = client.post(BASE + "/api/fit/brochure", json={"ticket": told["ticket"], "email": "dev@example.test"}).json()
+    assert sent["sent"] is True and sent["attached"] is False and sent["brochure"] == "" and sent["deck"] == "" and sent["site"] == HOME
+    text = mailbox.last_to("dev@example.test")[1]
+    assert "attached" not in text and "The brochure (PDF" not in text and f"See it live: {HOME}" in text
+    assert "See DeskLess live" in mailbox.laid_out["dev@example.test"] and not mailbox.files["dev@example.test"]
+
+
+def test_a_brochure_too_large_to_be_welcome_is_linked_not_attached(client, mailbox, brochure, monkeypatch):
+    monkeypatch.setattr(enquiry, "MAX_ATTACHED", 10)
+    told = client.post(BASE + "/api/fit", json={"text": SOCIETY}).json()
+    sent = client.post(BASE + "/api/fit/brochure", json={"ticket": told["ticket"], "email": "dev@example.test"}).json()
+    assert sent["attached"] is False and sent["brochure"].endswith("DeskLess-Brochure.pdf")
+    assert not mailbox.files["dev@example.test"] and "The brochure is one tap away" in mailbox.last_to("dev@example.test")[1]
 
 
 def test_the_form_cannot_be_used_to_flood_a_mailbox(client, mailbox, monkeypatch):
@@ -132,11 +165,15 @@ def test_with_no_mail_server_the_page_is_handed_the_links(client):
     client.app.state.mailer = Mailer()   # the real one: the tests set no mail server
     told = client.post("/api/fit", json={"text": SOCIETY}).json()
     handed = client.post("/api/fit/brochure", json={"ticket": told["ticket"], "email": "dev@example.test"}).json()
-    assert handed["sent"] is False and handed["brochure"].endswith("/competitions/IQOO/") and handed["whatsapp"] == told["whatsapp"]
+    assert handed["sent"] is False and handed["attached"] is False and handed["site"] == HOME and handed["whatsapp"] == told["whatsapp"]
+    # The page then offers the brochure itself, where there is one in the folder.
+    assert handed["brochure"] == (HOME + "static/site/" + front.papers()["brochure"] if front.papers()["brochure"] else "")
 
 
 def test_the_home_page_has_the_form(client):
     page = client.get(BASE + "/").text
-    assert 'id="ask"' in page and 'href="#ask"' in page and 'id="fit-text"' in page
+    assert 'id="ask"' in page and 'href="#ask"' in page and 'id="fit-text"' in page and 'id="fit-brochure"' in page
+    # The brochure is offered at the foot of the page when it is in the folder, and not named when it is not.
+    assert ("Brochure (PDF)" in page) == bool(front.papers()["brochure"]) and "{{brochure}}" not in page
     script = client.get(BASE + "/static/home.js").text
     assert '"api/fit"' in script and '"api/fit/brochure"' in script and 'fetch("/' not in script

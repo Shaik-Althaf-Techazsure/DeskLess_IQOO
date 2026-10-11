@@ -412,12 +412,13 @@ The bare address of the server is its front door: http://localhost:8800 on this 
 | `canvas.webp` (or `.png`, `.jpg`; `canvas-2.webp` and so on for more sheets) | A **Business model** section with the canvas, and its link in the menu |
 | A `.pdf` with "canvas" in its name | The canvas's download |
 | `film.mp4` with `film-poster.jpg` | The film, and the button to it at the top of the page |
+| A `.pdf` with "brochure" in its name | The brochure: attached to the email the form sends (up to 8 MB; larger, it is linked), offered on the page once that email is asked for, and at the foot of the page |
 
 The screens of the app were captured on the iQOO 15 where they are marked so and otherwise on the Android emulator while it was being built, with its test pictures. The consoles show a sample company on a throwaway server. The film's screens are drawn. The deck in the folder is the one for the finale's jury (20 slides) and the canvas has three sheets: the business model canvas, the revenue model and the go-to-market. The prices on them are indicative.
 
 ### Ask DeskLess: will it work for my place?
 
-A form on the home page for somebody who does not have DeskLess yet. They write what they need in their own words ("We run a housing society of 300 flats; complaints get lost in WhatsApp groups and nobody knows who is fixing the lift") and are answered at once and plainly: **yes**, **yes, with something to know first**, **partly**, or **no**, with what DeskLess would do for them, what it does only within a limit, and what it does not do at all. If it fits they can have the brochure emailed: the answer they were given, the home page, the film and the deck, and a button that opens WhatsApp to us with the first message written, for the price. We are emailed the enquiry, with their words, and answering that email writes to them.
+A form on the home page for somebody who does not have DeskLess yet. They write what they need in their own words ("We run a housing society of 300 flats; complaints get lost in WhatsApp groups and nobody knows who is fixing the lift") and are answered at once and plainly: **yes**, **yes, with something to know first**, **partly**, or **no**, with what DeskLess would do for them, what it does only within a limit, and what it does not do at all. If it fits they can have the brochure emailed. The brochure is a six-page PDF (`server/app/static/site/DeskLess-Brochure.pdf`: the problem, the four steps, the kinds of place, the product in pictures, how the AI is kept in check, and a last page with a WhatsApp button and QR codes), and it is attached to the email itself. The email also carries the answer they were given, a button to download the brochure, links to the live page, the film and the deck, and a button that opens WhatsApp to us with the first message written, for the price. We are emailed the enquiry, with their words, and answering that email writes to them.
 
 It follows the rule of the rest of DeskLess: **plain code decides, a model only words.**
 
@@ -640,7 +641,7 @@ It makes, once, an apartment block, a college and an office park, each with a ma
 | `POST /api/signup/verify`, `/api/signup/resend` | Confirm the email address with the code; ask for a new code |
 | `GET /api/signup/status` | How a sign-up is doing and who is to decide it, for the phone or browser that made it |
 | `POST /api/fit` | From the home page's form: what somebody needs, answered yes, partly or no with the reasons, and a pass for the brochure |
-| `POST /api/fit/brochure` | Emails the brochure to the address given, with the answer and the WhatsApp link, and tells the team |
+| `POST /api/fit/brochure` | Emails the brochure (the PDF, attached) to the address given, with the answer and the WhatsApp link, and tells the team |
 | `POST /api/login`, `POST /api/admin/login` | Sign in: a person with their unique ID, the administrator with their email address |
 | `GET /api/me`, `/api/me/photo` | The signed-in person's details, with their company's own report types and its usual one; and their photo |
 | `POST /api/password/forgot`, `/api/password/verify`, `/api/password/reset` | A forgotten password: email a code, check it (which gives a pass for one change), set the new password |

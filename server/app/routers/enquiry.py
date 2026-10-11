@@ -1,7 +1,7 @@
 """
 The form on the home page: somebody who does not have DeskLess yet writes what they need, is told plainly
-whether it fits (`app/fit.py` decides), and may then have the brochure emailed, with a link straight to
-WhatsApp for the price. Nobody is signed in here, so every door is counted: how often one address may
+whether it fits (`app/fit.py` decides), and may then have the brochure emailed: the PDF itself, attached,
+with a link straight to WhatsApp for the price. Nobody is signed in here, so every door is counted: how often one address may
 ask, how many brochures it may have sent, and how often one mailbox may be written to. The email carries
 nothing the asker typed except a name, so the form cannot be used to send somebody else a message.
 """
@@ -32,6 +32,8 @@ SENDS, SENDS_SECONDS = 4, 3600
 SAME_MAILBOX_SECONDS = 3600
 A_DAY, DAY_SECONDS = 300, 86400
 TICKET_HOURS = 6
+#: A brochure larger than this is linked to, not attached.
+MAX_ATTACHED = 8 * 1024 * 1024
 
 _counted: dict[str, list[float]] = {}
 
@@ -119,16 +121,21 @@ def send_brochure(body: Wanted, request: Request, db: Session = Depends(get_db),
     name = " ".join(re.sub(r"[^\w .'-]", " ", body.name).replace("_", " ").split())[:60]
     told = json.loads(asked.reply)
     home = _home(request)
-    deck = front.papers()["deck"]
-    links = {"brochure": home, "deck": f"{home}static/site/{deck}" if deck else "", "whatsapp": _whatsapp(told)}
+    papers = front.papers()
+    at = lambda name: f"{home}static/site/{name}" if name else ""
+    links = {"site": home, "brochure": at(papers["brochure"]), "deck": at(papers["deck"]), "whatsapp": _whatsapp(told)}
+    # The brochure itself travels with the email, where it is in the folder and small enough to be welcome.
+    files = ()
+    if papers["brochure"] and (front.SITE / papers["brochure"]).stat().st_size <= MAX_ATTACHED:
+        files = (("DeskLess-Brochure.pdf", (front.SITE / papers["brochure"]).read_bytes()),)
     if not _allowed("mailbox:" + email, 1, SAME_MAILBOX_SECONDS):
         raise HTTPException(429, "The brochure was sent to that address a little while ago. Look in the inbox, and in the spam folder.")
     if not _allowed("send:" + _address(request), SENDS, SENDS_SECONDS) or not _allowed("all", A_DAY, DAY_SECONDS):
         raise HTTPException(429, "Too many brochures have been asked for from here just now. Try again later, or message us on WhatsApp.")
     config = settings()
-    subject, text, html = mailer.brochure_email(name, told, home, links["deck"], links["whatsapp"], config.admin_email, _phone())
+    subject, text, html = mailer.brochure_email(name, told, links, config.admin_email, _phone(), attached=bool(files))
     try:
-        sent = post.send(email, subject, text, html=html, reply_to=config.admin_email) is not False
+        sent = post.send(email, subject, text, html=html, reply_to=config.admin_email, files=files) is not False
     except mailer.MailError:
         sent = False
     if sent:
@@ -140,4 +147,4 @@ def send_brochure(body: Wanted, request: Request, db: Session = Depends(get_db),
         except mailer.MailError:
             pass
     # With no mail server, or one that refused, the page hands over the same links itself.
-    return links | {"sent": sent, "email": email}
+    return links | {"sent": sent, "email": email, "attached": bool(files) and sent}

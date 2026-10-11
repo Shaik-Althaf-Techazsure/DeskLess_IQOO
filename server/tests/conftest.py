@@ -46,10 +46,12 @@ class Mailbox:
         #: The laid-out version and the reply address of the newest email to each address, where it had them.
         self.laid_out: dict[str, str] = {}
         self.reply_to: dict[str, str] = {}
+        #: The files that came with it: each a name and its bytes.
+        self.files: dict[str, tuple] = {}
 
-    def send(self, to: str, subject: str, text: str, html: str = "", reply_to: str = "") -> None:
+    def send(self, to: str, subject: str, text: str, html: str = "", reply_to: str = "", files: tuple = ()) -> None:
         self.sent.append((to, subject, text))
-        self.laid_out[to], self.reply_to[to] = html, reply_to
+        self.laid_out[to], self.reply_to[to], self.files[to] = html, reply_to, files
 
     def last_to(self, to: str) -> tuple[str, str]:
         return next((subject, text) for address, subject, text in reversed(self.sent) if address == to)
