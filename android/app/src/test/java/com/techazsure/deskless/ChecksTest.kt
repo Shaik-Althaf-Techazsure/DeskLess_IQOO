@@ -46,6 +46,18 @@ class ChecksTest {
     }
 
     @Test
+    fun severalIdsCanBeTypedOneAfterAnother() {
+        assertEquals(listOf("DL-INS-0001"), Checks.ids(" dl-ins-0001 "))
+        // Spaces, commas and new lines all set them apart; one typed twice is taken once, in the order typed.
+        assertEquals(
+            listOf("DL-MGR-0001", "DL-INS-0001", "DL-TEC-0001"),
+            Checks.ids("DL-MGR-0001, dl-ins-0001\nDL-TEC-0001  DL-MGR-0001"),
+        )
+        assertTrue(Checks.ids("").isEmpty())
+        assertTrue(Checks.ids(" , - ").isEmpty())
+    }
+
+    @Test
     fun mobileNumbersAndEmailAddresses() {
         assertTrue(Checks.mobile("9876543210"))
         assertTrue(Checks.mobile("+919876543210"))

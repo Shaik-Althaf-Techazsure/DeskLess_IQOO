@@ -184,7 +184,8 @@ class MainActivity : ComponentActivity() {
      * A test build can be handed a tag from a computer, since an emulator has no NFC:
      * `adb shell am start -n com.techazsure.deskless/.MainActivity --es tag 04A1B2C3`.
      * In the same way `--es answer "Ravi, by Friday"` answers the question the phone is asking aloud,
-     * since an emulator has no voice.
+     * since an emulator has no voice, and `--es people "DL-MGR-0001 DL-INS-0001"` opens the sign-in form
+     * with those IDs in it, for a phone a team shares: the password is still typed on the phone.
      */
     private fun simulatedTag(intent: Intent?) {
         if (applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE == 0) return
@@ -192,6 +193,11 @@ class MainActivity : ComponentActivity() {
         intent?.getStringExtra("answer")?.takeIf { it.isNotBlank() }?.let {
             state.pretendAnswer(it)
             state.user.pretend(it)
+        }
+        intent?.getStringExtra("people")?.takeIf { it.isNotBlank() }?.let {
+            state.offerPeople(it)
+            // Taken once: the same intent is handed back whenever the screen is made again.
+            intent.removeExtra("people")
         }
     }
 
@@ -274,6 +280,10 @@ fun DeskLessApp(state: AppState, lifecycleOwner: LifecycleOwner) {
     // Nothing of the app is reachable until somebody is signed in and, on a phone with a fingerprint set
     // up, has unlocked it.
     val inside = introDone && state.profile != null && state.unlocked
+    // IDs handed to a test build open the sign-in form with them in it, once the app is open to its user.
+    LaunchedEffect(inside, state.peopleOffered) {
+        if (inside && state.peopleOffered.isNotBlank()) state.addingAccount = true
+    }
     // Everybody links: staff pass reports between phones, and someone who uses a place hands what they
     // tell their phone to a phone of the place when their own has no network.
     LaunchedEffect(inside) {

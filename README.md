@@ -2,12 +2,114 @@
 
 **Inspection reports, without the desk.** For anyone who walks a place and has to write up what is wrong with it: a construction project, a college, a government office, an apartment block, a mall, a hospital. Walk it, photograph each issue and say what is wrong in your own mix of Hindi and English. DeskLess turns the voice note into English text, structures it (issue, location, severity, owner, due date) and builds a formatted English PDF report. The models run on the phone and a report is made with no network. When the phone has a network, the finished report goes to the company's server, where each role has its own dashboard.
 
-Team **techazsure** · iQOO Hackathon 2026 Grand Finale · Productivity track
+Team **techazsure** · iQOO Hackathon 2026 Grand Finale · Productivity track · Bengaluru, 9–11 October 2026
+
+[![DeskLess, the film: say it, on-device AI, the right desk, fixed](docs/film-poster.jpg)](https://www.shaikalthaf.in/competitions/iqoo/#film)
+
+## Everything in one place
+
+| | |
+|---|---|
+| **Live** | [Home page](https://www.shaikalthaf.in/competitions/iqoo/) · [Dashboards](https://www.shaikalthaf.in/competitions/iqoo/dashboard) · [Live linkage](https://www.shaikalthaf.in/competitions/iqoo/linking) |
+| **Film**, two minutes | [docs/DeskLess-film.mp4](docs/DeskLess-film.mp4), and playing on the [home page](https://www.shaikalthaf.in/competitions/iqoo/#film) |
+| **Pitch deck**, 20 slides | [docs/DeskLess-Pitch-Deck.pdf](docs/DeskLess-Pitch-Deck.pdf) · [slide by slide](docs/deck/) |
+| **Business model canvas** | [docs/DeskLess-Business-Model-Canvas.pdf](docs/DeskLess-Business-Model-Canvas.pdf) |
+| **Brochure**, six pages | [docs/DeskLess-Brochure.pdf](docs/DeskLess-Brochure.pdf) |
+| **Screenshots** | [docs/](docs/README.md): the app on the iQOO 15, the edition for the people who use a place, My desk, the consoles, a report |
+| **The two apps** | `DeskLess.apk` and `DeskLess-User.apk` are built by every push: the **DeskLess-apk** artifact of the latest run under [Actions](https://github.com/Shaik-Althaf-Techazsure/DeskLess_IQOO/actions) (GitHub asks for a sign-in to download it). Or build both here with the one command below. The server's address can be typed on the app's first screen: `https://www.shaikalthaf.in/competitions/iqoo` |
+| **Run it** | `docker compose up --build`, see [Run it with one command](#run-it-with-one-command) |
+| **What has run on real phones** | [Checked on real phones](#checked-on-real-phones), and beside it [what is not measured yet](#not-measured-yet) |
+
+## The idea in four steps
+
+1. **Someone says it.** An inspector on a round, or anyone who uses the place, photographs what is wrong and says it in their own words, in Hindi, English or a mix of the two.
+2. **The phone writes it.** Whisper turns the speech into English text and Gemma 4 E2B fills the report fields, both on the phone, with no network. Plain code keeps out any name, place or date that nobody said.
+3. **It lands on the right desk.** When the phone has a network the report goes to the organisation's server. There an assistant ranks each issue, names who could take it and proposes the next step to the person it waits on: on a web console, or read aloud on their phone and answered by voice.
+4. **It gets fixed, with proof.** The repair is shown with a photo and compared with the first picture, a person checks it and closes it, and whoever reported it is told.
+
+## What was built during the finale
+
+| | What there is | Read more |
+|---|---|---|
+| **Capture and report, on the phone** | A photo or a 20-second clip with a voice note; speech to English text (Whisper `small`); the report fields, a check of the picture against the note and a briefing by Gemma 4 E2B on the phone's GPU; an English PDF with a map of the walk, signed with the fingerprint; a spreadsheet, a calendar file and a task list for each owner beside it | [What it does](#what-it-does) |
+| **AI that can be checked** | A guard that writes a place, a person or a deadline only if it was said or seen, and a tag on every field saying where it came from; the phone asks back for what a note left out; spoken instructions shown before they are carried out; a twenty-note measurement that runs on the phone itself; a review of each report's own evidence | [Nothing made up](#nothing-made-up-where-each-field-came-from) · [The phone asks back](#the-phone-asks-back) · [Ask or tell](#ask-or-tell) · [Measured on the phone](#measured-on-the-phone) · [AI review](#ai-review-does-the-report-hold-together) |
+| **Any kind of place** | Twelve report types, from a general inspection to hospitals, colleges, apartment blocks, malls, offices and factories; a company makes its own on the dashboard and its phones fetch it | [Not only construction sites](#not-only-construction-sites) |
+| **The phone as an instrument** | Compass, light, steps and position stamped on each issue; a level, a noise meter and a vibration meter; lift-to-talk; NFC tags for places; a signature made with the fingerprint | [The phone as an instrument](#the-phone-as-an-instrument) |
+| **With no network** | Phones linked by a QR code pass reports directly; a report for a phone out of reach is carried by other phones, sealed so that only its receiver can open it; push-to-talk voice messages over the same link; a user's entry handed to a nearby phone to send on | [Linking phones](#linking-phones) · [Relay](#relay-through-other-phones-sealed) · [Walkie-talkie](#walkie-talkie) |
+| **The people who use the place** | A second edition, DeskLess User: say what is wrong, hear it read back, change it by voice, send it, and hear what became of it | [For the people who use the place](#for-the-people-who-use-the-place) |
+| **The office** | A server with accounts for the administrator, four roles in a company and the people who use a place, each approved by the level above; a console for each role that updates as things happen; an assistant that summarises, ranks, proposes and chases; and My desk, the same work read aloud on the phone and answered by voice | [Accounts, roles and dashboards](#accounts-roles-and-dashboards) · [The assistant](#the-assistant) · [My desk](#my-desk-the-office-speaks-and-is-answered-by-voice) |
+| **Seeing it run** | The live linkage: every phone, person, place and service as a node in three dimensions, and what moves between them as it moves | [The live linkage](#the-live-linkage) |
+| **Presenting it** | A home page with the film, the deck and the product screen by screen; a form that says whether DeskLess fits what a visitor needs and emails them the brochure | [The home page](#the-home-page) · [Ask DeskLess](#ask-deskless-will-it-work-for-my-place) |
+| **Building and running it** | One command with Docker; the server's tests, the app's unit tests and both APKs on GitHub Actions at every push; scripts that put the server under a path of an existing site and update it after a push | [Run it with one command](#run-it-with-one-command) · [On a real server](#on-a-real-server) |
+
+Everywhere the same rule holds: **a model words things and fills forms; plain code decides and checks.** The models are open ones that run on the phone or on the organisation's own server, and no hosted AI service is called.
+
+## On the iQOO 15
+
+| | What DeskLess does with it |
+|---|---|
+| **Camera** | Photos and clips of up to 20 seconds, zoom stops where the phone offers them, the repair photographed and compared with the first picture, the QR code that links two phones |
+| **Voice** | Voice notes in Hindi, English or both; questions and instructions spoken to the walk and to the desk; entries, briefings and answers read aloud; push-to-talk messages |
+| **On-device AI** | Whisper `small` and Gemma 4 E2B run on the phone, Gemma on its Adreno GPU through OpenCL: the report fields about 3 seconds after a short voice note, an answer about the walk in under 3 seconds |
+| **Sensors** | Compass, light, step counter, satellite position, accelerometer as a level and as a vibration meter, microphone as a noise meter, proximity for lift-to-talk, NFC, fingerprint, the motor |
+| **iQOO Office Kit** | **Save for Office Kit** puts the report and its files in `Documents/DeskLess` for Office Kit file transfer; **Copy action items** puts each owner's tasks on the clipboard the laptop shares; the model files reach a phone with no internet the same way |
+
+## Screens
+
+<table>
+<tr>
+<td><img src="docs/screenshots/iqoo-home.webp" width="200" alt="The first screen on the iQOO 15"></td>
+<td><img src="docs/screenshots/iqoo-ask.webp" width="200" alt="A question about the walk, answered on the iQOO 15"></td>
+<td><img src="docs/screenshots/app-check.webp" width="200" alt="The AI check of a picture against its note"></td>
+<td><img src="docs/screenshots/app-kept.webp" width="200" alt="A name and a date the AI offered, kept out"></td>
+</tr>
+<tr>
+<td>The first screen, on the iQOO 15</td>
+<td>A question about the walk, answered on the iQOO 15's GPU</td>
+<td>The picture checked against the note</td>
+<td>Kept out: what the model offered and nobody said</td>
+</tr>
+<tr>
+<td><img src="docs/screenshots/user-draft.webp" width="200" alt="DeskLess User: the entry read back"></td>
+<td><img src="docs/screenshots/desk-brief.webp" width="200" alt="My desk: the briefing"></td>
+<td><img src="docs/screenshots/desk-repair.webp" width="200" alt="My desk: the repair compared"></td>
+<td><img src="docs/screenshots/app-report.webp" width="200" alt="The finished report"></td>
+</tr>
+<tr>
+<td>DeskLess User: the entry, to change by voice or send</td>
+<td>My desk: what waits for this person, read aloud</td>
+<td>The repair compared with the first picture</td>
+<td>The finished report</td>
+</tr>
+</table>
+
+<table>
+<tr>
+<td><img src="docs/screenshots/dash-md-top.webp" width="420" alt="The managing director's console"></td>
+<td><img src="docs/screenshots/dash-link.webp" width="420" alt="The live linkage"></td>
+</tr>
+<tr>
+<td>A console for each role: what needs this person first, and the assistant's triage</td>
+<td>The live linkage: what moves between phones, people, places and services</td>
+</tr>
+</table>
+
+The first two screens were captured on the iQOO 15. The others were captured on the Android emulator and a development server while the app was being built, with test pictures and sample data. All of them, with the report and the deck, are in [docs/](docs/README.md).
+
+## Contents
+
+- [What is in this repository](#what-is-in-this-repository)
+- [Run it with one command](#run-it-with-one-command)
+- [The Android app](#the-android-app): [what it does](#what-it-does) · [report types](#not-only-construction-sites) · [walkie-talkie](#walkie-talkie) · [ask or tell](#ask-or-tell) · [My desk](#my-desk-the-office-speaks-and-is-answered-by-voice) · [the user's side](#for-the-people-who-use-the-place) · [the guard](#nothing-made-up-where-each-field-came-from) · [sensors](#the-phone-as-an-instrument) · [AI review](#ai-review-does-the-report-hold-together) · [linking phones](#linking-phones) · [relay](#relay-through-other-phones-sealed) · [checked on real phones](#checked-on-real-phones) · [not measured yet](#not-measured-yet) · [AI models](#ai-models) · [code](#code)
+- [Accounts, roles and dashboards](#accounts-roles-and-dashboards): [sign-up to sign-in](#from-sign-up-to-sign-in) · [report to closed issue](#from-a-report-to-a-closed-issue) · [home page](#the-home-page) · [Ask DeskLess](#ask-deskless-will-it-work-for-my-place) · [dashboards](#the-dashboards) · [assistant](#the-assistant) · [live linkage](#the-live-linkage) · [what is stored](#what-is-stored-and-how) · [on a real server](#on-a-real-server) · [API](#api)
+- [The web prototype](#the-web-prototype), built before the finale
+- [Configuration](#configuration) · [Troubleshooting](#troubleshooting) · [Contact](#contact)
 
 ## What is in this repository
 
 | Folder | What it is | Written |
 |---|---|---|
+| `docs/` | **What to look at first.** The film, the pitch deck, the business model canvas, the brochure and the screenshots, with a page that shows them. | During the finale, 9–11 Oct 2026 |
 | `android/` | **The finale build.** A native Android app that does everything on the phone: camera, voice, speech-to-text and a language model on the device, readings from the phone's sensors, PDF report, and reports passed from phone to phone with no network. No server takes part in making a report, and once signed in the app captures and builds reports in airplane mode. | During the finale, 9–11 Oct 2026 |
 | `server/` | **The server.** Accounts for five roles (sign-up with a code sent by email, approval by the level above, sign-in with a unique ID), the reports the phones send, the work on their issues, a web console for each role, and an assistant that summarises and ranks every issue, names who could take it and drafts the next step. Its bare address is the home page that presents all of this, with the film, the pitch deck and the way in. | During the finale, 9–11 Oct 2026 |
 | `docker-compose.server.yml`, `deploy/` | **The server on a real machine.** The server and its database alone, and the scripts that put them under a path of an existing site (`deploy/setup.sh`, once) and update them after a push (`deploy/update.sh`). | During the finale, 9–11 Oct 2026 |
@@ -68,7 +170,7 @@ Every push also runs the same build on GitHub Actions (`.github/workflows/build.
 
 Fields the note did not mention are left empty and printed as "Not stated". The AI check is an opinion: when the inspector overrules it, the report says so.
 
-The same flow serves three kinds of report, chosen on the first screen: site inspection, medication audit and community issue. The choice sets the wording on screen, the issue types and the severity guide given to the model. Issues can be filtered and sorted, and every PDF built on the phone is kept in a reports list.
+The same flow serves every kind of report, chosen on the first screen (see [Not only construction sites](#not-only-construction-sites)). The choice sets the wording on screen, the issue types and the severity guide given to the model. Issues can be filtered and sorted, and every PDF built on the phone is kept in a reports list.
 
 ### Not only construction sites
 
@@ -131,7 +233,7 @@ Who does what here is kept apart on purpose:
 
 **The server hands it on.** A report goes up from the phone of whoever found the problem; the server ranks it and puts it on the desk of whoever it now waits on; and that person's phone is told at once. The phone does not ask over and over: it asks one question that the server answers the moment that person's desk changes (`GET /api/desk/wait`), then asks again. A new arrival is announced in a line, by voice, while the app is open. With the app closed nothing is announced: that needs a push service, which this build does not use. The desk as it was last fetched can be read with no network; acting on it needs one.
 
-**One phone, several people.** A phone shared on a site is handed from a manager to a technician and back. Each signs in once; after that a tap on their name at the top of the desk makes the phone theirs, with no password, and their desk is fetched and read out. A walk in hand stays with the person who began it and is not sent under another name. Anyone holding the unlocked phone can make that tap: it is meant for a phone a team shares, not for keeping colleagues out.
+**One phone, several people.** A phone shared on a site is handed from a manager to a technician and back. Each signs in once; after that a tap on their name at the top of the desk makes the phone theirs, with no password, and their desk is fetched and read out. A walk in hand stays with the person who began it and is not sent under another name. Anyone holding the unlocked phone can make that tap: it is meant for a phone a team shares, not for keeping colleagues out. A team set up with one password can be signed in together: several IDs typed one after another in the sign-in form, set apart by spaces, are signed in in turn with the password typed once, and whoever was using the phone goes on using it.
 
 ### For the people who use the place
 
@@ -266,25 +368,38 @@ When the phone a report is for is not in range, any linked phone that is in rang
 
 Phones exchange their public keys the first time they connect after linking, under the same proof as above, so nobody in between can swap in a key of their own.
 
-### Checked on an iQOO 15
+### Checked on real phones
+
+On the iQOO 15:
 
 - The whole flow in airplane mode: photo, voice note, filled fields and PDF.
 - Gemma 4 E2B running on the phone's Adreno GPU through OpenCL.
 - Fields filled about 3 seconds after a short voice note ended (11 seconds on the first run, which also loads the models).
 - A video issue from clip to report.
+- A question about the walk answered in 1.7 to 2.8 seconds on the GPU.
+- A built report and the walk in progress sent to the live server by themselves, read back from the phone's own record of what the server accepted.
+- Instructions to My desk understood in 1.5 to 1.8 seconds and carried out on the live server: an issue given to a technician, a user's questions answered.
+
+Between the iQOO 15 and a Pixel 9a:
+
+- Linking by QR code, connecting with no prompt, and a report passed directly with the spoken "Report sent". Later reports arrived sealed, and the Pixel's signed receipt came back to the iQOO 15, which then showed them as delivered.
+- Push-to-talk messages spoken on the iQOO 15 played on the Pixel 9a. One was said while the Pixel was out of reach: it waited, and went by itself when the Pixel came back.
+- Through the live server: a sentence given to the Pixel 9a's user edition was put into an entry by Gemma on that phone's GPU in 6.6 seconds and was on the iQOO 15's desk about 10 seconds later; the answer given there was on the Pixel 5 to 9 seconds after.
+
+In these runs on My desk, on the user's side and with the question about the walk, the sentences were typed, not spoken; the voice notes and the walkie-talkie messages were spoken. Both phones are signed in to the live server.
 
 ### Not measured yet
 
 - Accuracy on mixed Hindi-English speech.
-- **The user's side with a real voice, on a real phone, against the live server.** On the Android emulator against the server in Docker on the same computer: a user signed up with the short form and the emailed code and had an ID at once; a typed sentence became an entry in 15 seconds on the emulator's processor, with the title, the place in the building and the type right; "Make it high" and then "Send it", given as typed stand-ins for the voice while the phone was listening, changed it and sent it; it was at the top of the right inspector's desk, marked high, with the step "send it to the manager to give out"; the inspector's answer was on the user's screen within 14 seconds; and a typed question was sent, answered and closed. The emulator has no microphone and no sound, so nobody has yet said anything to it or heard it answer. Still to be done: a person speaking in a noisy hall (where the phone, listening by itself after it has spoken, may take the room's talk for an answer: the speaker button at the top stops it listening by itself), the model on a Pixel 9a (it has never run there), a photo added to an entry, an entry told with no network and sent later, and all of it against the live server.
-- **My desk on real phones and on the live server.** On the Android emulator against the server in Docker on the same computer, one phone held a managing director and a technician: an instruction gave an issue to the technician with a day and a note; a tap made the phone the technician's and the briefing was read for him; "I fixed the first one" opened the camera, the reported picture was fetched and the two were compared on the phone, and the repair reached the server; back as the managing director, "Close job 5" closed it. With that phone open on the technician's desk, an issue given out on the server was on the phone 0.6 seconds later. Instructions were typed there, not spoken, and the pictures were the emulator's test room (so the comparison says nothing about real repairs). Two real phones, a spoken instruction in a noisy place, and the whole of it against the live server are still to be done.
+- **The user's side with a real voice.** On the Android emulator against the server in Docker on the same computer: a user signed up with the short form and the emailed code and had an ID at once; a typed sentence became an entry in 15 seconds on the emulator's processor, with the title, the place in the building and the type right; "Make it high" and then "Send it", given as typed stand-ins for the voice while the phone was listening, changed it and sent it; it was at the top of the right inspector's desk, marked high, with the step "send it to the manager to give out"; the inspector's answer was on the user's screen within 14 seconds; and a typed question was sent, answered and closed. The emulator has no microphone and no sound, so nobody has yet said anything to it or heard it answer. Still to be done: a person speaking in a noisy hall (where the phone, listening by itself after it has spoken, may take the room's talk for an answer: the speaker button at the top stops it listening by itself), a photo added to an entry, and an entry told with no network and sent later. On the two real phones against the live server it has been done with typed sentences (see [Checked on real phones](#checked-on-real-phones)).
+- **My desk by voice, and the repair photo, on real phones.** On the Android emulator against the server in Docker on the same computer, one phone held a managing director and a technician: an instruction gave an issue to the technician with a day and a note; a tap made the phone the technician's and the briefing was read for him; "I fixed the first one" opened the camera, the reported picture was fetched and the two were compared on the phone, and the repair reached the server; back as the managing director, "Close job 5" closed it. With that phone open on the technician's desk, an issue given out on the server was on the phone 0.6 seconds later. Instructions were typed there, not spoken, and the pictures were the emulator's test room (so the comparison says nothing about real repairs). On the iQOO 15 against the live server, typed instructions have been understood and carried out (see [Checked on real phones](#checked-on-real-phones)). An instruction spoken in a noisy place, and a real repair photographed and compared on a real phone, are still to be done.
 - **Asking back, spoken instructions, the guard, the phone's memory and the measurements, on a real phone.** All five were written and tried on the Android emulator, which has no microphone: a typed instruction became three listed changes that were made and then put back; the phone asked its question aloud and listened, and a typed stand-in for the spoken answer filled owner and deadline; a kept-out name was shown and taken with one tap; and a five-note measurement ran with the phone's own voice. A person answering the question aloud, an instruction spoken and not typed, and the twenty-note run on the iQOO 15 are still to be done, so there are no phone figures for accuracy, speed or battery here yet.
 - Speech in Kannada, Tamil, Telugu, Marathi and Bengali. The switch works: with each of two other settings an English test clip was still written down correctly. No speech in those languages has been tried, and Whisper `small` is known to be weaker in them than in Hindi.
 - The test's own limits: its notes are in English, clearly worded, read by a synthetic voice, and carry no picture. It measures the models on clean input, not a person on a noisy site.
-- The accounts, the dashboards and the sending of reports on a real phone and a real server. They were tried with the Android emulator and the server in Docker on one computer: the sign-up form with a team code, sign-in, a report built on the emulator arriving on the manager's dashboard with its pictures, and the dashboards in a desktop browser at desktop and phone width. Email was sent only to the test mailbox.
+- The dashboards with a real organisation's work. The server runs live and both phones sign in and send to it, but what has been on it is our own test accounts and sample places. The consoles pictured here show sample data on a development server, looked at in a desktop browser at desktop and phone width.
 - Speed of the picture check on a video issue (three stills) on the phone.
 - **An entry handed from a user's phone to a phone of the place, on real phones.** On two Android emulators with the server in Docker stopped, so that neither could reach it: a typed sentence was worded by the model on the user's phone, "send it" found no server, and within seconds the entry was on the linked staff phone and the user's screen said so. With the server started again the staff phone sent it on 2 seconds after coming to the front, the server took it from that phone after checking the user's signature, and when the user's own phone then sent its copy the place still had one issue. With Bluetooth and Wi-Fi both switched off, opening the app had both on within ten seconds with no prompt, switched on by Google Play services for the link. Not yet tried: two real phones (in particular whether the iQOO 15's own Android lets Google Play services switch the radios on, or shows its prompt), a picture with the entry, and the distance it works over.
-- The walkie-talkie between real phones: how far it reaches, how quickly a message crosses on Bluetooth alone, how it sounds, and whether the phones' battery managers let the link run. Between two emulators a 3-second message (13 KB) arrived and was listed within seconds, and the sender's screen went to "heard".
+- The walkie-talkie's reach and speed: how far it reaches, how quickly a message crosses on Bluetooth alone, and whether the phones' battery managers let the link run. Messages spoken on the iQOO 15 have played on the Pixel 9a; nothing has been said from the Pixel back yet. Between two emulators a 3-second message (13 KB) arrived and was listed within seconds, and the sender's screen went to "heard".
 - A company's own report type through the model on the phone; it was made, fetched and shown on an emulator, and a new walk started with it by itself.
 - The report types other than the site inspection. On an emulator, one typed note was run through the model under the hospital round ("The oxygen cylinder in ward three is not chained to the wall" came back as *Oxygen cylinder unsecured in ward three*, type Medical gases and equipment, High). The others were tried on screen only, and none has been used on the phone or in a real place of its kind.
 - How well a model of this size judges real site photos. This is why its verdict can always be overruled.

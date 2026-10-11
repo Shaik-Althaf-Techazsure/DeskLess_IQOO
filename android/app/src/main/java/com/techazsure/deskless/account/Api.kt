@@ -306,4 +306,11 @@ object Checks {
     fun invite(typed: String): Boolean = cleanInvite(typed).let { it.length == INVITE_LENGTH && it.all(INVITE_LETTERS::contains) }
 
     const val MIN_PASSWORD = 8
+
+    /**
+     * The DeskLess IDs in what was typed, in the order typed and each once. Usually there is one. On a
+     * phone a team shares, several can be typed one after another, set apart by spaces or commas.
+     */
+    fun ids(typed: String): List<String> =
+        typed.uppercase().split(Regex("""[^A-Z0-9-]+""")).map { it.trim('-') }.filter { it.length >= 4 }.distinct()
 }

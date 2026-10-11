@@ -15,6 +15,7 @@ import androidx.compose.runtime.setValue
 import com.techazsure.deskless.account.AccountStore
 import com.techazsure.deskless.account.Api
 import com.techazsure.deskless.account.ApiError
+import com.techazsure.deskless.account.Checks
 import com.techazsure.deskless.account.Desk
 import com.techazsure.deskless.account.DeskJob
 import com.techazsure.deskless.account.Person
@@ -741,6 +742,70 @@ class AppState(
             },
             onFailure = ::why,
         )
+
+    /** DeskLess IDs handed to a test build from a computer, waiting for somebody to type their password; see [signInSeveral]. */
+    var peopleOffered by mutableStateOf("")
+        private set
+
+    /** Takes IDs to be signed in together, leaving out anybody already signed in on this phone. */
+    fun offerPeople(typed: String) {
+        val here = (listOfNotNull(profile) + otherAccounts).map { it.uniqueId.uppercase() }
+        peopleOffered = Checks.ids(typed).filter { it !in here }.joinToString(" ")
+    }
+
+    /**
+     * Signs several people in on this phone with one password, typed once: for a phone a team shares,
+     * whose people were set up with the same password. They are signed in one after another. Whoever
+     * was using the phone goes on using it, and the others join the people it changes to with a tap,
+     * in the order given. Returns those who could not be signed in, each with why.
+     */
+    suspend fun signInSeveral(ids: List<String>, password: String): List<Pair<String, String>> {
+        val using = profile
+        val here = (listOfNotNull(using) + otherAccounts).map { it.uniqueId.uppercase() }
+        val wanted = ids.filter { it.uppercase() !in here }
+        val failed = HashMap<String, String>()
+        var added = 0
+        // The last one signed in is the first the phone offers, so they are taken from the end.
+        for ((at, id) in wanted.reversed().withIndex()) {
+            val result = online {
+                val answer = api.login(id, password)
+                val person = Profile.from(answer.getJSONObject("profile"))
+                if (userOnly && !person.usesAPlace) throw ApiError("As ${person.roleName}, sign in on the DeskLess app of your organisation.")
+                answer.getString("token") to person
+            }
+            result.onSuccess { (token, person) ->
+                account.signedIn(token, person)
+                added++
+            }.onFailure { failed[id] = why(it) }
+            // A password that is wrong for the first is wrong for all of them: the rest are left untried,
+            // so that nobody's count of wrong passwords goes up for nothing.
+            if (at == 0 && result.isFailure) {
+                wanted.filter { it != id }.forEach { failed[it] = "Not tried." }
+                break
+            }
+        }
+        if (added > 0) {
+            pending = null
+            unlocked = true
+            if (using != null) {
+                // Back to whoever was using the phone; the new people wait a tap away.
+                account.switchTo(using.uniqueId)
+                otherAccounts.clear()
+                otherAccounts.addAll(account.others)
+                scope.launch {
+                    online { api.photo(account.token, account.photo) }
+                    photoVersion++
+                }
+                notice = if (added == 1) "1 more person is signed in on this phone." else "$added more people are signed in on this phone. Tap a name to change to one of them."
+            } else {
+                becomeWhoIsSignedIn(null)
+                profile?.let { if (inspection.inspector.isBlank()) updateInspection(inspection.site, it.name) }
+            }
+        }
+        peopleOffered = ""
+        if (failed.isEmpty()) addingAccount = false
+        return wanted.filter { it in failed }.map { it to failed.getValue(it) }
+    }
 
     suspend fun forgotPassword(uniqueId: String): String? = online { api.forgot(uniqueId.trim()) }.fold({ null }, ::why)
 

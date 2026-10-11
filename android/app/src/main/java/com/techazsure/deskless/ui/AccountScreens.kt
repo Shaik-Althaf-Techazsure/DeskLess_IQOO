@@ -256,6 +256,10 @@ private object InCapitals : VisualTransformation {
 private fun plain(typed: String, length: Int): String =
     typed.filter { it in 'a'..'z' || it in 'A'..'Z' || it in '0'..'9' || it == '-' }.take(length)
 
+/** The same, with the spaces and commas that set several IDs apart on a phone a team shares. */
+private fun several(typed: String): String =
+    typed.replace('\n', ' ').filter { it in 'a'..'z' || it in 'A'..'Z' || it in '0'..'9' || it == '-' || it == ' ' || it == ',' }.take(400)
+
 private object InFours : VisualTransformation {
     override fun filter(text: AnnotatedString): TransformedText {
         val digits = text.text
@@ -709,24 +713,45 @@ private fun Waiting(state: AppState, onNeedsCode: () -> Unit, onSignIn: (String)
 @Composable
 private fun SignIn(state: AppState, knownId: String, onBack: () -> Unit, onForgot: () -> Unit, onSignUp: () -> Unit) {
     val scope = rememberCoroutineScope()
-    var id by rememberSaveable { mutableStateOf(knownId) }
+    var id by rememberSaveable { mutableStateOf(knownId.ifBlank { state.peopleOffered }) }
     var password by rememberSaveable { mutableStateOf("") }
     var problem by remember { mutableStateOf<String?>(null) }
     var busy by remember { mutableStateOf(false) }
+    // A phone a team shares: several IDs typed one after another are signed in together.
+    val people = Checks.ids(id)
 
     Page("SIGN IN", "Use the DeskLess ID you were given when your account was approved.", onBack) {
-        Field("DeskLess ID", id, { id = plain(it, 20) }, if (state.userOnly) "DL-USR-0001" else "DL-INS-0001", capitals = KeyboardCapitalization.Characters, shown = InCapitals)
+        Field(
+            label = if (people.size > 1) "DeskLess IDs" else "DeskLess ID",
+            value = id,
+            onChange = { id = several(it) },
+            placeholder = if (state.userOnly) "DL-USR-0001" else "DL-INS-0001",
+            capitals = KeyboardCapitalization.Characters,
+            shown = InCapitals,
+            help = if (people.size > 1) {
+                "${people.size} people. They are signed in one after another with the one password below, for a team that was set up with the same one."
+            } else {
+                null
+            },
+        )
         Field("Password", password, { password = it }, secret = true, last = true)
         Problem(problem)
         BrandButton(
-            text = if (busy) "Signing in…" else "Sign in",
+            text = if (busy) "Signing in…" else if (people.size > 1) "Sign in ${people.size} people" else "Sign in",
             icon = Icons.AutoMirrored.Rounded.Login,
             enabled = !busy && id.isNotBlank() && password.isNotEmpty(),
             modifier = Modifier.fillMaxWidth(),
             onClick = {
                 busy = true
                 scope.launch {
-                    problem = state.signIn(id, password)
+                    if (people.size > 1) {
+                        val failed = state.signInSeveral(people, password)
+                        // Those that did not go through stay in the field, to be put right and tried again.
+                        if (failed.isNotEmpty()) id = failed.joinToString(" ") { it.first }
+                        problem = failed.takeIf { it.isNotEmpty() }?.joinToString("\n") { "${it.first}: ${it.second}" }
+                    } else {
+                        problem = state.signIn(id, password)
+                    }
                     busy = false
                 }
             },
