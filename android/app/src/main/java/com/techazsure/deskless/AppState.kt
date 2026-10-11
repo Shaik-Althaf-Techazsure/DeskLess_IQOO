@@ -31,6 +31,7 @@ import com.techazsure.deskless.capture.Locator
 import com.techazsure.deskless.capture.SiteSensors
 import com.techazsure.deskless.capture.TagBook
 import com.techazsure.deskless.capture.WavRecorder
+import com.techazsure.deskless.capture.normalizeJpeg
 import com.techazsure.deskless.data.Check
 import com.techazsure.deskless.data.Inspection
 import com.techazsure.deskless.structure.Expiry
@@ -42,8 +43,12 @@ import com.techazsure.deskless.data.Severity
 import com.techazsure.deskless.data.OwnTypes
 import com.techazsure.deskless.data.Stamp
 import com.techazsure.deskless.data.Template
+import com.techazsure.deskless.link.Carried
+import com.techazsure.deskless.link.Carry
+import com.techazsure.deskless.link.ENTRY_TITLE
 import com.techazsure.deskless.link.Link
 import com.techazsure.deskless.link.Peer
+import com.techazsure.deskless.link.Stage
 import com.techazsure.deskless.link.Talk
 import com.techazsure.deskless.link.TalkMessage
 import com.techazsure.deskless.link.VOICE_TITLE
@@ -345,6 +350,18 @@ class AppState(
             }
             return VOICE_TITLE
         }
+        // Something a user of a place told their phone with no network: this phone keeps it and sends it on.
+        carry.unwrap(pack, from.name)?.let { held ->
+            scope.launch {
+                carriedForOthers.removeAll { it.sender == held.sender && it.clientId == held.clientId }
+                carriedForOthers.add(0, held)
+                haptics.filled()
+                notice = "${held.senderName} handed over “${held.title}”" + (if (held.place.isNotBlank()) " for ${held.place}" else "") +
+                    (if (via != null) ", carried by $via" else "") + ". It goes on when this phone has a network."
+                sendCarried()
+            }
+            return ENTRY_TITLE
+        }
         val (pdf, about) = ReportPack.unzip(pack, library.folder, from.id) ?: return null
         val entry = library.receive(pdf, about, from.name)
         scope.launch {
@@ -420,6 +437,102 @@ class AppState(
         }
     }
 
+    // ---------------------------------------------------------------- what a user's phone hands over to be sent on
+    //
+    // A user's phone with no network signs what was told and hands it, sealed, to the linked phones. The
+    // phone that takes it sends it to the place's server for them as soon as it has a network itself.
+    // The server checks the user's own signature, so the phone in between only carries.
+
+    private val carry = Carry(File(context.filesDir, "carried"), cacheDir)
+
+    /** Entries other people's phones handed to this one, waiting for it to have a network; the newest first. */
+    val carriedForOthers = mutableStateListOf<Carried>().apply { addAll(carry.load()) }
+    private var sendingCarried = false
+
+    /**
+     * What a user told this phone could not reach its place for want of a network: it is signed with
+     * the key only this person's phone and the server hold, sealed for each linked phone, and given to
+     * the link. Returns where it now is, in words for the person; null when there was nobody to hand it
+     * to, or this phone has not spoken to the server since it was signed in and so has no key yet.
+     */
+    suspend fun handOver(fields: Map<String, String>, place: String, photo: File?): String? {
+        val me = profile ?: return null
+        val clientId = fields["client_id"].orEmpty()
+        if (me.carryKey.isBlank() || clientId.isBlank()) return null
+        val report = Carried.reportOf(clientId)
+        // A phone that already has a copy on its way is not sealed for twice.
+        val to = link.peers.filter { it.public.isNotBlank() && link.stage(report, it.id) == null }.map { it.id }
+        if (to.isNotEmpty()) {
+            val pack = withContext(Dispatchers.IO) {
+                runCatching {
+                    // The picture may have to cross on Bluetooth, so it is made small first.
+                    val small = photo?.takeIf { it.isFile }?.let { whole ->
+                        File(cacheDir, "entry-photo.jpg").also {
+                            whole.copyTo(it, overwrite = true)
+                            normalizeJpeg(it, CARRIED_PICTURE_EDGE)
+                        }
+                    }
+                    val entry = JSONObject(fields).apply {
+                        small?.let { put("photo_sha256", Carry.fingerprint(it)) }
+                        put("made_at", System.currentTimeMillis())
+                    }.toString()
+                    carry.wrap(clientId, me.uniqueId, me.name, entry, Carry.sign(me.carryKey, entry), fields["title"].orEmpty(), place, small)
+                        .also { small?.delete() }
+                }.getOrNull()
+            }
+            if (pack != null) {
+                link.send(pack, report, ENTRY_TITLE, to)
+                pack.delete()
+            }
+        }
+        return handedLine(clientId)
+    }
+
+    /** Where an entry given to the link has got, in words for the person who told it; null when it never was. */
+    fun handedLine(clientId: String): String? {
+        val copies = link.sent.filter { it.report == Carried.reportOf(clientId) }
+        if (copies.isEmpty()) return null
+        fun names(of: List<com.techazsure.deskless.link.Sent>) =
+            of.map { copy -> link.peers.firstOrNull { it.id == copy.to }?.name?.let { "$it's phone" } ?: "a linked phone" }.distinct().joinToString(" and ")
+        // A linked phone goes by its owner's name, so each is called that person's phone.
+        val taken = copies.filter { it.stage == Stage.HANDED || it.stage == Stage.DELIVERED }
+        return when {
+            taken.isNotEmpty() -> "It is on ${names(taken)}, to be sent on as soon as there is a network there."
+            copies.any { it.stage == Stage.RELAYED } -> "A phone in between carries it, sealed, to ${names(copies)}."
+            else -> "It crosses to ${names(copies)} as soon as it is in reach with DeskLess open."
+        }
+    }
+
+    /**
+     * Sends on what this phone holds for others. The server checks each entry against its sender's own
+     * signature, so this phone answers for nothing but the carrying. What the server takes, or will not
+     * have, is held no longer; with no network it all waits.
+     */
+    fun sendCarried() {
+        val with = account.token
+        if (sendingCarried || carriedForOthers.isEmpty() || with.isBlank()) return
+        sendingCarried = true
+        scope.launch {
+            for (held in carriedForOthers.toList().reversed()) {
+                val result = online { api.carried(with, held.sender, held.entry, held.signature, carry.photoOf(held)) }
+                val error = result.exceptionOrNull() as? ApiError
+                // Only the server's own word about this entry ends the wait. A server from before this
+                // door existed answers "Not Found", which says nothing about the entry.
+                val refused = error != null && error.refused && error.status in CARRIED_REFUSALS && error.message != "Not Found"
+                if (result.isFailure && !refused) break
+                withContext(Dispatchers.IO) { carry.drop(held) }
+                carriedForOthers.remove(held)
+                notice = if (refused) {
+                    "“${held.title}” from ${held.senderName} was not taken: ${error?.message}"
+                } else {
+                    val place = result.getOrNull()?.optString("place").orEmpty().ifBlank { held.place.ifBlank { "its place" } }
+                    "“${held.title}” from ${held.senderName} has gone on to $place."
+                }
+            }
+            sendingCarried = false
+        }
+    }
+
     /** Reports that came from other phones and have not been opened here yet, newest first. */
     val unread: List<ReportEntry>
         get() = reports.filter { it.unread }
@@ -466,7 +579,13 @@ class AppState(
         context, scope, modelWork, transcriber, structurer, voice, haptics, api,
         token = { account.token }, who = { profile }, language = { spoken.code },
         speechReady = { speechReady }, gemmaReady = { gemmaReady }, cacheDir = cacheDir,
+        handOver = ::handOver, handedLine = ::handedLine,
     )
+
+    init {
+        // A linked phone has come into reach: what a user told this phone with no network can go to it.
+        link.met = { user.comeOnline() }
+    }
 
     /** The other people signed in on this phone; it changes to one of them with a tap. */
     val otherAccounts = mutableStateListOf<Profile>().apply { addAll(account.others) }
@@ -775,6 +894,7 @@ class AppState(
         checkIn()
         sendWalk()
         sendToOffice()
+        sendCarried()
         fetchModelsIfMissing()
         // What has newly arrived at the person's desk is announced; the briefing waits until the desk is opened.
         refreshDesk(aloud = false)
@@ -2426,6 +2546,12 @@ class AppState(
 
         /** Below this loudness (of 32768) a recording holds no voice. A silent microphone read 5; speech at arm's length reads some hundreds. */
         private const val QUIET = 80.0
+
+        /** The answers by which the server says it will not have a carried entry; anything else means "try again later". */
+        private val CARRIED_REFUSALS = setOf(403, 404, 409, 413, 422, 429)
+
+        /** The longest side of a picture that goes with an entry handed from phone to phone. */
+        private const val CARRIED_PICTURE_EDGE = 1280
 
         /** The setting that holds whose walk the one in hand is, by their DeskLess ID. */
         private const val WALK_OWNER = "walkOwner"

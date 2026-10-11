@@ -16,7 +16,7 @@ from .. import mailer, pulse, security
 from ..config import settings
 from ..db import get_db
 from ..models import APPROVED, SUSPENDED, Account, Otp, now
-from ..service import aware, current_account, get_mailer, profile, send_code, use_code
+from ..service import aware, current_account, get_mailer, own_profile, profile, send_code, use_code
 from .signup import MIN_PASSWORD
 from .types import for_phone
 
@@ -73,14 +73,14 @@ def login(body: Login, request: Request, db: Session = Depends(get_db)) -> dict:
     return {
         "token": security.make_token(account.id, "user", timedelta(days=days)),
         "token_days": days,
-        "profile": profile(db, account),
+        "profile": own_profile(db, account),
     }
 
 
 @router.get("/me")
 def me(account: Account = Depends(current_account), db: Session = Depends(get_db)) -> dict:
     """The person's details, and with them the report types their company made and the one it usually starts with."""
-    return profile(db, account) | for_phone(db, account)
+    return own_profile(db, account) | for_phone(db, account)
 
 
 @router.get("/me/photo")

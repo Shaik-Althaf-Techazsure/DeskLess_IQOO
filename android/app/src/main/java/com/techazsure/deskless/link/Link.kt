@@ -4,6 +4,7 @@ import android.Manifest
 import android.bluetooth.BluetoothManager
 import android.content.Context
 import android.content.pm.PackageManager
+import android.net.wifi.WifiManager
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
@@ -173,6 +174,16 @@ class Link(
     /** Whether Bluetooth is switched on; null on a phone without it. */
     val bluetoothOn: Boolean?
         get() = runCatching { (context.getSystemService(Context.BLUETOOTH_SERVICE) as? BluetoothManager)?.adapter?.isEnabled }.getOrNull()
+
+    /**
+     * Whether Wi-Fi is switched on; null on a phone without it. With it off on either phone the link
+     * stays on Bluetooth, and a report takes minutes where it could take seconds.
+     */
+    val wifiOn: Boolean?
+        get() = runCatching { (context.applicationContext.getSystemService(Context.WIFI_SERVICE) as? WifiManager)?.isWifiEnabled }.getOrNull()
+
+    /** Called when a linked phone has come into reach and proved itself: what waited for one can go. */
+    var met: () -> Unit = {}
 
     /** The name other phones see. It takes effect the next time the link starts. */
     fun rename(name: String) {
@@ -502,15 +513,18 @@ class Link(
         // The receipt can overtake this news; a report already known to be opened needs no more said.
         if (mine.stage == Stage.DELIVERED) return
         val name = peers.firstOrNull { it.id == to }?.name ?: "another phone"
+        // Only a report is announced as one. What a user hands over to be sent on is told to them by
+        // their own screen, in its own words.
+        val report = mine.title != VOICE_TITLE && mine.title != ENTRY_TITLE
         if (to == mine.to) {
             sent[at] = mine.copy(stage = Stage.HANDED)
-            voice.say("Report sent")
-            notify("${mine.title} sent to $name.")
+            if (report) voice.say("Report sent")
+            if (mine.title != ENTRY_TITLE) notify("${mine.title} sent to $name.")
         } else if (mine.stage == Stage.WAITING) {
             sent[at] = mine.copy(stage = Stage.RELAYED)
             val goal = peers.firstOrNull { it.id == mine.to }?.name ?: "its phone"
-            voice.say("Report relayed")
-            notify("${mine.title} is with $name, sealed, to carry to $goal.")
+            if (report) voice.say("Report relayed")
+            if (mine.title != ENTRY_TITLE) notify("${mine.title} is with $name, sealed, to carry to $goal.")
         }
         save()
     }
@@ -558,6 +572,7 @@ class Link(
         }
         proven.add(endpoint)
         if (id !in connected) connected.add(id)
+        met()
         // With the phone found, the search stops: scanning for others would slow the link to this one.
         if (discovering) {
             runCatching { client.stopDiscovery() }
@@ -628,8 +643,9 @@ class Link(
                     notify("A sealed report arrived that this phone could not open.")
                     return@post
                 }
-                // A spoken message is played by the app as it arrives; only a report is announced.
-                if (title != VOICE_TITLE) {
+                // A spoken message is played by the app as it arrives, and an entry to send on is said
+                // by the app in its own words; only a report is announced.
+                if (title != VOICE_TITLE && title != ENTRY_TITLE) {
                     voice.say("Report received")
                     notify("$title received from ${sender.name}" + if (via != null) ", carried by $via." else ".")
                 }
@@ -689,8 +705,10 @@ class Link(
                 sent[at] = mine.copy(stage = Stage.DELIVERED)
                 val name = peers.firstOrNull { it.id == mine.to }?.name ?: "its phone"
                 // A report handed straight over has already been announced; one that was carried has not.
-                if (mine.stage != Stage.HANDED) voice.say("Report delivered")
-                notify("${mine.title} was opened on $name.")
+                if (mine.title != ENTRY_TITLE) {
+                    if (mine.stage != Stage.HANDED && mine.title != VOICE_TITLE) voice.say("Report delivered")
+                    notify("${mine.title} was opened on $name.")
+                }
             }
         }
         save()

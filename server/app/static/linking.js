@@ -20,14 +20,14 @@ let token = store.getItem("deskless-token") || "";
 const ROLE_COLOUR = { md: "#ffd166", manager: "#3987e5", inspector: "#19b4a0", technical: "#ec835a", member: "#c084fc" };
 const NODE_COLOUR = { server: "#ffc31f", assistant: "#a78bfa", writer: "#f472b6", rounds: "#2dd4bf", mail: "#4ade80", admin: "#f3f4f6", company: "#c98500" };
 const KIND_COLOUR = {
-  walk: "#19b4a0", sent_in: "#c084fc", route: "#a78bfa", message: "#3987e5", assign: "#ec835a", fixed: "#4ade80", closed: "#199e70",
+  walk: "#19b4a0", sent_in: "#c084fc", route: "#a78bfa", carried: "#a3e635", message: "#3987e5", assign: "#ec835a", fixed: "#4ade80", closed: "#199e70",
   reopened: "#ff7a6e", model: "#f472b6", rounds: "#2dd4bf", push: "#ffc31f", mail: "#4ade80", signin: "#f3f4f6", listen: "#8a919e", ask: "#6b7280",
 };
 // Questions and listening are the background hum: drawn faintly, listed only when asked for.
 const QUIET = new Set(["ask", "listen"]);
 // Each kind in two or three words, for the legend; the server's longer name is the title.
 const KIND_SHORT = {
-  walk: "walk or report", sent_in: "sent in by a user", route: "assistant routes it", message: "passed on", assign: "given out", fixed: "fixed, with a photo",
+  walk: "walk or report", sent_in: "sent in by a user", route: "assistant routes it", carried: "carried by a phone", message: "passed on", assign: "given out", fixed: "fixed, with a photo",
   closed: "closed", reopened: "sent back", model: "writing model", rounds: "own rounds", push: "phone told", mail: "email", signin: "signed in", listen: "listening", ask: "a question",
 };
 const ROLE_ORDER = { md: 0, manager: 1, inspector: 2, technical: 3, member: 4 };

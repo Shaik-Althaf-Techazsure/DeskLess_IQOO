@@ -8,9 +8,14 @@ closed like anything found on a walk, and nobody at another place sees it. The s
 stands, and hears whatever the place answers.
 
 A place takes nothing in, and is named to nobody, until its managing director opens the door.
+
+A sender whose phone has no network may hand what they wrote to a phone nearby, which brings it in for
+them once it has one. Their own phone signs it first, so the phone that carries it can neither change a
+word nor write in their name.
 """
 
 import hashlib
+import hmac
 import json
 import secrets
 from uuid import uuid4
@@ -63,6 +68,10 @@ def _line(value, limit: int) -> str:
 
 def _kind_of(firm: Company) -> str:
     return firm.kind if firm.kind in KINDS else "other"
+
+
+def _device(request: Request | None) -> str:
+    return pulse.device_of(request.headers.get("user-agent")) if request is not None else "phone"
 
 
 # ---------------------------------------------------------------- signing up as a user of a place
@@ -253,28 +262,15 @@ def _rows(db: Session, account: Account, found: list[Issue]) -> list[dict]:
     return [_told(issue, firms, names, threads[issue.id], account.id) for issue in found]
 
 
-@router.post("/requests")
-async def send_in(
-    place: str = Form(...),
-    kind: str = Form("issue"),
-    title: str = Form(""),
-    note_text: str = Form("", alias="note"),
-    location: str = Form(""),
-    category: str = Form(""),
-    severity: str = Form("MEDIUM"),
-    client_id: str = Form(""),
-    seen: str = Form(""),
-    check: str = Form(""),
-    photo: UploadFile | None = File(None),
-    account: Account = Depends(current_account),
-    db: Session = Depends(get_db),
-    post: mailer.Mailer = Depends(get_mailer),
-    request: Request = None,
-) -> dict:
+def _take_in(
+    db: Session, post: mailer.Mailer, account: Account, raw: bytes, device: str, *, place: str, kind: str, title: str, note_text: str,
+    location: str, category: str, severity: str, client_id: str, seen: str = "", check: str = "", carrier: Account | None = None,
+) -> tuple[Issue, bool]:
     """
-    Takes what a user of a place noticed or wants to know, and brings it to the place: it becomes an
-    issue there, and one of the place's inspectors is told with the sender's own words. Sent twice under
-    the same `client_id` (a phone that never heard the answer), it is taken once.
+    Brings what `account` wrote to the place, whichever way it reached the server: from their own phone,
+    or from a phone nearby (`carrier`) that was handed it when theirs had no network. It becomes an
+    issue there, and one of the place's inspectors is told with the sender's own words. Returns the
+    issue, and whether it was there already: the same `client_id` from the same person is taken once.
     """
     firm = db.get(Company, place.strip())
     if firm is None or not firm.open_door:
@@ -287,7 +283,6 @@ async def send_in(
     asked_as = asked_as if asked_as in ASKS else "issue"
     how_bad = severity.strip().upper()
     how_bad = "LOW" if asked_as == "enquiry" else how_bad if how_bad in SEVERITIES else "MEDIUM"
-    raw = await photo.read(MAX_PICTURE_BYTES + 1) if photo is not None else b""
     if len(raw) > MAX_PICTURE_BYTES:
         raise HTTPException(413, "That photo is too large.")
 
@@ -298,7 +293,7 @@ async def send_in(
     if report is not None:
         already = db.scalars(select(Issue).where(Issue.report_id == report.id, Issue.client_id == name)).first()
         if already is not None:
-            return _rows(db, account, [already])[0]
+            return already, True
         waiting = db.scalar(select(func.count()).select_from(Issue).where(Issue.report_id == report.id, Issue.status != CLOSED)) or 0
         if waiting >= MAX_OPEN:
             raise HTTPException(429, f"You already have {MAX_OPEN} things waiting at {firm.name}. Wait for some of them to be dealt with.")
@@ -330,8 +325,9 @@ async def send_in(
             issue.photo = ""
     report.issue_count = (report.issue_count or 0) + 1
     what = {"issue": "an issue", "report": "a report", "enquiry": "a question"}[asked_as]
+    by_hand = f"; carried by {carrier.name}'s phone, with no network on their own" if carrier is not None else ""
     note(
-        db, "report", account.name, f"{account.name} sent in {what} as a user of {firm.name}; {receiver.name} was told",
+        db, "report", account.name, f"{account.name} sent in {what} as a user of {firm.name}; {receiver.name} was told{by_hand}",
         company_id=firm.id, report_id=report.id, issue_id=issue.id, author_id=account.id, assignee_id=receiver.id,
     )
     said = (words or heading)[:2000]
@@ -340,8 +336,13 @@ async def send_in(
         to_id=receiver.id, to_name=receiver.name, text=said,
     ))
     db.commit()
-    # For the live linkage: the user's phone to the server, then the assistant choosing who at the place is told.
-    device = pulse.device_of(request.headers.get("user-agent")) if request is not None else "phone"
+    # For the live linkage: the phone that carried it, when one did; the user's phone to the server; then
+    # the assistant choosing who at the place is told.
+    if carrier is not None:
+        pulse.record(
+            "carried", pulse.person(carrier.id), pulse.SERVER, f"carried in “{issue.title}” for {account.name}, whose phone had no network",
+            company_id=firm.id, people=[account.id, carrier.id], issue_id=issue.id, device=device,
+        )
     pulse.record(
         "sent_in", pulse.person(account.id), pulse.SERVER, f"sent in {what} to {firm.name}: “{issue.title}”" + (", with a photo" if issue.photo else ""),
         company_id=firm.id, people=[account.id, receiver.id], issue_id=issue.id, ai=bool(issue.ai_check), device=device,
@@ -357,7 +358,103 @@ async def send_in(
         post.send(receiver.email, *mailer.sent_email(receiver.name, f"{account.name}, a user of {firm.name},", issue.title, "", said))
     except mailer.MailError:
         pass
+    return issue, False
+
+
+@router.post("/requests")
+async def send_in(
+    place: str = Form(...),
+    kind: str = Form("issue"),
+    title: str = Form(""),
+    note_text: str = Form("", alias="note"),
+    location: str = Form(""),
+    category: str = Form(""),
+    severity: str = Form("MEDIUM"),
+    client_id: str = Form(""),
+    seen: str = Form(""),
+    check: str = Form(""),
+    photo: UploadFile | None = File(None),
+    account: Account = Depends(current_account),
+    db: Session = Depends(get_db),
+    post: mailer.Mailer = Depends(get_mailer),
+    request: Request = None,
+) -> dict:
+    """
+    Takes what a user of a place noticed or wants to know, and brings it to the place: it becomes an
+    issue there, and one of the place's inspectors is told with the sender's own words. Sent twice under
+    the same `client_id` (a phone that never heard the answer), it is taken once.
+    """
+    raw = await photo.read(MAX_PICTURE_BYTES + 1) if photo is not None else b""
+    issue, _ = _take_in(
+        db, post, account, raw, _device(request), place=place, kind=kind, title=title, note_text=note_text, location=location,
+        category=category, severity=severity, client_id=client_id, seen=seen, check=check,
+    )
     return _rows(db, account, [issue])[0]
+
+
+def _user_named(db: Session, unique_id: str) -> Account | None:
+    """The user of a place with this DeskLess ID, however its letters were typed; nobody of a company's own."""
+    wanted = unique_id.strip().upper()
+    if not wanted:
+        return None
+    return db.scalars(select(Account).where(func.upper(Account.unique_id) == wanted, Account.role == MEMBER, Account.status == APPROVED)).first()
+
+
+def _said(entry: dict, key: str) -> str:
+    value = entry.get(key)
+    return value if isinstance(value, str) else ""
+
+
+@router.post("/requests/carried")
+async def carried_in(
+    sender: str = Form(...),
+    entry: str = Form(...),
+    sig: str = Form(...),
+    photo: UploadFile | None = File(None),
+    carrier: Account = Depends(current_account),
+    db: Session = Depends(get_db),
+    post: mailer.Mailer = Depends(get_mailer),
+    request: Request = None,
+) -> dict:
+    """
+    Takes what a user wrote while their phone had no network, from the phone nearby that was handed it
+    and has one. `entry` is the user's own words as their phone put them down, a string of JSON, and
+    `sig` that phone's signature over it, made with the key only it and this server know: so the phone
+    that carries it can neither write in the user's name nor change a word. Once past that check it is
+    taken in as if the user's own phone had sent it, and should that phone send it too later on, under
+    the same `client_id`, it is still one issue. The carrier is told that it arrived and who has it, and
+    nothing of what the place says back.
+    """
+    author = _user_named(db, sender)
+    if author is None:
+        raise HTTPException(404, "The person this came from is not known here.")
+    signed = hmac.new(security.carry_key(author).encode("utf-8"), entry.encode("utf-8"), hashlib.sha256).hexdigest()
+    if not hmac.compare_digest(signed.encode(), sig.strip().lower().encode()):
+        raise HTTPException(403, "This was not written by the person it names.")
+    try:
+        written = json.loads(entry)
+    except (ValueError, RecursionError):
+        written = None
+    if not isinstance(written, dict):
+        raise HTTPException(422, "That entry cannot be read.")
+    if not _line(_said(written, "client_id"), 40):
+        raise HTTPException(422, "That entry has no name of its own to be known by.")
+    raw = await photo.read(MAX_PICTURE_BYTES + 1) if photo is not None else b""
+    wanted = _said(written, "photo_sha256").strip().lower()
+    if raw and len(raw) <= MAX_PICTURE_BYTES and hashlib.sha256(raw).hexdigest() != wanted:
+        # Not the picture the user's phone signed for, or a picture where it signed for none: it is left
+        # out, and what was said still goes.
+        raw = b""
+    issue, already = _take_in(
+        db, post, author, raw, _device(request), place=_said(written, "place"), kind=_said(written, "kind"), title=_said(written, "title"),
+        note_text=_said(written, "note"), location=_said(written, "location"), category=_said(written, "category"),
+        severity=_said(written, "severity"), client_id=_said(written, "client_id"), carrier=carrier,
+    )
+    told = _rows(db, author, [issue])[0]
+    return {
+        "taken": True, "already": already, "id": told["id"], "client_id": told["client_id"], "place": told["place"],
+        "title": told["title"], "sent_to": told["sent_to"],
+    }
 
 
 def _all_mine(db: Session, account: Account) -> list[Issue]:

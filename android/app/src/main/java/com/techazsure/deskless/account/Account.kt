@@ -21,6 +21,8 @@ data class Profile(
     val reportsTo: String = "",
     /** The code a managing director or manager hands to the people who are to answer to them; blank for others. */
     val inviteCode: String = "",
+    /** For someone who uses a place: the key their phone signs with when another phone carries what they send; blank for others. */
+    val carryKey: String = "",
 ) {
     /** True for someone who uses a place and works for nobody in it. */
     val usesAPlace: Boolean get() = role == USER
@@ -51,6 +53,7 @@ data class Profile(
                 roleName = json.optString("role_name").ifBlank { ROLES.firstOrNull { it.first == role }?.second ?: role.replaceFirstChar(Char::uppercase) },
                 reportsTo = json.optString("reports_to"),
                 inviteCode = json.optString("invite_code"),
+                carryKey = json.optString("carry_key"),
             )
         }
     }
@@ -177,7 +180,7 @@ class AccountStore(private val context: Context) {
     private fun save() {
         fun written(it: Profile) = JSONObject().put("unique_id", it.uniqueId).put("role", it.role).put("name", it.name).put("email", it.email)
             .put("phone", it.phone).put("organisation", it.organisation).put("aadhaar", it.aadhaar)
-            .put("role_name", it.roleName).put("reports_to", it.reportsTo).put("invite_code", it.inviteCode)
+            .put("role_name", it.roleName).put("reports_to", it.reportsTo).put("invite_code", it.inviteCode).put("carry_key", it.carryKey)
         val json = JSONObject().put("server_chosen", chosenServer).put("token", token)
         profile?.let { json.put("profile", written(it)) }
         json.put("others", JSONArray().apply { kept.forEach { (token, person) -> put(JSONObject().put("token", token).put("profile", written(person))) } })

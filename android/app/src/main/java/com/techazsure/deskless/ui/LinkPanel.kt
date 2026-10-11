@@ -3,6 +3,8 @@ package com.techazsure.deskless.ui
 import android.bluetooth.BluetoothAdapter
 import android.content.Intent
 import android.net.Uri
+import android.os.Build
+import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
@@ -32,6 +34,8 @@ import androidx.compose.material.icons.rounded.Lock
 import androidx.compose.material.icons.rounded.PhoneAndroid
 import androidx.compose.material.icons.rounded.QrCodeScanner
 import androidx.compose.material.icons.rounded.Sensors
+import androidx.compose.material.icons.rounded.SettingsInputAntenna
+import androidx.compose.material.icons.rounded.Wifi
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -55,6 +59,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.techazsure.deskless.AppState
+import com.techazsure.deskless.Screen
 import com.techazsure.deskless.link.Pairing
 import com.techazsure.deskless.link.Qr
 import com.techazsure.deskless.link.Stage
@@ -78,8 +83,6 @@ import kotlinx.coroutines.launch
 @Composable
 fun LinkPanel(state: AppState, onScan: () -> Unit) {
     val link = state.link
-    val context = LocalContext.current
-    val scope = rememberCoroutineScope()
     // Coming back from a system prompt redraws the rows below with the new answer.
     var asked by remember { mutableIntStateOf(0) }
     val turnOn = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) {
@@ -140,40 +143,18 @@ fun LinkPanel(state: AppState, onScan: () -> Unit) {
                     )
                 }
             }
-            // The dashboard is a web page on the company's server; the app opens it already signed in.
-            var opening by remember { mutableStateOf(false) }
-            BrandButton(
-                text = if (opening) "Opening…" else "My dashboard",
-                icon = Icons.Rounded.Dashboard,
-                kind = ButtonKind.Secondary,
-                enabled = !opening,
-                modifier = Modifier.fillMaxWidth(),
-                onClick = {
-                    opening = true
-                    scope.launch {
-                        state.dashboardAddress()
-                            .onSuccess { address ->
-                                runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(address))) }
-                                    .onFailure { state.notice = "No browser could be opened." }
-                            }
-                            .onFailure { state.notice = it.message }
-                        opening = false
-                    }
-                },
-            )
-            val waiting = state.waitingForOffice.size
-            if (waiting > 0) {
-                Text(
-                    text = "$waiting report${if (waiting == 1) "" else "s"} waiting to be sent to the office. They go when the phone has a network.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = SafetyYellow,
-                )
-            }
+            // The office's page and what waits for it are for the people who work for the place.
+            if (!person.usesAPlace) OfficeLinks(state)
         }
         Text("LINK PHONES", style = MaterialTheme.typography.headlineSmall, color = Chalk)
         Text(
-            text = "Scan this code with DeskLess on another phone. The two are then linked: reports pass " +
-                "between them with no prompts and no network.",
+            text = if (state.profile?.usesAPlace == true) {
+                "Scan this code with DeskLess on a phone of the place, or scan theirs. The two are then linked: when " +
+                    "this phone has no network, what you tell it crosses to that phone, which sends it on."
+            } else {
+                "Scan this code with DeskLess on another phone. The two are then linked: reports pass " +
+                    "between them with no prompts and no network."
+            },
             style = MaterialTheme.typography.bodySmall,
             color = Fog,
         )
@@ -196,6 +177,17 @@ fun LinkPanel(state: AppState, onScan: () -> Unit) {
             modifier = Modifier.fillMaxWidth(),
             height = 52.dp,
         )
+        // Staff have push to talk on their first screen; someone who uses a place reaches it from here.
+        if (state.profile?.usesAPlace == true) {
+            BrandButton(
+                text = "Walkie-talkie",
+                onClick = { state.screen = Screen.Radio },
+                icon = Icons.Rounded.SettingsInputAntenna,
+                kind = ButtonKind.Secondary,
+                modifier = Modifier.fillMaxWidth(),
+                height = 48.dp,
+            )
+        }
 
         // What the link needs from the phone, each one tap away when it is missing.
         val bluetooth = remember(asked, link.running) { link.bluetoothOn }
@@ -220,6 +212,21 @@ fun LinkPanel(state: AppState, onScan: () -> Unit) {
                 else -> null
             },
         )
+        // Wi-Fi need not be joined to anything: switched on, it lets two phones make a direct, fast link.
+        val wifi = remember(asked, link.running) { link.wifiOn }
+        if (wifi != null) {
+            StatusRow(
+                icon = Icons.Rounded.Wifi,
+                title = "Wi-Fi",
+                value = if (wifi) "On" else "Off · tap to turn on, or sending is slow",
+                tone = if (wifi) GoGreen else SeverityMedium,
+                onClick = if (wifi) {
+                    null
+                } else {
+                    { runCatching { turnOn.launch(Intent(if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) Settings.Panel.ACTION_WIFI else Settings.ACTION_WIFI_SETTINGS)) } }
+                },
+            )
+        }
         StatusRow(
             icon = Icons.Rounded.Sensors,
             title = "Link",
@@ -277,6 +284,31 @@ fun LinkPanel(state: AppState, onScan: () -> Unit) {
                 }
             }
         }
+        // What users' phones handed to this one because they had no network. It goes on by itself.
+        if (state.carriedForOthers.isNotEmpty()) {
+            Text("TO SEND ON FOR OTHERS", style = MaterialTheme.typography.labelSmall, color = Fog)
+            Surface(shape = RoundedCornerShape(16.dp), color = Steel, border = BorderStroke(1.dp, Line)) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(12.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    state.carriedForOthers.forEach { held ->
+                        Text(
+                            text = "${held.title} · from ${held.senderName}" + if (held.place.isNotBlank()) ", for ${held.place}" else "",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = Chalk,
+                        )
+                    }
+                    Text(
+                        text = "Each is signed by the person who told it. This phone sends them on when it has a network.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = Fog,
+                    )
+                }
+            }
+        }
         // What this phone is carrying for others. It holds the sealed copies and cannot open them.
         if (link.carrying.isNotEmpty()) {
             Text("CARRYING FOR OTHERS", style = MaterialTheme.typography.labelSmall, color = Fog)
@@ -310,6 +342,42 @@ fun LinkPanel(state: AppState, onScan: () -> Unit) {
             )
         }
         Spacer(Modifier.size(8.dp))
+    }
+}
+
+/** The way to the person's dashboard, and how much still waits to be sent to the office. */
+@Composable
+private fun OfficeLinks(state: AppState) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    // The dashboard is a web page on the company's server; the app opens it already signed in.
+    var opening by remember { mutableStateOf(false) }
+    BrandButton(
+        text = if (opening) "Opening…" else "My dashboard",
+        icon = Icons.Rounded.Dashboard,
+        kind = ButtonKind.Secondary,
+        enabled = !opening,
+        modifier = Modifier.fillMaxWidth(),
+        onClick = {
+            opening = true
+            scope.launch {
+                state.dashboardAddress()
+                    .onSuccess { address ->
+                        runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(address))) }
+                            .onFailure { state.notice = "No browser could be opened." }
+                    }
+                    .onFailure { state.notice = it.message }
+                opening = false
+            }
+        },
+    )
+    val waiting = state.waitingForOffice.size
+    if (waiting > 0) {
+        Text(
+            text = "$waiting report${if (waiting == 1) "" else "s"} waiting to be sent to the office. They go when the phone has a network.",
+            style = MaterialTheme.typography.bodySmall,
+            color = SafetyYellow,
+        )
     }
 }
 

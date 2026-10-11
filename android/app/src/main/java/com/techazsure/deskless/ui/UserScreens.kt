@@ -2,6 +2,7 @@ package com.techazsure.deskless.ui
 
 import android.Manifest
 import android.content.pm.PackageManager
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
@@ -23,6 +24,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
@@ -38,20 +40,26 @@ import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.HourglassTop
 import androidx.compose.material.icons.rounded.Image
 import androidx.compose.material.icons.rounded.Mic
+import androidx.compose.material.icons.rounded.QrCode2
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Stop
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.DrawerValue
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalDrawerSheet
+import androidx.compose.material3.ModalNavigationDrawer
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.rememberDrawerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -82,6 +90,7 @@ import com.techazsure.deskless.ui.theme.SafetyYellow
 import com.techazsure.deskless.ui.theme.SeverityMedium
 import com.techazsure.deskless.ui.theme.SignalRed
 import com.techazsure.deskless.ui.theme.Steel
+import kotlinx.coroutines.launch
 import java.io.File
 
 /**
@@ -131,6 +140,19 @@ fun UserHome(state: AppState) {
     }
     LaunchedEffect(me.uniqueId) { user.comeOnline() }
 
+    // The side bar: this phone's QR code and the phones it is linked with. Through a linked phone, what
+    // is told here reaches the place when this phone has no network.
+    val scope = rememberCoroutineScope()
+    val sideBar = rememberDrawerState(DrawerValue.Closed)
+    BackHandler(enabled = sideBar.isOpen) { scope.launch { sideBar.close() } }
+    ModalNavigationDrawer(
+        drawerState = sideBar,
+        drawerContent = {
+            ModalDrawerSheet(drawerContainerColor = Coal) {
+                LinkPanel(state, onScan = { state.screen = Screen.Scan })
+            }
+        },
+    ) {
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -146,8 +168,28 @@ fun UserHome(state: AppState) {
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(10.dp),
         ) {
-            LogoMark(Modifier.size(34.dp))
-            // The mark stands for the name here: with the language and three buttons beside it, the word would break in two.
+            // Opens the side bar. A green dot says a linked phone is in reach right now.
+            Box {
+                RoundIconButton(
+                    icon = Icons.Rounded.QrCode2,
+                    label = "Link phones: this phone's code",
+                    onClick = { scope.launch { sideBar.open() } },
+                    container = SafetyYellow,
+                    content = Ink,
+                    size = 38.dp,
+                )
+                if (state.link.connected.isNotEmpty()) {
+                    Box(
+                        Modifier
+                            .align(Alignment.TopEnd)
+                            .size(11.dp)
+                            .background(Ink, CircleShape)
+                            .padding(2.dp)
+                            .background(GoGreen, CircleShape)
+                    )
+                }
+            }
+            // With the language and three buttons beside it there is no room for the name.
             Spacer(Modifier.weight(1f))
             LanguageChip(state)
             RoundIconButton(
@@ -237,7 +279,37 @@ fun UserHome(state: AppState) {
                     Surface(shape = RoundedCornerShape(14.dp), color = Steel, border = BorderStroke(1.dp, Line), modifier = Modifier.fillMaxWidth()) {
                         Column(modifier = Modifier.padding(12.dp)) {
                             Text(one.ask.title, style = MaterialTheme.typography.titleMedium, color = Chalk)
-                            Text("For ${one.place.name}. It goes by itself when the phone has a network.", style = MaterialTheme.typography.bodySmall, color = Fog)
+                            // Where it is: still here, or with a linked phone that sends it on.
+                            val handed = user.handedLine(one.clientId)
+                            Text(
+                                text = "For ${one.place.name}. " + (handed ?: "It goes by itself when the phone has a network, or through a linked phone in reach."),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = if (handed != null) GoGreen else Fog,
+                            )
+                        }
+                    }
+                }
+            }
+
+            // A report a phone of the place handed to this one over the link, with no network.
+            val handedOver = state.reports.filter { it.from.isNotBlank() }.take(4)
+            if (handedOver.isNotEmpty()) {
+                Text("REPORTS HANDED TO THIS PHONE", style = MaterialTheme.typography.labelSmall, color = Fog)
+                handedOver.forEach { report ->
+                    Surface(
+                        onClick = { state.screen = Screen.Report(state.reportFile(report).absolutePath, fromLibrary = true) },
+                        shape = RoundedCornerShape(14.dp),
+                        color = Steel,
+                        border = BorderStroke(1.dp, if (report.unread) GoGreen.copy(alpha = 0.6f) else Line),
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Column(modifier = Modifier.padding(12.dp)) {
+                            Text(report.place.ifBlank { "A report" }, style = MaterialTheme.typography.titleMedium, color = Chalk)
+                            Text(
+                                text = "From ${report.from}. ${report.issues} issue${if (report.issues == 1) "" else "s"}." + if (report.unread) " Not opened yet." else "",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = if (report.unread) GoGreen else Fog,
+                            )
                         }
                     }
                 }
@@ -277,6 +349,7 @@ fun UserHome(state: AppState) {
             )
             RoundIconButton(icon = Icons.AutoMirrored.Rounded.Send, label = "Take it", onClick = { send() }, container = SafetyYellow, content = Ink, size = 52.dp)
         }
+    }
     }
 
     if (leaving) {

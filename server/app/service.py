@@ -13,7 +13,7 @@ from sqlalchemy.orm import Session
 from . import mailer, pulse, security
 from .config import settings
 from .db import get_db
-from .models import APPROVED, LEADS, PENDING_APPROVAL, REJECTED, ROLE_NAMES, ROLES, Account, Company, Counter, Event, Issue, Message, Otp, Report, now
+from .models import APPROVED, LEADS, MEMBER, PENDING_APPROVAL, REJECTED, ROLE_NAMES, ROLES, Account, Company, Counter, Event, Issue, Message, Otp, Report, now
 
 #: Wrong codes allowed before a new one has to be asked for, and the wait between two emails.
 MAX_CODE_TRIES = 5
@@ -250,6 +250,15 @@ def public(account: Account, lead: Account | None = None) -> dict:
 
 def profile(db: Session, account: Account) -> dict:
     return public(account, lead_of(db, account))
+
+
+def own_profile(db: Session, account: Account) -> dict:
+    """
+    The same, as the person's own phone is given it on signing in and checking in. A user of a place
+    gets with it the key their phone signs with when another phone has to carry what they wrote. It is
+    theirs alone, and is no part of how they are shown to anybody else.
+    """
+    return profile(db, account) | ({"carry_key": security.carry_key(account)} if account.role == MEMBER else {})
 
 
 # ---------------------------------------------------------------- one-time codes

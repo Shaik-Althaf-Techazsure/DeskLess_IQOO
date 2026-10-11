@@ -31,6 +31,7 @@ KINDS = {
     "walk": "A walk or report arriving from a phone",
     "sent_in": "Something sent in by a user of the place",
     "route": "The assistant ranking it and choosing who is told",
+    "carried": "Something a user wrote with no network, brought in by a phone nearby",
     "message": "An issue passed from one person to another",
     "assign": "An issue given to a technician",
     "fixed": "A repair shown with a photo",
@@ -114,7 +115,7 @@ def clear() -> None:
 # ---------------------------------------------------------------- a question to the API, in words
 
 #: Paths that record a pulse of their own, with what they mean; the plain question is not noted for them.
-_OWN = re.compile(r"^/api/(reports|requests|requests/[^/]+/say|issues/[^/]+/(assign|send|fixed|close|reopen))$")
+_OWN = re.compile(r"^/api/(reports|requests|requests/carried|requests/[^/]+/say|issues/[^/]+/(assign|send|fixed|close|reopen))$")
 #: Paths that are nobody's doing: the linkage page watching, the container's health check, a phone's wait.
 _QUIET = ("/api/linking", "/api/health", "/api/desk/wait")
 

@@ -76,6 +76,15 @@ def same(a: str, b: str) -> bool:
     return hmac.compare_digest(a.encode(), b.encode())
 
 
+def carry_key(account) -> str:
+    """
+    The secret a user's phone signs with when it has no network and hands what was written to a phone
+    nearby, which posts it for them. Only that phone and this server know it. Nothing is stored for it:
+    it is worked out from the account and its password hash, so a change of password changes it too.
+    """
+    return keyed_hash("carry", account.id, account.password_hash)
+
+
 # ---------------------------------------------------------------- codes to sign up with
 
 # Letters and digits that are not mistaken for one another when read aloud or copied by hand.

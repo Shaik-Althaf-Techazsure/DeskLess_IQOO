@@ -156,7 +156,8 @@ fun ReportScreen(state: AppState, file: File, fromLibrary: Boolean = false) {
             dismissButton = { TextButton(onClick = { choosing = false }) { Text("Cancel") } },
         )
     }
-    val back = { state.screen = if (fromLibrary) Screen.Reports else Screen.Home }
+    // Someone who uses a place has no list of reports to go back to: one handed to them opens from their first screen.
+    val back = { state.screen = if (fromLibrary && state.profile?.usesAPlace != true) Screen.Reports else Screen.Home }
     val entry = state.reports.firstOrNull { it.fileName == file.name }
     BackHandler { back() }
 

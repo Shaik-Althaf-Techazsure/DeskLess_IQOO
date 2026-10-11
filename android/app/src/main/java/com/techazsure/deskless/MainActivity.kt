@@ -7,7 +7,9 @@ import android.graphics.Color
 import android.net.ConnectivityManager
 import android.net.Network
 import android.nfc.NfcAdapter
+import android.os.Build
 import android.os.Bundle
+import android.provider.Settings
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.SystemBarStyle
@@ -37,6 +39,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
@@ -70,6 +73,8 @@ import com.techazsure.deskless.ui.SensorsScreen
 import com.techazsure.deskless.ui.UserHome
 import com.techazsure.deskless.ui.theme.DesklessTheme
 import com.techazsure.deskless.ui.theme.Ink
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import java.io.File
 
 class MainActivity : ComponentActivity() {
@@ -228,27 +233,52 @@ fun DeskLessApp(state: AppState, lifecycleOwner: LifecycleOwner) {
 
     var introDone by rememberSaveable { mutableStateOf(false) }
 
-    // As the app opens it gets the link ready: Android asks once to let DeskLess find nearby phones, and
-    // offers to switch Bluetooth on if it is off. No app is allowed to switch it on without that one tap.
-    val turnBluetoothOn = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { state.link.start() }
-    val allowLink = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) {
-        if (state.link.allowed && state.link.bluetoothOn == false) {
-            runCatching { turnBluetoothOn.launch(Intent(BluetoothAdapter.ACTION_REQUEST_ENABLE)) }
+    // As the app opens it gets the link ready. Android asks once to let DeskLess find nearby phones.
+    // Starting the link is then enough on most phones: the part of Google Play services that runs it
+    // switches Bluetooth and Wi-Fi on for it, with nobody asked. An app may not switch either on itself,
+    // so where that has not happened after a few seconds Android's own prompts are shown, one tap each.
+    // Wi-Fi is asked for once in a run, so that somebody who wants it off is not asked again and again.
+    val scope = rememberCoroutineScope()
+    var askedForWifi by rememberSaveable { mutableStateOf(false) }
+    val turnWifiOn = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { state.link.start() }
+    fun wifiThenLink() {
+        if (state.link.wifiOn == false && !askedForWifi) {
+            askedForWifi = true
+            // The panel slides up over the app with the Wi-Fi switch on it; older phones open the settings page.
+            val panel = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) Settings.Panel.ACTION_WIFI else Settings.ACTION_WIFI_SETTINGS
+            runCatching { turnWifiOn.launch(Intent(panel)) }.onFailure { state.link.start() }
+        } else {
+            state.link.start()
         }
+    }
+    val turnBluetoothOn = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { wifiThenLink() }
+    fun radiosThenLink() {
         state.link.start()
+        scope.launch {
+            // Time for the link to have switched its radios on by itself.
+            var waited = 0
+            while (waited < RADIOS_WAIT_MS && (state.link.bluetoothOn == false || state.link.wifiOn == false)) {
+                delay(500)
+                waited += 500
+            }
+            if (state.link.bluetoothOn == false) {
+                runCatching { turnBluetoothOn.launch(Intent(BluetoothAdapter.ACTION_REQUEST_ENABLE)) }.onFailure { wifiThenLink() }
+            } else {
+                wifiThenLink()
+            }
+        }
+    }
+    val allowLink = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) {
+        if (state.link.allowed) radiosThenLink() else state.link.start()
     }
     // Nothing of the app is reachable until somebody is signed in and, on a phone with a fingerprint set
     // up, has unlocked it.
     val inside = introDone && state.profile != null && state.unlocked
-    // Someone who uses a place links with no other phone, so is not asked to let DeskLess find any.
-    val links = state.profile?.usesAPlace != true && !state.userOnly
-    LaunchedEffect(inside, links) {
-        if (!inside || !links) return@LaunchedEffect
-        when {
-            !state.link.allowed -> allowLink.launch(state.link.permissions)
-            state.link.bluetoothOn == false -> runCatching { turnBluetoothOn.launch(Intent(BluetoothAdapter.ACTION_REQUEST_ENABLE)) }
-            else -> state.link.start()
-        }
+    // Everybody links: staff pass reports between phones, and someone who uses a place hands what they
+    // tell their phone to a phone of the place when their own has no network.
+    LaunchedEffect(inside) {
+        if (!inside) return@LaunchedEffect
+        if (!state.link.allowed) allowLink.launch(state.link.permissions) else radiosThenLink()
     }
     Box(
         modifier = Modifier
@@ -308,6 +338,9 @@ fun DeskLessApp(state: AppState, lifecycleOwner: LifecycleOwner) {
         }
     }
 }
+
+/** How long the link is given to switch Bluetooth and Wi-Fi on by itself before Android's prompts are shown. */
+private const val RADIOS_WAIT_MS = 6_000
 
 private fun keyOf(screen: Screen): String = when (screen) {
     Screen.Home -> "home"

@@ -62,6 +62,10 @@ class UserSide(
     private val speechReady: () -> Boolean,
     private val gemmaReady: () -> Boolean,
     private val cacheDir: File,
+    /** Hands an entry that found no network to the linked phones, and gives what to tell the person; null when there is nobody to hand it to. */
+    private val handOver: suspend (fields: Map<String, String>, place: String, photo: File?) -> String? = { _, _, _ -> null },
+    /** Where an entry handed to a linked phone has got, in words; null when it was not handed to one. */
+    val handedLine: (clientId: String) -> String? = { null },
 ) {
     private val app = context.applicationContext
     private val settings = app.getSharedPreferences("user-side", Context.MODE_PRIVATE)
@@ -470,7 +474,11 @@ class UserSide(
             picture?.delete()
             return "It was not sent. ${error.message}"
         }
-        return if (error?.status == 401) "Sign in again and it will be sent." else "There is no network. It will go to ${one.place.name} by itself when there is one."
+        if (error?.status == 401) return "Sign in again and it will be sent."
+        // With no network a linked phone can take it, sealed, and send it on. It also stays here, and goes
+        // by itself if this phone finds a network first: the place takes it once, whichever way it comes.
+        val handed = handOver(fields, one.place.name, picture)
+        return "There is no network. " + (handed ?: "It will go to ${one.place.name} by itself when there is one.")
     }
 
     /** Sends whatever of this person's still waits; called when the app comes to the front or finds a network. */

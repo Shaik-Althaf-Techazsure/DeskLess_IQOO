@@ -155,6 +155,16 @@ class Api(private val server: () -> String) {
     fun sendIn(token: String, fields: Map<String, String>, photo: File?): JSONObject =
         multipart("/api/requests", token, fields, listOfNotNull(photo?.let { Part("photo", "photo.jpg", "image/jpeg", it) }))
 
+    /**
+     * Brings on what a user's phone handed to this one when it had no network. [entry] and [signature] go
+     * as that phone made them: the server checks the one against the other, so this phone only carries.
+     */
+    fun carried(token: String, sender: String, entry: String, signature: String, photo: File?): JSONObject =
+        multipart(
+            "/api/requests/carried", token, mapOf("sender" to sender, "entry" to entry, "sig" to signature),
+            listOfNotNull(photo?.let { Part("photo", "photo.jpg", "image/jpeg", it) }),
+        )
+
     /** Everything this person has sent in, with where each stands and what was said about it. */
     fun sentIn(token: String): JSONObject = call("GET", "/api/requests", token)
 
